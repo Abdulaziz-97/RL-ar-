@@ -1,0 +1,76 @@
+﻿# Arabic Reasoning RLVR Pipeline — QLoRA config for RTX 2080 Super (8GB)
+# TRL GRPOTrainer with Dr. GRPO loss + batch-scale rewards + asymmetric DAPO clipping
+# Model: Qwen3.5-2B (2B params, 24 layers, Gated DeltaNet + Self Attention)
+
+model_name: "Qwen/Qwen3.5-2B"
+load_in_4bit: true
+bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_use_double_quant: true
+
+# LoRA
+lora_r: 64
+lora_alpha: 128
+lora_dropout: 0.05
+
+# Data
+train_data_path: "data/arabic_reasoning_rlvr.jsonl"
+eval_data_path: ""
+coldstart_data_path: "data/arabic_reasoning_coldstart.jsonl"
+
+# Generation (group sampling) — Qwen3.5-2B thinking mode recommended
+num_generations: 16
+max_completion_length: 768
+temperature: 1.0
+top_p: 0.95
+top_k: 20
+
+# Training (QLoRA — fits in 8GB with paged optimizer + grad checkpointing)
+learning_rate: 1.0e-5
+num_train_epochs: 1
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 8
+max_grad_norm: 1.0
+warmup_ratio: 0.1
+lr_scheduler_type: "cosine"
+optim: "paged_adamw_8bit"
+seed: 42
+
+# Algorithm — 2026
+loss_type: "dr_grpo"              # length-bias-free (Understanding R1-Zero-Like Training)
+scale_rewards: "batch"            # local mean + global std (more robust)
+beta: 0.04                        # KL to reference model
+epsilon: 0.2                      # PPO clip lower
+epsilon_high: 0.28                # DAPO asymmetric upper clip
+importance_sampling_level: "token" # "token"=GRPO, "sequence"=GSPO, "sequence_token"=GSPO-token
+mask_truncated_completions: true
+
+# Reward weights: 0.6*correct + 0.2*format + 0.2*lang - 0.5*leak - 0.3*struct
+reward_weights: [0.6, 0.2, 0.2, 0.5, 0.3]
+
+# Infrastructure
+output_dir: "./outputs"
+logging_steps: 10
+save_steps: 500
+bf16: true
+gradient_checkpointing: true
+use_transformers_continuous_batching: false
+use_wandb: false
+wandb_project: "arabic-reasoning-rlvr"
+
+# Failure Mining (RL-ZVP / POPO / discard)
+zero_variance_strategy: "direct_scoring"
+replay_buffer_size: 512
+
+# Curriculum Learning (E2H Reasoner Gaussian schedule)
+curriculum_schedule_type: "gaussian"
+sigma_fraction: 0.2
+
+# CRPS (progressive suffix hints)
+enable_crps: true
+crps_max_age_steps: 100
+crps_max_traces: 256
+
+# Logging
+log_completions: false
+num_completions_to_print: 4
