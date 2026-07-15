@@ -70,18 +70,26 @@ def reward_correctness(completion: str, ground_truth, domain: str, puzzle_type: 
         return 1.0 if str(raw).strip().lower() == str(ground_truth).strip().lower() else 0.0
 
     if domain == "logic":
+        # Dataset loader serializes dict/list GTs to JSON strings for HF Dataset.
+        # Parse them back so dict-vs-dict comparison works.
+        gt = ground_truth
+        if isinstance(gt, str):
+            try:
+                gt = json.loads(gt)
+            except (json.JSONDecodeError, ValueError):
+                pass
         try:
             parsed = json.loads(raw)
         except (json.JSONDecodeError, ValueError):
             parsed = raw
-        if isinstance(ground_truth, dict) and isinstance(parsed, dict):
-            return 1.0 if parsed == ground_truth else 0.0
-        if isinstance(ground_truth, (list, tuple, set)):
+        if isinstance(gt, dict) and isinstance(parsed, dict):
+            return 1.0 if parsed == gt else 0.0
+        if isinstance(gt, (list, tuple, set)):
             try:
-                return 1.0 if set(parsed) == set(ground_truth) else 0.0
+                return 1.0 if set(parsed) == set(gt) else 0.0
             except TypeError:
                 return 0.0
-        return 1.0 if parsed == ground_truth else 0.0
+        return 1.0 if parsed == gt else 0.0
 
     return 0.0
 

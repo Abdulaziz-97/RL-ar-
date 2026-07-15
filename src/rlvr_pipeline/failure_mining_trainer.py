@@ -273,7 +273,9 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             group_inputs = inputs[start:end]
 
             for i in range(end - start):
-                if group_correct[i] >= 1.0 - 1e-6 and group_format[i] >= 1.0 - 1e-6:
+                # Require perfect correctness + structurally valid format (format > 0).
+                # Soft format penalties (short think / low unique ratio) must not block CRPS.
+                if group_correct[i] >= 1.0 - 1e-6 and group_format[i] > 0.0:
                     idx = start + i
                     token_ids = completion_ids[idx].tolist()
                     # Decode the full span at once to preserve Arabic subword morphology.
