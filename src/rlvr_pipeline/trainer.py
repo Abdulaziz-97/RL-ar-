@@ -98,8 +98,7 @@ def build_trainer(
     if reward_funcs is None:
         reward_funcs = ALL_REWARD_FUNCS
     if reward_weights is None:
-        reward_weights = DEFAULT_REWARD_WEIGHTS
-
+        reward_weights = config.reward_weights if config.reward_weights else DEFAULT_REWARD_WEIGHTS
     config.reward_weights = reward_weights
 
     if train_dataset is None:

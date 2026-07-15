@@ -72,10 +72,17 @@ def apply_entropy_guard(loss_terms: list[float], mask_or_penalty: list, mode: Li
     raise ValueError(f"unknown mode: {mode}")
 
 
-def compute_batch_entropy(log_probs_per_token: list[list[float]]) -> float:
+def compute_mean_token_nll(log_probs_per_token: list[list[float]]) -> float:
+    """Mean per-sequence negative log-likelihood of *sampled* tokens.
+
+    This is NOT Shannon entropy of the full vocabulary distribution. It only
+    sees the log-probability of the token that was actually sampled at each
+    position, so it behaves like a (probability-weighted) NLL / surprisal
+    aggregate — useful as a cheap monitoring proxy, not as true entropy.
+    """
     if not log_probs_per_token:
         return 0.0
-    entropies: list[float] = []
+    scores: list[float] = []
     for lps in log_probs_per_token:
         if not lps:
             continue
@@ -84,7 +91,11 @@ def compute_batch_entropy(log_probs_per_token: list[list[float]]) -> float:
             clp = lp if lp <= 0.0 else 0.0
             p = math.exp(clp)
             total -= p * clp
-        entropies.append(total)
-    if not entropies:
+        scores.append(total)
+    if not scores:
         return 0.0
-    return sum(entropies) / len(entropies)
+    return sum(scores) / len(scores)
+
+
+# Backward-compatible alias — historically misnamed as "entropy".
+compute_batch_entropy = compute_mean_token_nll

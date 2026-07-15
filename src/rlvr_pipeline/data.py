@@ -2,10 +2,13 @@
 Data loading for the pipeline.
 
 Handles the real Arabic Reasoning dataset schema:
-    {"id": "...", "source": "rlvr", "domain": "gsm8k|math|math_comp|logic|mmlu",
+    {"id": "...", "source": "rlvr", "domain": "gsm8k|math|math_comp|logic",
      "prompt": "...", "response": "", "answer": "",
      "metadata": {"grade_level": "...", "num_steps": N, "ground_truth_answer": <any>},
      "quality": {"score": ..., "arabic_purity": ...}}
+
+MMLU records (domain="mmlu") are excluded from RLVR training — use them for
+eval/knowledge probes only.
 
 Produces HuggingFace Datasets in conversational format for TRL's GRPOTrainer.
 """
@@ -37,7 +40,6 @@ DOMAIN_MAP: dict[str, str] = {
     "math": "math",
     "math_comp": "math",
     "logic": "logic",
-    "mmlu": "math",
 }
 
 
@@ -110,6 +112,10 @@ def load_rlvr_dataset(
         raw_domain = raw.get("domain", "math")
 
         if gt is None or gt == "":
+            continue
+
+        # MMLU is knowledge-recall MCQ — exclude from RLVR training (eval-only).
+        if raw_domain == "mmlu":
             continue
 
         reward_domain = DOMAIN_MAP.get(raw_domain, "math")

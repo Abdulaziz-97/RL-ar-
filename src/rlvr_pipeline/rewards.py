@@ -4,9 +4,9 @@ TRL-compatible reward functions for the Arabic Reasoning RLVR pipeline.
 Each function follows the TRL signature:
     def reward_func(prompts, completions, **kwargs) -> list[float]
 
-TRL sums weighted reward functions. With `reward_weights=[0.6, 0.2, 0.2, 0.5, 0.3]`
-the total matches the PRD composite formula:
-    0.6*correctness + 0.2*format + 0.2*language - 0.5*answer_leak - 0.3*structural_leak
+TRL sums weighted reward functions. With `reward_weights=[0.6, 0.2, 0.05, 0.5, 0.3]`
+the total matches the production composite formula:
+    0.6*correctness + 0.2*format + 0.05*language - 0.5*answer_leak - 0.3*structural_leak
 
 Using separate functions (rather than one composite) lets TRL log each component
 independently in the dashboard — the 2026 monitoring approach.
@@ -59,7 +59,7 @@ def _extract_column(values: list[Any]) -> list[Any]:
 def correctness_reward_func(prompts, completions, **kwargs) -> list[float]:
     ground_truth = _extract_column(kwargs.get("ground_truth_answer", []))
     domain = _extract_column(kwargs.get("domain", []))
-    puzzle_type = kwargs.get("puzzle_type", [None] * len(completions))
+    puzzle_type = _extract_column(kwargs.get("puzzle_type", [None] * len(completions)))
     rewards = []
     for i, completion in enumerate(completions):
         text = _extract_completion_text(completion)
@@ -104,7 +104,7 @@ ALL_REWARD_FUNCS = [
     structural_leak_penalty_func,
 ]
 
-DEFAULT_REWARD_WEIGHTS = [W_CORRECTNESS, W_FORMAT, 0.05, W_ANSWER_LEAK, W_STRUCTURAL_LEAK]
+DEFAULT_REWARD_WEIGHTS = [W_CORRECTNESS, W_FORMAT, W_LANGUAGE, W_ANSWER_LEAK, W_STRUCTURAL_LEAK]
 
 
 def composite_reward_func(prompts, completions, **kwargs) -> list[float]:
@@ -116,7 +116,7 @@ def composite_reward_func(prompts, completions, **kwargs) -> list[float]:
     """
     ground_truth = _extract_column(kwargs.get("ground_truth_answer", []))
     domain = _extract_column(kwargs.get("domain", []))
-    puzzle_type = kwargs.get("puzzle_type", [None] * len(completions))
+    puzzle_type = _extract_column(kwargs.get("puzzle_type", [None] * len(completions)))
     rewards = []
     for i, completion in enumerate(completions):
         text = _extract_completion_text(completion)

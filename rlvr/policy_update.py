@@ -9,9 +9,14 @@ import torch
 
 
 def kl_penalty_term(ref_log_probs, policy_log_probs):
-    ref_lp = ref_log_probs
-    policy_lp = policy_log_probs
-    return (torch.exp(ref_lp) * (ref_lp - policy_lp)).mean()
+    """Schulman k3 KL estimator for on-policy samples drawn from the current policy.
+
+    Computes E[exp(r) * r - (exp(r) - 1)] where r = log π_ref - log π_policy,
+    which is an unbiased, low-variance approximation of KL(π_policy || π_ref).
+    """
+    log_ratio = ref_log_probs - policy_log_probs
+    ratio = torch.exp(log_ratio)
+    return (ratio * log_ratio - (ratio - 1)).mean()
 
 
 def grpo_loss(ratios, advantages, ref_log_probs, policy_log_probs, clip_eps: float = 0.2, kl_coef: float = 0.04):

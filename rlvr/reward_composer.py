@@ -1,7 +1,7 @@
 """
 Module 3 — Reward Composer.
 
-Composite reward: 0.6 * correctness + 0.2 * format + 0.2 * language
+Composite reward: 0.6 * correctness + 0.2 * format + 0.05 * language
 minus answer-leak and structural-leak penalties, clamped to [0.0, 1.0].
 """
 
@@ -12,7 +12,7 @@ from typing import Optional, Callable
 
 W_CORRECTNESS = 0.6
 W_FORMAT = 0.2
-W_LANGUAGE = 0.2
+W_LANGUAGE = 0.05
 W_ANSWER_LEAK = 0.5
 W_STRUCTURAL_LEAK = 0.3
 
@@ -51,6 +51,13 @@ def _try_float(value) -> Optional[float]:
 
 
 def reward_correctness(completion: str, ground_truth, domain: str, puzzle_type: Optional[str] = None) -> float:
+    # Gate on structural validity first — prevents reward-hacking by emitting
+    # bare <answer> tags without any <think> reasoning block.
+    if "<think>" not in completion or "</think>" not in completion:
+        return 0.0
+    if "<answer>" not in completion or "</answer>" not in completion:
+        return 0.0
+
     raw = _extract_answer(completion)
     if raw is None:
         return 0.0
@@ -160,9 +167,12 @@ def penalty_answer_leak(completion: str, embed_fn, leak_phrase_bank: list[str], 
 
 def penalty_structural_leak(completion: str, max_preamble_words: int = 5) -> float:
     think_pos = completion.find("<think>")
-    answer_end_pos = completion.rfind("</answer>")
+    if think_pos == -1:
+        # Missing <think> entirely is itself a structural violation.
+        return 1.0
 
-    preamble = completion[:think_pos] if think_pos != -1 else ""
+    answer_end_pos = completion.rfind("</answer>")
+    preamble = completion[:think_pos]
     postamble = completion[answer_end_pos + len("</answer>"):] if answer_end_pos != -1 else ""
 
     outside = (preamble + " " + postamble).split()

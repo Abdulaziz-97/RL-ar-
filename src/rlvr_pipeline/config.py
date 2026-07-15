@@ -65,7 +65,7 @@ class PipelineConfig:
 
     # ── Generation (GRPO group sampling) ──
     num_generations: int = 8
-    max_completion_length: int = 1024
+    max_completion_length: int = 512
     temperature: float = 1.0
     top_p: float = 0.95
     top_k: int = 20
@@ -91,9 +91,9 @@ class PipelineConfig:
     importance_sampling_level: ImportanceSamplingLevel = "token"
     mask_truncated_completions: bool = True
 
-    # ── Reward weights (PRD composite: 0.6 correct + 0.2 format + 0.2 lang − 0.5 leak − 0.3 struct) ──
+    # ── Reward weights (0.6 correct + 0.2 format + 0.05 lang − 0.5 leak − 0.3 struct) ──
     reward_weights: list[float] = field(
-        default_factory=lambda: [0.6, 0.2, 0.2, 0.5, 0.3]
+        default_factory=lambda: [0.6, 0.2, 0.05, 0.5, 0.3]
     )
 
     # ── Failure Mining (RL-ZVP / POPO / discard) ──

@@ -79,6 +79,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--top-k", type=int, dest="top_k", help="Override top_k")
     train_parser.add_argument("--num-generations", type=int, dest="num_generations",
                               help="Override num_generations")
+    train_parser.add_argument("--max-completion-length", type=int, dest="max_completion_length",
+                              help="Override max completion length")
     train_parser.add_argument("--sigma-fraction", type=float, dest="sigma_fraction",
                               help="Override curriculum sigma")
     train_parser.add_argument("--beta", type=float, help="Override KL penalty beta")
@@ -120,6 +122,7 @@ def _apply_overrides(config: PipelineConfig, args: argparse.Namespace) -> Pipeli
         ("top_p", "top_p"),
         ("top_k", "top_k"),
         ("num_generations", "num_generations"),
+        ("max_completion_length", "max_completion_length"),
         ("sigma_fraction", "sigma_fraction"),
         ("beta", "beta"),
         ("epsilon", "epsilon"),
@@ -189,9 +192,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"CRPS:     {config.enable_crps}")
         print(f"SFT-ckpt: {config.sft_checkpoint_path or '(none)'}")
         print(f"G:        {config.num_generations}")
+        print(f"MaxLen:   {config.max_completion_length}")
         print(f"Beta:     {config.beta}  Eps: {config.epsilon}/{config.epsilon_high}")
         print(f"Temp:     {config.temperature}  TopP: {config.top_p}  TopK: {config.top_k}")
         print(f"LR:       {config.learning_rate}")
+        print(f"Weights:  {config.reward_weights}")
         print()
 
         trainer = build_trainer(config)

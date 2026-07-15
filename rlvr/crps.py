@@ -17,7 +17,7 @@ class SuccessTrace:
     prompt_id: str
     puzzle_type: str
     difficulty_tag: str
-    token_sequence: list[str]
+    token_sequence: str  # fully decoded completion text (preserves subword joins)
     step_recorded: int
 
 
@@ -59,11 +59,20 @@ def find_related_success_trace(
 
 
 def build_progressive_suffix(trace: SuccessTrace, suffix_fraction: float) -> str:
-    """Take an increasing-length suffix of the stored successful trace.
-    suffix_fraction in [0.0, 1.0]. n_tokens = max(1, int(len(token_sequence) * suffix_fraction)).
-    Return the suffix as a space-joined string."""
-    n_tokens = max(1, int(len(trace.token_sequence) * suffix_fraction))
-    return " ".join(trace.token_sequence[-n_tokens:])
+    """Take an increasing-length character suffix of the stored successful trace.
+
+    Operates on the fully decoded string so BPE/WordPiece subwords (especially
+    Arabic morphology) are not broken by force-joining token pieces with spaces.
+    suffix_fraction in [0.0, 1.0].
+    """
+    text = trace.token_sequence
+    if not text:
+        return ""
+    if isinstance(text, list):
+        # Backward-compat for any leftover list-of-token traces.
+        text = "".join(text)
+    n_chars = max(1, int(len(text) * suffix_fraction))
+    return text[-n_chars:]
 
 
 def get_crps_suffix_fraction(failure_count: int) -> float:

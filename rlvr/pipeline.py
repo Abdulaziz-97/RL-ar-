@@ -18,7 +18,7 @@ from rlvr.config import PipelineConfig
 from rlvr.entropy_guard import (
     apply_entropy_guard,
     clip_cov_mask,
-    compute_batch_entropy,
+    compute_mean_token_nll,
     compute_token_covariance,
     kl_cov_penalty,
 )
@@ -54,15 +54,19 @@ def run_training_step(
     else:
         banked = []
 
-    completions = [
-        generate_group(
+    completions = []
+    log_probs_groups: list[Optional[list[list[float]]]] = []
+    for s in samples:
+        result = generate_group(
             model,
             s["prompt"],
             group_size=config.group_size,
             temperature=config.temperature,
+            return_logprobs=True,
         )
-        for s in samples
-    ]
+        group, group_lps = result
+        completions.append(group)
+        log_probs_groups.append(group_lps)
 
     rewards = [
         [compose_reward(c, s["ground_truth_answer"], s["domain"], s.get("puzzle_type")) for c in group]
@@ -80,29 +84,47 @@ def run_training_step(
     flat_advantages = _flatten(advantages_groups)
     n_tokens = len(flat_advantages)
 
-    uniform_lp = -math.log(max(n_tokens, 1)) if n_tokens > 0 else 0.0
-    flat_log_probs = [uniform_lp] * n_tokens
+    # Use real per-token log-probs when the model provides them. Synthetic
+    # uniform placeholders make every covariance identically zero and turn
+    # the entropy guard into a permanent no-op (BUG-13).
+    flat_log_probs: Optional[list[float]] = None
+    if all(g is not None for g in log_probs_groups) and log_probs_groups:
+        collected: list[float] = []
+        for group_lps in log_probs_groups:
+            for seq_lps in group_lps:  # type: ignore[union-attr]
+                collected.extend(seq_lps)
+        if len(collected) == n_tokens and n_tokens > 0:
+            flat_log_probs = collected
 
-    covariances = compute_token_covariance(flat_log_probs, flat_advantages)
+    if flat_log_probs is not None:
+        covariances = compute_token_covariance(flat_log_probs, flat_advantages)
 
-    if config.entropy_guard_mode == "clip_cov":
-        mask = clip_cov_mask(covariances, config.clip_ratio)
-        guarded = apply_entropy_guard(flat_advantages, mask, "clip_cov")
-        trigger_pct = (sum(mask) / len(mask) * 100) if mask else 0.0
+        if config.entropy_guard_mode == "clip_cov":
+            mask = clip_cov_mask(covariances, config.clip_ratio)
+            guarded = apply_entropy_guard(flat_advantages, mask, "clip_cov")
+            trigger_pct = (sum(mask) / len(mask) * 100) if mask else 0.0
+        else:
+            penalties = kl_cov_penalty(covariances, config.kl_cov_coef, config.top_k_ratio)
+            guarded = apply_entropy_guard(flat_advantages, penalties, "kl_cov")
+            trigger_pct = (sum(1 for p in penalties if p > 0) / len(penalties) * 100) if penalties else 0.0
+
+        batch_nll = compute_mean_token_nll([flat_log_probs])
+        ref_lp = torch.tensor(flat_log_probs, dtype=torch.float32)
+        policy_lp = torch.tensor(flat_log_probs, dtype=torch.float32)
     else:
-        penalties = kl_cov_penalty(covariances, config.kl_cov_coef, config.top_k_ratio)
-        guarded = apply_entropy_guard(flat_advantages, penalties, "kl_cov")
-        trigger_pct = (sum(1 for p in penalties if p > 0) / len(penalties) * 100) if penalties else 0.0
-
-    batch_entropy = compute_batch_entropy([flat_log_probs]) if flat_log_probs else 0.0
+        # No real log-probs available: skip entropy guard rather than feeding
+        # synthetic zero-variance placeholders.
+        guarded = flat_advantages
+        trigger_pct = 0.0
+        batch_nll = 0.0
+        ref_lp = torch.zeros(max(n_tokens, 1), dtype=torch.float32)
+        policy_lp = torch.zeros(max(n_tokens, 1), dtype=torch.float32)
 
     if n_tokens == 0:
         loss_tensor = torch.tensor(0.0)
     else:
         ratios = torch.ones(n_tokens, dtype=torch.float32)
         advantages_tensor = torch.tensor(guarded, dtype=torch.float32)
-        ref_lp = torch.tensor(flat_log_probs, dtype=torch.float32)
-        policy_lp = torch.tensor(flat_log_probs, dtype=torch.float32)
 
         if config.policy_update_mode == "grpo":
             loss_tensor = grpo_loss(
@@ -139,7 +161,7 @@ def run_training_step(
         step=step,
         completions=completions,
         rewards=rewards,
-        batch_entropy=batch_entropy,
+        batch_entropy=batch_nll,
         entropy_guard_trigger_pct=trigger_pct,
         validation_reward=val_reward,
     )

@@ -32,6 +32,9 @@ from rlvr.crps import (
 )
 from trl import GRPOTrainer
 
+CORRECTNESS_IDX = 0
+FORMAT_IDX = 1
+
 
 class GRPOTrainerWithFailureMining(GRPOTrainer):
     """GRPOTrainer with RL-ZVP / POPO / CRPS failure mining integration.
@@ -122,9 +125,19 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         )
 
         if self.enable_crps and self.state.global_step > 0:
-            self._maybe_record_success_traces(completion_ids, rewards, inputs, num_gen, num_groups)
+            self._maybe_record_success_traces(
+                completion_ids, rewards_per_func, inputs, num_gen, num_groups,
+            )
 
         return output
+
+    @staticmethod
+    def _crps_failure_key(inp: dict) -> str:
+        sample_id = inp.get("sample_id", "") or ""
+        domain = inp.get("domain", "")
+        puzzle_type = inp.get("puzzle_type", domain) or domain
+        difficulty = inp.get("difficulty_tag", "medium")
+        return f"{sample_id}:{puzzle_type}:{difficulty}"
 
     def _inject_crps_hints(self, inputs) -> list:
         if not self.enable_crps or len(self.success_trace_store) == 0:
@@ -141,7 +154,7 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
 
             domain = inp.get("domain", "")
             puzzle_type = inp.get("puzzle_type", domain) or domain
-            failure_key = f"{puzzle_type}:{difficulty}"
+            failure_key = self._crps_failure_key(inp)
 
             trace = find_related_success_trace(
                 traces, puzzle_type=puzzle_type, difficulty_tag=difficulty,
@@ -151,8 +164,9 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
                 continue
 
             failure_count = self._failure_counter.get(failure_key, 0)
-            fraction = get_crps_suffix_fraction(failure_count + 1)
+            fraction = get_crps_suffix_fraction(failure_count)
             if fraction <= 0.0:
+                self._failure_counter[failure_key] = failure_count + 1
                 continue
 
             suffix = build_progressive_suffix(trace, fraction)
@@ -183,26 +197,27 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
                     start = g * num_gen
                     end = start + num_gen
 
-                    group_correctness = rewards_per_func[start:end, 0].tolist()
-                    group_format = rewards_per_func[start:end, 1].tolist()
+                    group_correctness = rewards_per_func[start:end, CORRECTNESS_IDX].tolist()
+                    group_format = rewards_per_func[start:end, FORMAT_IDX].tolist()
                     group_rewards = rewards[start:end].tolist()
 
-                    is_correctness_zero = is_zero_variance_group(group_correctness) and abs(group_correctness[0]) < 1e-6
-                    is_format_zero = is_zero_variance_group(group_format) and abs(group_format[0]) < 1e-6
-                    is_composite_zero = is_zero_variance_group(group_rewards)
+                    is_correctness_zero = (
+                        is_zero_variance_group(group_correctness) and abs(group_correctness[0]) < 1e-6
+                    )
+                    is_format_zero = (
+                        is_zero_variance_group(group_format) and abs(group_format[0]) < 1e-6
+                    )
+                    is_composite_zero = (
+                        is_zero_variance_group(group_rewards) and abs(group_rewards[0]) < 1e-6
+                    )
 
-                    if is_correctness_zero or is_format_zero or is_composite_zero:
+                    if is_correctness_zero:
+                        # Only override when correctness itself is degenerate.
                         zero_var_count += 1
-                        all_wrong = (rewards_per_func[start:end, 0] < 0.5).all().item()
+                        all_wrong = (rewards_per_func[start:end, CORRECTNESS_IDX] < 0.5).all().item()
                         group_logps = old_per_token_logps[start:end]
                         confidences = torch.exp(group_logps).float()
-
-                        if is_correctness_zero:
-                            signals = -confidences
-                        elif all_wrong:
-                            signals = -confidences
-                        else:
-                            signals = 1.0 - confidences
+                        signals = -confidences if all_wrong else (1.0 - confidences)
 
                         signals = signals * completion_mask[start:end].float()
                         mask_sums = completion_mask[start:end].sum(dim=1).clamp(min=1)
@@ -210,6 +225,10 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
 
                         for j in range(end - start):
                             advantages[start + j] = scalar_advantages[j]
+                    elif is_format_zero or is_composite_zero:
+                        # Log for monitoring, but do not override advantages —
+                        # correctness may still vary meaningfully within the group.
+                        zero_var_count += 1
 
                 output["advantages"] = advantages
 
@@ -241,7 +260,7 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             "replay_buffer_size": float(len(self.replay_buffer)),
         }
 
-    def _maybe_record_success_traces(self, completion_ids, rewards, inputs,
+    def _maybe_record_success_traces(self, completion_ids, rewards_per_func, inputs,
                                       num_gen, num_groups):
         if completion_ids is None:
             return
@@ -249,27 +268,30 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         for g in range(num_groups):
             start = g * num_gen
             end = start + num_gen
-            group_rewards = rewards[start:end].tolist()
+            group_correct = rewards_per_func[start:end, CORRECTNESS_IDX]
+            group_format = rewards_per_func[start:end, FORMAT_IDX]
             group_inputs = inputs[start:end]
 
-            for i, r in enumerate(group_rewards):
-                if abs(r - 1.0) < 1e-6:
+            for i in range(end - start):
+                if group_correct[i] >= 1.0 - 1e-6 and group_format[i] >= 1.0 - 1e-6:
                     idx = start + i
                     token_ids = completion_ids[idx].tolist()
-                    decoded_tokens = [
-                        self.processing_class.decode([t])
-                        for t in token_ids
-                    ]
+                    # Decode the full span at once to preserve Arabic subword morphology.
+                    full_text = self.processing_class.decode(token_ids, skip_special_tokens=True)
                     difficulty = group_inputs[i].get("difficulty_tag", "hard")
                     puzzle = group_inputs[i].get("puzzle_type", "") or group_inputs[i].get("domain", "")
+                    sample_id = group_inputs[i].get("sample_id", "")
                     trace = SuccessTrace(
-                        prompt_id=group_inputs[i].get("sample_id", ""),
+                        prompt_id=sample_id,
                         puzzle_type=puzzle,
                         difficulty_tag=difficulty,
-                        token_sequence=decoded_tokens,
+                        token_sequence=full_text,
                         step_recorded=self.state.global_step,
                     )
                     self.success_trace_store.add(trace)
+                    # Reset CRPS failure counter on success for this sample.
+                    failure_key = self._crps_failure_key(group_inputs[i])
+                    self._failure_counter.pop(failure_key, None)
                     break
 
     def log_metrics(self, split, metrics, **kwargs):
