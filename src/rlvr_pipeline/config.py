@@ -1,4 +1,4 @@
-﻿"""
+"""
 Training configuration.
 
 Maps user-facing settings to TRL's GRPOConfig + QLoRA (bitsandbytes + peft).
@@ -35,15 +35,15 @@ ScaleRewards = Literal["group", "batch", "off"]
 
 
 @dataclass
-class PipelineConfig:
-    # ── Model ──
+class RLVRConfig:
+    # Model
     model_name: str = "Qwen/Qwen3.5-2B"
     load_in_4bit: bool = True
     bnb_4bit_compute_dtype: str = "bfloat16"
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_use_double_quant: bool = True
 
-    # ── LoRA / QLoRA ──
+    # LoRA / QLoRA
     lora_r: int = 64
     lora_alpha: int = 128
     lora_dropout: float = 0.05
@@ -56,21 +56,22 @@ class PipelineConfig:
         ]
     )
 
-    # ── Data ──
+    # Data
     train_data_path: str = ""
     eval_data_path: str = ""
     coldstart_data_path: str = ""
     sft_checkpoint_path: str = ""
     system_prompt: str = DEFAULT_SYSTEM_PROMPT
 
-    # ── Generation (GRPO group sampling) ──
+    # Generation (GRPO group sampling)
     num_generations: int = 8
-    max_completion_length: int = 512
-    temperature: float = 1.0
+    max_completion_length: int = 384
+    temperature: float = 1.15
     top_p: float = 0.95
     top_k: int = 20
+    stop_strings: Optional[list[str]] = field(default_factory=lambda: ["</answer>"])
 
-    # ── Training ──
+    # Training
     learning_rate: float = 1e-5
     num_train_epochs: int = 1
     per_device_train_batch_size: int = 4
@@ -82,7 +83,7 @@ class PipelineConfig:
     optim: str = "paged_adamw_8bit"
     seed: int = 42
 
-    # ── Algorithm (2026) ──
+    # Algorithm
     loss_type: LossType = "dr_grpo"
     scale_rewards: ScaleRewards = "batch"
     beta: float = 0.04
@@ -91,25 +92,40 @@ class PipelineConfig:
     importance_sampling_level: ImportanceSamplingLevel = "token"
     mask_truncated_completions: bool = True
 
-    # ── Reward weights (0.6 correct + 0.2 format + 0.05 lang − 0.5 leak − 0.3 struct) ──
+    # Reward weights: [correctness, format, language, answer_leak, structural_leak, length]
     reward_weights: list[float] = field(
-        default_factory=lambda: [0.6, 0.2, 0.05, 0.5, 0.3]
+        default_factory=lambda: [0.6, 0.2, 0.05, 0.5, 0.3, 0.15]
     )
 
-    # ── Failure Mining (RL-ZVP / POPO / discard) ──
+    # Failure mining
     zero_variance_strategy: Literal["direct_scoring", "replay_buffer", "discard"] = "direct_scoring"
     replay_buffer_size: int = 512
 
-    # ── Curriculum Learning (E2H Reasoner Gaussian schedule) ──
+    # Curriculum
     curriculum_schedule_type: Literal["gaussian", "fixed_switch", "random_mix", "none"] = "gaussian"
     sigma_fraction: float = 0.2
 
-    # ── CRPS (progressive suffix hints for hard stage) ──
+    # CRPS
     enable_crps: bool = True
     crps_max_age_steps: int = 100
     crps_max_traces: int = 256
 
-    # ── Infrastructure ──
+    # Stability guards
+    enable_stability_callback: bool = True
+    stability_consecutive: int = 2
+    entropy_collapse_action: Literal["warn", "reduce_lr", "stop"] = "reduce_lr"
+    entropy_lr_reduction_factor: float = 0.5
+    enable_adaptive_beta: bool = True
+    kl_near_zero_threshold: float = 1e-3
+    stuck_beta: float = 0.02
+    enable_adaptive_temperature: bool = False
+    entropy_target_min: float = 2.0
+    temp_bump: float = 0.15
+    temp_max: float = 1.6
+    temp_bump_cooldown_steps: int = 3
+    early_diag_steps: int = 30
+
+    # Infrastructure
     output_dir: str = "./outputs"
     logging_steps: int = 10
     save_steps: int = 500
@@ -121,30 +137,20 @@ class PipelineConfig:
     use_wandb: bool = False
     wandb_project: str = "arabic-reasoning-rlvr"
 
-    # ── Logging ──
+    # Logging
     log_completions: bool = True
     num_completions_to_print: int = 4
 
-    # ── Extra ──
-    stop_strings: Optional[list[str]] = None
     max_steps: Optional[int] = None
 
-    # ──────────────────────────────────────────────
-    #  Serialization
-    # ──────────────────────────────────────────────
-
     @classmethod
-    def from_yaml(cls, path: str | Path) -> "PipelineConfig":
+    def from_yaml(cls, path: str | Path) -> "RLVRConfig":
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
         return cls(**data)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-
-    # ──────────────────────────────────────────────
-    #  Builders
-    # ──────────────────────────────────────────────
 
     def build_grpo_config(self, include_model_init: bool = True) -> GRPOConfig:
         scale_rewards_val: Any
@@ -154,8 +160,7 @@ class PipelineConfig:
             scale_rewards_val = self.scale_rewards
 
         generation_kwargs: dict[str, Any] = {"top_p": self.top_p, "top_k": self.top_k}
-        if self.stop_strings:
-            generation_kwargs["stop_strings"] = self.stop_strings
+        # stop_strings are attached via StopStringCriteria in build_trainer (TRL generate path).
 
         kwargs: dict[str, Any] = dict(
             output_dir=self.output_dir,

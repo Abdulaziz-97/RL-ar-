@@ -1,4 +1,4 @@
-"""Tests for the SOTA config module."""
+"""Tests for the RLVR config module."""
 
 import tempfile
 from pathlib import Path
@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from rlvr_sota.config import SOTAConfig
+from rlvr_pipeline.config import RLVRConfig
 
 
 def test_default_config_values():
-    config = SOTAConfig()
+    config = RLVRConfig()
     assert config.loss_type == "dr_grpo"
     assert config.scale_rewards == "batch"
     assert config.beta == 0.04
@@ -47,7 +47,7 @@ def test_from_yaml(tmp_path):
     path = tmp_path / "config.yaml"
     with open(path, "w") as f:
         yaml.dump(yaml_content, f)
-    config = SOTAConfig.from_yaml(str(path))
+    config = RLVRConfig.from_yaml(str(path))
     assert config.model_name == "test/model"
     assert config.loss_type == "dapo"
     assert config.scale_rewards == "group"
@@ -57,7 +57,7 @@ def test_from_yaml(tmp_path):
 
 
 def test_build_grpo_config():
-    config = SOTAConfig(load_in_4bit=False, use_wandb=False, bf16=False)
+    config = RLVRConfig(load_in_4bit=False, use_wandb=False, bf16=False)
     grpo_config = config.build_grpo_config()
     assert grpo_config.loss_type == "dr_grpo"
     assert grpo_config.scale_rewards == "batch"
@@ -72,13 +72,13 @@ def test_build_grpo_config():
 
 
 def test_build_grpo_config_scale_rewards_off():
-    config = SOTAConfig(scale_rewards="off", load_in_4bit=False, use_wandb=False, bf16=False)
+    config = RLVRConfig(scale_rewards="off", load_in_4bit=False, use_wandb=False, bf16=False)
     grpo_config = config.build_grpo_config()
     assert grpo_config.scale_rewards in (False, "none", None)
 
 
 def test_build_grpo_config_gspo_mode():
-    config = SOTAConfig(
+    config = RLVRConfig(
         importance_sampling_level="sequence",
         load_in_4bit=False,
         use_wandb=False,
@@ -89,7 +89,7 @@ def test_build_grpo_config_gspo_mode():
 
 
 def test_build_grpo_config_gspo_token_mode():
-    config = SOTAConfig(
+    config = RLVRConfig(
         importance_sampling_level="sequence_token",
         load_in_4bit=False,
         use_wandb=False,
@@ -100,16 +100,16 @@ def test_build_grpo_config_gspo_token_mode():
 
 
 def test_build_quantization_config():
-    config = SOTAConfig(load_in_4bit=True)
+    config = RLVRConfig(load_in_4bit=True)
     quant_config = config.build_quantization_config()
     assert quant_config is not None
 
-    config_no_quant = SOTAConfig(load_in_4bit=False)
+    config_no_quant = RLVRConfig(load_in_4bit=False)
     assert config_no_quant.build_quantization_config() is None
 
 
 def test_build_peft_config():
-    config = SOTAConfig()
+    config = RLVRConfig()
     peft_config = config.build_peft_config()
     assert peft_config.r == 64
     assert peft_config.lora_alpha == 128
@@ -117,12 +117,12 @@ def test_build_peft_config():
 
 
 def test_build_model_init_kwargs():
-    config = SOTAConfig(load_in_4bit=True, bf16=True)
+    config = RLVRConfig(load_in_4bit=True, bf16=True)
     kwargs = config.build_model_init_kwargs()
     assert "quantization_config" in kwargs
     assert "torch_dtype" in kwargs
 
-    config_no_quant = SOTAConfig(load_in_4bit=False, bf16=True)
+    config_no_quant = RLVRConfig(load_in_4bit=False, bf16=True)
     kwargs = config_no_quant.build_model_init_kwargs()
     assert "quantization_config" not in kwargs
 
@@ -133,7 +133,7 @@ def test_load_example_yaml():
     config_path = repo_root / "configs" / "qwen_4b_qlora.yaml"
     if not config_path.exists():
         pytest.skip("Example config not found")
-    config = SOTAConfig.from_yaml(str(config_path))
+    config = RLVRConfig.from_yaml(str(config_path))
     assert config.model_name == "Qwen/Qwen3.5-2B"
     assert config.loss_type == "dr_grpo"
     assert config.load_in_4bit is True

@@ -11,8 +11,8 @@ import pytest
 import yaml
 
 from rlvr.reward_composer import reward_format
-from rlvr_sota.data import load_cold_start_sft_dataset, load_rlvr_dataset
-from rlvr_sota.rewards import correctness_reward_func, format_reward_func
+from rlvr_pipeline.data import load_cold_start_sft_dataset, load_rlvr_dataset
+from rlvr_pipeline.rewards import correctness_reward_func, format_reward_func
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DATA = PROJECT_ROOT / "data"
@@ -162,7 +162,7 @@ def test_v2_logic_correctness_with_canonical_separators(v2_ready):
 
 def test_v2_every_cold_row_scores_correctness_one(v2_ready):
     """Full-corpus: cold teacher response must score correctness=1 under TRL GT serialization."""
-    from rlvr_sota.data import DOMAIN_MAP, _serialize_ground_truth
+    from rlvr_pipeline.data import DOMAIN_MAP, _serialize_ground_truth
 
     fails = []
     for r in _load_jsonl(COLD_FULL):
@@ -184,7 +184,7 @@ def test_v2_every_cold_row_scores_correctness_one(v2_ready):
 
 def test_v2_every_rlvr_train_perfect_completion_scores_one(v2_ready):
     """If the model emitted the canonical answer, reward must be 1.0 for every train row."""
-    from rlvr_sota.data import load_rlvr_dataset
+    from rlvr_pipeline.data import load_rlvr_dataset
 
     rows = {r["id"]: r for r in _load_jsonl(RLVR_TRAIN)}
     ds = load_rlvr_dataset(RLVR_TRAIN)

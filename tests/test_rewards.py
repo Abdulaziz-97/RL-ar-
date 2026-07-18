@@ -1,6 +1,6 @@
 """Tests for the TRL-compatible reward functions."""
 
-from rlvr_sota.rewards import (
+from rlvr_pipeline.rewards import (
     ALL_REWARD_FUNCS,
     DEFAULT_REWARD_WEIGHTS,
     answer_leak_penalty_func,

@@ -26,14 +26,14 @@ from rlvr.crps import (
 
 
 def _make_trainer(zero_variance_strategy="direct_scoring", enable_crps=False):
-    from rlvr_sota.failure_mining_trainer import GRPOTrainerWithFailureMining
+    from rlvr_pipeline.failure_mining_trainer import GRPOTrainerWithFailureMining
 
     model = MagicMock()
     model.training = True
     model.parameters = lambda: [MagicMock(requires_grad=True)]
 
     with patch.multiple(
-        "rlvr_sota.failure_mining_trainer.GRPOTrainer",
+        "rlvr_pipeline.failure_mining_trainer.GRPOTrainer",
         __init__=MagicMock(return_value=None),
         create_optimizer_and_scheduler=MagicMock(),
     ):

@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from rlvr_sota.cli import main, _build_arg_parser
+from rlvr_pipeline.cli import main, _build_arg_parser
 
 
 def test_arg_parser_train_command():

@@ -2,7 +2,7 @@
 
 import pytest
 
-from rlvr_sota.curriculum_sampler import CurriculumSampler, CurriculumCallback
+from rlvr_pipeline.curriculum_sampler import CurriculumSampler, CurriculumCallback
 
 
 def test_curriculum_sampler_initializes():

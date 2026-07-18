@@ -47,7 +47,7 @@ def main() -> None:
     py = sys.executable
 
     run([
-        py, "-u", "-m", "rlvr_sota", "sft",
+        py, "-u", "-m", "rlvr_pipeline", "sft",
         "--config", args.sft_config,
         "--output", args.sft_output,
         "--num-train-epochs", str(args.sft_epochs),
@@ -59,7 +59,7 @@ def main() -> None:
     ])
 
     run([
-        py, "-u", "-m", "rlvr_sota", "train",
+        py, "-u", "-m", "rlvr_pipeline", "train",
         "--config", args.grpo_config,
         "--sft-checkpoint", args.sft_output,
         "--output", args.grpo_output,

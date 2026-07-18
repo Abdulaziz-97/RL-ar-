@@ -3,7 +3,7 @@
 ## Table of Contents
 
 1. [What this pipeline does](#1-what-this-pipeline-does)
-2. [Where things live (two codebases)](#2-where-things-live-two-codebases)
+2. [Where things live](#2-where-things-live)
 3. [Architecture deep dive](#3-architecture-deep-dive)
 4. [Setup from scratch](#4-setup-from-scratch)
 5. [The YAML config — every knob explained](#5-the-yaml-config--every-knob-explained)
@@ -50,74 +50,70 @@ The model learns to:
 - Output correct final answers inside `<answer>` tags
 - Avoid reward hacks (empty reasoning, English reasoning, answer leaks)
 
-## 2. Where things live (two codebases)
+## 2. Where things live
 
-There are **two** codebases, not one. They work together.
+This pack is **one folder**. Three packages under `src/` work together:
 
-### Codebase 1: `arabic-reasoning-rlvr` (the "math" layer)
-
-```
-C:\Users\Azooo\arabic-reasoning-rlvr\
-  src/rlvr/
-    config.py               -- PipelineConfig dataclass
-    dataset_loader.py       -- Module 1: JSON/JSONL loading + schema validation
-    rollout_engine.py       -- Module 2: generate_group() stub (tested with mocks)
-    reward_composer.py      -- Module 3: 5 reward scoring functions
-    difficulty_labeler.py   -- Module 4: error-rate quartile labeling
-    advantage_calculator.py -- Module 5: GRPO advantage formula
-    failure_bank.py         -- Module 6: zero-reward group banking
-    entropy_guard.py        -- Module 7: Clip-Cov / KL-Cov (pure Python)
-    policy_update.py        -- Module 8: GRPO/GSPO loss (PyTorch)
-    monitoring.py           -- dashboard metrics computation
-    pipeline.py             -- orchestrator tying all 8 modules
-  tests/                    -- 100 unit tests
-```
-
-**Role**: The algorithmic brain. All reward math, advantage computation, entropy guard logic lives here. It is fully unit-tested with mocked data (100 tests). It has **zero model integration** — pure functions operating on strings and numbers.
-
-### Codebase 2: `arabic-reasoning-rlvr-sota` (the "training" layer)
+### `src/rlvr` — math layer
 
 ```
-C:\Users\Azooo\arabic-reasoning-rlvr-sota\
-  src/rlvr_sota/
-    config.py      -- SOTAConfig → TRL GRPOConfig + QLoRA builders
-    rewards.py     -- 5 TRL-compatible reward functions (wraps Codebase 1)
-    data.py        -- JSONL → HuggingFace Dataset (chat-template formatting)
-    trainer.py     -- build_trainer() assembles GRPOTrainer
-    cli.py         -- python -m rlvr_sota train --config ...
-  configs/
-    qwen_4b_qlora.yaml  -- 8GB local config
-    cloud_a100.yaml     -- 80GB cloud config
-  tests/           -- 39 tests (6 full training integration tests)
+src/rlvr/
+  config.py               -- PipelineConfig dataclass
+  dataset_loader.py       -- JSON/JSONL loading + schema validation
+  rollout_engine.py       -- generate_group() stub (tested with mocks)
+  reward_composer.py      -- reward scoring functions
+  difficulty_labeler.py   -- error-rate quartile labeling
+  advantage_calculator.py -- GRPO advantage formula
+  failure_bank.py         -- zero-reward group banking
+  entropy_guard.py        -- Clip-Cov / KL-Cov
+  policy_update.py        -- GRPO/GSPO loss (PyTorch)
+  monitoring.py           -- dashboard metrics
+  pipeline.py             -- orchestrator
 ```
 
-**Role**: The training engine. Wraps TRL's `GRPOTrainer` (the SOTA open-source GRPO implementation). Handles model loading, QLoRA, generation, batching, optimizer, checkpointing, wandb logging. **Imports Codebase 1** for reward computation via editable pip install.
+Pure functions for rewards, advantages, and guards. No model loading here.
+
+### `src/rlvr_pipeline` — training layer
+
+```
+src/rlvr_pipeline/
+  config.py      -- RLVRConfig -> TRL GRPOConfig + QLoRA builders
+  rewards.py     -- TRL-compatible reward wrappers (calls rlvr)
+  data.py        -- JSONL -> HuggingFace Dataset
+  trainer.py     -- build_trainer() / build_sft_trainer()
+  cli.py         -- python -m rlvr_pipeline train --config ...
+configs/
+  qwen_4b_qlora.yaml
+  qwen_4b_smoke_v11.yaml
+```
+
+Wraps TRL's GRPOTrainer for model load, QLoRA, generation, optimizer, checkpoints, and logging.
+
+### `src/rlvr_contracts` — shared contracts
+
+Parsers, answer specs, and verifiers shared by data acceptance and training rewards.
 
 ### How they connect
 
 ```
-rlvr_sota (Codebase 2)
-  imports →
-    rlvr (Codebase 1) — for compose_reward, reward_format, etc.
-  wraps →
-    TRL GRPOTrainer — for the actual training loop
+rlvr_pipeline
+  imports -> rlvr            (compose_reward, reward_format, ...)
+  imports -> rlvr_contracts  (parse / verify)
+  wraps   -> TRL GRPOTrainer (training loop)
 ```
 
-Codebase 2 installed Codebase 1 in editable mode:
-```bash
-pip install -e ../arabic-reasoning-rlvr
-```
+All three are on `PYTHONPATH` via `pip install -e .` from this folder.
 
 ## 3. Architecture deep dive
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     rlvr_sota (SOTA layer)                  │
+│                     rlvr_pipeline (training layer)                  │
 │                                                             │
-│  CLI: python -m rlvr_sota train --config config.yaml        │
+│  CLI: python -m rlvr_pipeline train --config config.yaml        │
 │    │                                                        │
 │    ▼                                                        │
-│  SOTAConfig.from_yaml() ─── reads YAML, builds GRPOConfig   │
+│  RLVRConfig.from_yaml() ─── reads YAML, builds GRPOConfig   │
 │    │                                                        │
 │    ▼                                                        │
 │  build_trainer()                                            │
@@ -144,7 +140,7 @@ pip install -e ../arabic-reasoning-rlvr
 │    │ 8. Log to wandb, save checkpoint              │         │
 │    └──────────────────────────────────────────────┘         │
 │                                                             │
-│  Key SOTA features:                                         │
+│  Key training features:                                         │
 │    • Dr. GRPO loss (removes response-length bias)           │
 │    • Batch-scale rewards (local mean + global std)          │
 │    • Asymmetric clipping (ε=0.2, ε_high=0.28 — DAPO)       │
@@ -190,28 +186,19 @@ pip install -e ../arabic-reasoning-rlvr
 ### Step-by-step
 
 ```powershell
-# 1. Clone or navigate to the project directories
-#    (These should already exist at the paths below)
+cd team_pack
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 
-# 2. Create and activate the SOTA venv
-& "C:\Users\Azooo\AppData\Local\Programs\Python\Python312\python.exe" `
-  -m venv C:\Users\Azooo\arabic-reasoning-rlvr-sota\.venv
-
-C:\Users\Azooo\arabic-reasoning-rlvr-sota\.venv\Scripts\Activate.ps1
-
-# 3. Install PyTorch with CUDA
+# Install PyTorch with CUDA
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
-# 4. Install the SOTA pipeline dependencies
-pip install trl peft bitsandbytes accelerate wandb pyyaml pytest pytest-cov
+# Install this pack
+pip install -r requirements.txt
+pip install -e .
 
-# 5. Install the math layer (Codebase 1) in editable mode
-pip install -e C:\Users\Azooo\arabic-reasoning-rlvr
-
-# 6. Verify everything works
-cd C:\Users\Azooo\arabic-reasoning-rlvr-sota
-pytest -q
-# Expected: 39 passed
+# Verify
+pytest -q --ignore=tests/rlvr
 ```
 
 ### Verify CUDA is available
@@ -298,7 +285,7 @@ seed: 42                          # Reproducibility seed
 - Effective batch size = `per_device_train_batch_size × num_generations × gradient_accumulation_steps`. For GRPO, effective batch should be ≥ 128 tokens.
 - `learning_rate`: For LoRA, 1e-5 to 5e-5 is typical. Full fine-tuning uses 1e-6.
 
-### Algorithm — this is where SOTA lives
+### Algorithm
 
 ```yaml
 loss_type: "dr_grpo"              # Dr. GRPO: removes response-length bias
@@ -315,7 +302,7 @@ mask_truncated_completions: true  # Ignore truncated (cut-off) completions
 |---|---|---|
 | `"grpo"` | Original GRPO, divides by per-response length | Baseline |
 | `"dapo"` | Token-level normalization, reduces length bias | Better than grpo for long-CoT tasks |
-| `"dr_grpo"` | Constant normalization (max_completion_length), fully removes length bias | **SOTA 2026 default** — use this |
+| `"dr_grpo"` | Constant normalization (max_completion_length), fully removes length bias | **Recommended default** — use this |
 | `"sapo"` | Soft gating instead of hard clipping (Qwen team) | Experimental, may be more stable |
 | `"bnpo"` | Batch-normalized policy optimization | Alternative normalization scheme |
 
@@ -323,7 +310,7 @@ mask_truncated_completions: true  # Ignore truncated (cut-off) completions
 | `scale_rewards` | What it does | When to use |
 |---|---|---|
 | `"group"` (default) | Mean and std computed per-group (each prompt's G completions) | Original GRPO, per-prompt normalization |
-| `"batch"` | Mean per-group, std across entire batch | **SOTA 2026** — removes question-difficulty bias |
+| `"batch"` | Mean per-group, std across entire batch | **Recommended** — removes question-difficulty bias |
 | `"off"` | No scaling, use raw rewards | Experimental, only if rewards are well-calibrated |
 
 **Importance sampling level**:
@@ -475,30 +462,30 @@ The RTX 2080 Super has 8GB VRAM. This config uses aggressive memory optimization
 
 ```powershell
 # Activate the venv
-C:\Users\Azooo\arabic-reasoning-rlvr-sota\.venv\Scripts\Activate.ps1
+.venv\Scripts\Activate.ps1
 
 # Navigate to project
-cd C:\Users\Azooo\arabic-reasoning-rlvr-sota
+cd team_pack
 
 # Run with the local QLoRA config
-python -m rlvr_sota train `
+python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
   --data data/example_math.jsonl
 
 # With wandb logging (set up wandb first: wandb login)
-python -m rlvr_sota train `
+python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
   --data data/example_math.jsonl `
   --wandb
 
 # Quick test — just 10 steps to verify everything works
-python -m rlvr_sota train `
+python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
   --data data/example_math.jsonl `
   --max-steps 10
 
 # With a different model (must match architecture for target_modules!)
-python -m rlvr_sota train `
+python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
   --data data/math.jsonl `
   --model "Qwen/Qwen2.5-7B-Instruct"
@@ -555,8 +542,8 @@ For real training runs (thousands of samples, multiple epochs), rent a cloud GPU
 # On cloud instance (Ubuntu)
 
 # Clone or copy the project
-git clone ... arabic-reasoning-rlvr-sota
-cd arabic-reasoning-rlvr-sota
+copy the team_pack folder
+cd team_pack
 
 # Create venv
 python3.12 -m venv .venv
@@ -579,7 +566,7 @@ wandb login
 
 ```bash
 # Full-precision or LoRA on cloud with larger batch
-python -m rlvr_sota train \
+python -m rlvr_pipeline train \
   --config configs/cloud_a100.yaml \
   --data data/math.jsonl \
   --wandb
@@ -810,7 +797,7 @@ When `use_wandb: true`:
 
 ```powershell
 # Enable wandb
-python -m rlvr_sota train --config configs/qwen_4b_qlora.yaml --data data/math.jsonl --wandb
+python -m rlvr_pipeline train --config configs/qwen_4b_qlora.yaml --data data/math.jsonl --wandb
 ```
 
 ### Without wandb
@@ -853,7 +840,7 @@ Entropy collapse is when the model's output distribution narrows so much it prod
 ### Running tests
 
 ```powershell
-cd C:\Users\Azooo\arabic-reasoning-rlvr-sota
+cd team_pack
 pytest -v
 ```
 
@@ -884,7 +871,7 @@ These tests prove the entire pipeline — generate, reward, advantage, loss, bac
 
 ```powershell
 cd C:\Users\Azooo\arabic-reasoning-rlvr
-.\.venv\Scripts\Activate.ps1
+.venv\Scripts\Activate.ps1
 pytest -v
 ```
 
@@ -967,14 +954,14 @@ But this slows down training significantly.
 
 ### Adding a new reward function
 
-1. Create the function in `rlvr.reward_composer` (Codebase 1):
+1. Create the function in `rlvr.reward_composer` (rlvr math layer):
 ```python
 def reward_novelty(completion: str) -> float:
     # Your logic here
     return score
 ```
 
-2. Add a TRL wrapper in `rlvr_sota.rewards` (Codebase 2):
+2. Add a TRL wrapper in `rlvr_pipeline.rewards` (rlvr_pipeline training layer):
 ```python
 def novelty_reward_func(prompts, completions, **kwargs):
     return [float(reward_novelty(extract_text(c))) for c in completions]
@@ -995,7 +982,7 @@ If a future TRL version adds a new loss type (e.g., "gspo_v2"), just set it in Y
 loss_type: "gspo_v2"
 ```
 
-If the loss type requires additional GRPOConfig params, add them to `SOTAConfig` and pass them in `build_grpo_config()`.
+If the loss type requires additional GRPOConfig params, add them to `RLVRConfig` and pass them in `build_grpo_config()`.
 
 ### Using the failure bank for curriculum learning
 
@@ -1012,14 +999,14 @@ from rlvr.failure_bank import set_current_stage, retrieve_banked_failures
 set_current_stage("hard")
 ```
 
-To use this with the SOTA pipeline, modify `trainer.py` to switch datasets between stages.
+To use this with the pipeline, modify `trainer.py` to switch datasets between stages.
 
 ### Adding cold-start SFT warm-up
 
 Before GRPO training, you can fine-tune the model on cold-start CoT data (where the model sees examples of correct `<think>...</think><answer>...</answer>` responses):
 
 ```python
-from rlvr_sota.data import load_cold_start_sft_dataset
+from rlvr_pipeline.data import load_cold_start_sft_dataset
 from trl import SFTTrainer
 
 sft_data = load_cold_start_sft_dataset("cold_start.jsonl", system_prompt)

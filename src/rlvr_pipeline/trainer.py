@@ -1,21 +1,136 @@
-﻿"""
-Trainer assembly — builds a GRPOTrainer with config + QLoRA + Arabic rewards
-+ failure mining (RL-ZVP/POPO) + curriculum learning (E2H Gaussian) + CRPS.
-
-Also provides cold-start SFT distillation before GRPO.
-"""
+"""Trainer assembly: SFT cold-start + GRPO with QLoRA, Arabic rewards, curriculum, CRPS."""
 
 from __future__ import annotations
 
 from typing import Any, Optional
 
-from rlvr_pipeline.config import PipelineConfig
+from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.data import load_rlvr_dataset, load_cold_start_sft_dataset
 from rlvr_pipeline.rewards import ALL_REWARD_FUNCS, DEFAULT_REWARD_WEIGHTS
 
+# Qwen3.5 injects a pre-closed empty <think></think> into generation prompts.
+# That makes reward_format unearnable; strip it so rollouts match SFT targets.
+_EMPTY_THINK_INJECTION = "{{- '<think>\\n\\n</think>\\n\\n' }}"
+
+
+def strip_think_injection(template: str | None) -> str | None:
+    """Remove the pre-closed empty <think> block from a chat template string."""
+    if not template or _EMPTY_THINK_INJECTION not in template:
+        return template
+    return template.replace(_EMPTY_THINK_INJECTION, "")
+
+
+def load_sft_adapter_strict(peft_model, ckpt_dir: str) -> None:
+    """Load SFT LoRA into an existing PEFT model, remapping Qwen3.5 key prefixes.
+
+    Checkpoints may use ``model.language_model.layers.*`` while GRPO loads
+    ``model.layers.*``. PEFT warns and silently loads nothing on mismatch;
+    this remaps keys and fails hard if anything is left unmatched.
+    """
+    from pathlib import Path
+
+    from peft.utils.save_and_load import (
+        get_peft_model_state_dict,
+        set_peft_model_state_dict,
+    )
+    from safetensors.torch import load_file
+
+    ckpt = load_file(str(Path(ckpt_dir) / "adapter_model.safetensors"))
+    live_keys = set(get_peft_model_state_dict(peft_model).keys())
+
+    remapped = {}
+    for key, value in ckpt.items():
+        candidates = (key, key.replace(".language_model.", "."))
+        target = next((c for c in candidates if c in live_keys), None)
+        if target is None:
+            raise RuntimeError(f"SFT adapter key cannot be mapped onto live model: {key}")
+        remapped[target] = value
+
+    missing = live_keys - set(remapped)
+    if missing:
+        raise RuntimeError(
+            f"SFT adapter checkpoint is missing {len(missing)} keys, e.g. {sorted(missing)[:3]}"
+        )
+
+    set_peft_model_state_dict(peft_model, remapped)
+    print(f"SFT adapter loaded strictly: {len(remapped)} tensors from {ckpt_dir}", flush=True)
+
+
+def fix_chat_template(processing_class) -> bool:
+    """Patch a tokenizer/processor in place. Returns True if a fix was applied."""
+    if processing_class is None:
+        return False
+    tok = processing_class
+    if hasattr(tok, "tokenizer"):
+        tok = tok.tokenizer
+    template = getattr(tok, "chat_template", None)
+    fixed = strip_think_injection(template)
+    if fixed == template:
+        return False
+    tok.chat_template = fixed
+    if tok is not processing_class and hasattr(processing_class, "chat_template"):
+        processing_class.chat_template = fixed
+    return True
+
+
+def _attach_stop_string_criteria(trainer, stop_strings: list[str]) -> None:
+    """Stop at </answer> via StopStringCriteria (TRL generate has no tokenizer=)."""
+    if not stop_strings:
+        return
+
+    from transformers.generation.stopping_criteria import (
+        StoppingCriteriaList,
+        StopStringCriteria,
+    )
+
+    tok = getattr(trainer, "processing_class", None) or getattr(trainer, "_tokenizer", None)
+    if tok is None:
+        return
+    if hasattr(tok, "tokenizer"):
+        tok = tok.tokenizer
+
+    criteria = StoppingCriteriaList(
+        [StopStringCriteria(tokenizer=tok, stop_strings=stop_strings)]
+    )
+
+    gen_config = getattr(trainer, "generation_config", None)
+    if gen_config is not None and getattr(gen_config, "stop_strings", None):
+        gen_config.stop_strings = None
+
+    targets = [trainer.model]
+    base_getter = getattr(trainer.model, "get_base_model", None)
+    if callable(base_getter):
+        try:
+            base = base_getter()
+            if base is not None and base not in targets:
+                targets.append(base)
+        except Exception:
+            pass
+
+    for model in targets:
+        if getattr(model, "_rlvr_answer_stop_patched", False):
+            continue
+        original_generate = model.generate
+
+        def generate_with_answer_stop(*args, _original=original_generate, **kwargs):
+            existing = kwargs.get("stopping_criteria")
+            if existing is None:
+                kwargs["stopping_criteria"] = criteria
+            else:
+                kwargs["stopping_criteria"] = StoppingCriteriaList(
+                    list(existing) + list(criteria)
+                )
+            gc = kwargs.get("generation_config")
+            if gc is not None and getattr(gc, "stop_strings", None):
+                gc.stop_strings = None
+            return _original(*args, **kwargs)
+
+        model.generate = generate_with_answer_stop
+        model._rlvr_answer_stop_patched = True
+
 
 def build_sft_trainer(
-    config: PipelineConfig,
+    config: RLVRConfig,
     sft_dataset=None,
     model=None,
     processing_class=None,
@@ -70,11 +185,14 @@ def build_sft_trainer(
         processing_class=processing_class,
     )
 
+    if fix_chat_template(getattr(trainer, "processing_class", None)):
+        print("Chat template fixed: removed empty <think> injection (SFT)", flush=True)
+
     return trainer
 
 
 def build_trainer(
-    config: PipelineConfig,
+    config: RLVRConfig,
     train_dataset=None,
     eval_dataset=None,
     reward_funcs=None,
@@ -82,19 +200,7 @@ def build_trainer(
     model=None,
     processing_class=None,
 ):
-    """Build a ready-to-train GRPOTrainer with failure mining + curriculum.
-
-    This is Stage 2 of the pipeline. Run build_sft_trainer() first for cold-start.
-
-    Args:
-        config: PipelineConfig with all hyperparameters.
-        train_dataset: Optional pre-loaded HF Dataset.
-        eval_dataset: Optional pre-loaded eval Dataset.
-        reward_funcs: Optional list of reward functions.
-        reward_weights: Optional weights.
-        model: Optional pre-loaded model.
-        processing_class: Tokenizer/processor. Required when model is pre-loaded.
-    """
+    """Build GRPOTrainer (Stage 2). Run build_sft_trainer() first for cold-start."""
     if reward_funcs is None:
         reward_funcs = ALL_REWARD_FUNCS
     if reward_weights is None:
@@ -159,11 +265,15 @@ def build_trainer(
     trainer = TrainerCls(**trainer_kwargs)
     print(f"Trainer ready: {trainer.__class__.__name__}", flush=True)
 
-    if config.sft_checkpoint_path and hasattr(trainer.model, "load_adapter"):
-        from peft import PeftModel
-        trainer.model = PeftModel.from_pretrained(
-            trainer.model, config.sft_checkpoint_path, is_trainable=True
-        )
+    if fix_chat_template(getattr(trainer, "processing_class", None)):
+        print("Chat template fixed: removed empty <think> injection (GRPO rollouts)", flush=True)
+
+    # Do not PeftModel.from_pretrained on an existing PeftModel (silent no-load).
+    if config.sft_checkpoint_path:
+        load_sft_adapter_strict(trainer.model, config.sft_checkpoint_path)
+
+    if config.stop_strings:
+        _attach_stop_string_criteria(trainer, config.stop_strings)
 
     if (
         use_failure_mining
@@ -172,6 +282,26 @@ def build_trainer(
         and "difficulty_tag" in train_dataset.column_names
     ):
         trainer.attach_curriculum_sampler(config, train_dataset)
+
+    if config.enable_stability_callback:
+        from rlvr_pipeline.stability_callback import StabilityCallback
+
+        stability_cb = StabilityCallback(
+            consecutive=config.stability_consecutive,
+            entropy_action=config.entropy_collapse_action,
+            lr_reduction_factor=config.entropy_lr_reduction_factor,
+            enable_adaptive_beta=config.enable_adaptive_beta,
+            kl_near_zero_threshold=config.kl_near_zero_threshold,
+            stuck_beta=config.stuck_beta,
+            enable_adaptive_temperature=config.enable_adaptive_temperature,
+            entropy_target_min=config.entropy_target_min,
+            temp_bump=config.temp_bump,
+            temp_max=config.temp_max,
+            temp_bump_cooldown_steps=config.temp_bump_cooldown_steps,
+            early_diag_steps=config.early_diag_steps,
+        )
+        stability_cb.trainer = trainer
+        trainer.add_callback(stability_cb)
 
     return trainer
 

@@ -14,10 +14,10 @@ import sys
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-# Allow sibling checkout: arabic-reasoning-rlvr-sota/src/rlvr_contracts
-_SOTA_SRC = Path(__file__).resolve().parents[3] / "arabic-reasoning-rlvr-sota" / "src"
-if _SOTA_SRC.is_dir() and str(_SOTA_SRC) not in sys.path:
-    sys.path.insert(0, str(_SOTA_SRC))
+# Prefer local pack layout: src/rlvr + src/rlvr_contracts
+_SRC_ROOT = Path(__file__).resolve().parents[1]
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
 
 from rlvr_contracts.answer_spec import AnswerSpec, AnswerSpecError, parse_answer_spec, reject_symbolic
 from rlvr_contracts.leak import (

@@ -1,4 +1,4 @@
-"""Shared test fixtures for the SOTA pipeline."""
+"""Shared test fixtures for the RLVR pipeline."""
 
 import json
 from pathlib import Path

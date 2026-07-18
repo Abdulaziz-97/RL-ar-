@@ -1,4 +1,4 @@
-﻿"""
+"""
 GRPOTrainer subclass with failure mining integration.
 
 Injects RL-ZVP (direct confidence-scaled scoring) for zero-variance groups,
@@ -39,7 +39,7 @@ FORMAT_IDX = 1
 class GRPOTrainerWithFailureMining(GRPOTrainer):
     """GRPOTrainer with RL-ZVP / POPO / CRPS failure mining integration.
 
-    Config flags (set via PipelineConfig):
+    Config flags (set via RLVRConfig):
         zero_variance_strategy: "direct_scoring" | "replay_buffer" | "discard"
         enable_crps: bool
     """
@@ -280,6 +280,8 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
                     token_ids = completion_ids[idx].tolist()
                     # Decode the full span at once to preserve Arabic subword morphology.
                     full_text = self.processing_class.decode(token_ids, skip_special_tokens=True)
+                    # Store as word list so build_progressive_suffix can take a suffix.
+                    words = full_text.split() if full_text.strip() else [full_text]
                     difficulty = group_inputs[i].get("difficulty_tag", "hard")
                     puzzle = group_inputs[i].get("puzzle_type", "") or group_inputs[i].get("domain", "")
                     sample_id = group_inputs[i].get("sample_id", "")
@@ -287,7 +289,7 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
                         prompt_id=sample_id,
                         puzzle_type=puzzle,
                         difficulty_tag=difficulty,
-                        token_sequence=full_text,
+                        token_sequence=words,
                         step_recorded=self.state.global_step,
                     )
                     self.success_trace_store.add(trace)

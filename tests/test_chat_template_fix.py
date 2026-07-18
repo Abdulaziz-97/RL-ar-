@@ -1,6 +1,6 @@
 """The Qwen3.5 empty-think injection must be stripped from generation prompts."""
 
-from rlvr_sota.trainer import _EMPTY_THINK_INJECTION, strip_think_injection
+from rlvr_pipeline.trainer import _EMPTY_THINK_INJECTION, strip_think_injection
 
 
 SNIPPET = (

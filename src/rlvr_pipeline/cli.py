@@ -1,12 +1,9 @@
-﻿"""
-Plug-and-play CLI entry point.
+"""
+Plug-and-play CLI.
 
-Usage:
     python -m rlvr_pipeline sft   --config configs/qwen_4b_qlora.yaml
-    python -m rlvr_pipeline train --config configs/qwen_4b_qlora.yaml
-    python -m rlvr_pipeline eval  --config configs/qwen_4b_qlora.yaml --data data/eval.jsonl --checkpoint outputs/
-
-Experiment runner uses --* overrides to sweep without duplicating YAML files.
+    python -m rlvr_pipeline train --config configs/qwen_4b_smoke_v11.yaml --sft-checkpoint ./runs/sft_v1
+    python -m rlvr_pipeline eval  --config configs/qwen_4b_qlora.yaml --data data/... --checkpoint outputs/
 """
 
 from __future__ import annotations
@@ -14,7 +11,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from rlvr_pipeline.config import PipelineConfig
+from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer, build_sft_trainer
 
 
@@ -100,10 +97,31 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--data", required=True, help="Eval data path (JSONL)")
     eval_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint dir")
 
+    # ── Audit cold-start ──
+    audit_parser = subparsers.add_parser(
+        "audit-coldstart", help="Audit cold-start JSONL for tag-boundary purity"
+    )
+    audit_parser.add_argument(
+        "--data",
+        default="data/arabic_reasoning_coldstart.jsonl",
+        help="Cold-start JSONL path",
+    )
+    audit_parser.add_argument("--max-preamble-words", type=int, default=5)
+    audit_parser.add_argument("--min-quality", type=float, default=0.5)
+    audit_parser.add_argument("--min-arabic-purity", type=float, default=0.7)
+    audit_parser.add_argument("--top", type=int, default=20)
+    audit_parser.add_argument("--json-out", help="Write full JSON report")
+    audit_parser.add_argument(
+        "--fail-above",
+        type=float,
+        default=None,
+        help="Exit 1 if impure_rate exceeds this fraction",
+    )
+
     return parser
 
 
-def _apply_overrides(config: PipelineConfig, args: argparse.Namespace) -> PipelineConfig:
+def _apply_overrides(config: RLVRConfig, args: argparse.Namespace) -> RLVRConfig:
     overrides = [
         ("train_data_path", "data"),
         ("eval_data_path", "eval"),
@@ -152,7 +170,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_arg_parser()
     args = parser.parse_args(argv)
 
-    config = PipelineConfig.from_yaml(args.config)
+    if args.command == "audit-coldstart":
+        from rlvr_pipeline.audit_coldstart import main as audit_main
+
+        audit_argv = ["--data", args.data]
+        audit_argv += ["--max-preamble-words", str(args.max_preamble_words)]
+        audit_argv += ["--min-quality", str(args.min_quality)]
+        audit_argv += ["--min-arabic-purity", str(args.min_arabic_purity)]
+        audit_argv += ["--top", str(args.top)]
+        if args.json_out:
+            audit_argv += ["--json-out", args.json_out]
+        if args.fail_above is not None:
+            audit_argv += ["--fail-above", str(args.fail_above)]
+        return audit_main(audit_argv)
+
+    config = RLVRConfig.from_yaml(args.config)
     config = _apply_overrides(config, args)
 
     if args.command == "sft":

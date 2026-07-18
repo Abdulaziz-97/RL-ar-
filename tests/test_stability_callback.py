@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from transformers.trainer_callback import TrainerControl, TrainerState
 from transformers.training_args import TrainingArguments
 
-from rlvr_sota.stability_callback import StabilityCallback
+from rlvr_pipeline.stability_callback import StabilityCallback
 
 
 def _args(lr=1e-5):

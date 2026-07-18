@@ -11,8 +11,8 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from rlvr.reward_composer import reward_format
-from rlvr_sota.config import DEFAULT_SYSTEM_PROMPT
-from rlvr_sota.trainer import fix_chat_template, load_sft_adapter_strict
+from rlvr_pipeline.config import DEFAULT_SYSTEM_PROMPT
+from rlvr_pipeline.trainer import fix_chat_template, load_sft_adapter_strict
 
 sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 

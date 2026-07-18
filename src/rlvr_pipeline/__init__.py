@@ -1,4 +1,4 @@
-﻿"""
+"""
 Arabic Reasoning RLVR Pipeline.
 
 Wraps TRL's GRPOTrainer (2026) with:
@@ -12,7 +12,7 @@ Wraps TRL's GRPOTrainer (2026) with:
 Plug-and-play: `python -m rlvr_pipeline train --config config.yaml --data data.jsonl`
 """
 
-from rlvr_pipeline.config import PipelineConfig
+from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer
 
-__all__ = ["PipelineConfig", "build_trainer"]
+__all__ = ["RLVRConfig", "build_trainer"]

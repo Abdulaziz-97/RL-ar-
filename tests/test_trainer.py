@@ -1,4 +1,4 @@
-﻿"""Integration tests for the SOTA GRPOTrainer pipeline with a tiny model.
+"""Integration tests for the RLVR GRPOTrainer pipeline with a tiny model.
 
 These tests verify the full training loop runs end-to-end:
   data â†’ generate G completions â†’ score rewards â†’ compute advantages â†’ loss â†’ backprop
@@ -8,9 +8,9 @@ import math
 
 import pytest
 
-from rlvr_sota.config import SOTAConfig
-from rlvr_sota.data import load_rlvr_dataset
-from rlvr_sota.trainer import build_trainer
+from rlvr_pipeline.config import RLVRConfig
+from rlvr_pipeline.data import load_rlvr_dataset
+from rlvr_pipeline.trainer import build_trainer
 
 
 def _tiny_config(tmp_path, **overrides):
@@ -51,7 +51,7 @@ def _tiny_config(tmp_path, **overrides):
         enable_stability_callback=False,
     )
     defaults.update(overrides)
-    return SOTAConfig(**defaults)
+    return RLVRConfig(**defaults)
 
 
 def test_trainer_constructs_with_tiny_model(tiny_model, tiny_tokenizer, math_jsonl, tmp_path):
@@ -92,13 +92,13 @@ def test_trainer_reward_functions_called(tiny_model, tiny_tokenizer, math_jsonl,
 
     call_count = [0]
     original_correctness = None
-    from rlvr_sota.rewards import correctness_reward_func
+    from rlvr_pipeline.rewards import correctness_reward_func
 
     def counting_correctness(prompts, completions, **kwargs):
         call_count[0] += 1
         return correctness_reward_func(prompts, completions, **kwargs)
 
-    from rlvr_sota.rewards import (
+    from rlvr_pipeline.rewards import (
         format_reward_func,
         language_reward_func,
         answer_leak_penalty_func,

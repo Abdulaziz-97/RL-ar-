@@ -1,4 +1,4 @@
-﻿"""Entry point for python -m rlvr_pipeline."""
+"""Entry point for python -m rlvr_pipeline."""
 from rlvr_pipeline.cli import main as _main
 import sys
 

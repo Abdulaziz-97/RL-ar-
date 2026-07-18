@@ -2,12 +2,12 @@
 
 Self-contained folder to run the full local pipeline: **SFT cold-start → GRPO (QLoRA)**.
 
-Both code layers live under `src/` (no second repo needed):
+Everything lives under `src/` in this folder:
 
 | Package | Role |
 |---------|------|
 | `rlvr` | Reward math, curriculum, failure mining, monitoring |
-| `rlvr_sota` | TRL trainers, configs, CLI, Arabic reward wrappers |
+| `rlvr_pipeline` | Trainers, configs, CLI, Arabic reward wrappers |
 | `rlvr_contracts` | Shared parse / verify contracts (data + rewards) |
 
 ## Requirements
@@ -19,7 +19,7 @@ Both code layers live under `src/` (no second repo needed):
 ## Setup
 
 ```bash
-cd arabic-rlvr-pipeline-team
+cd team_pack
 python -m venv .venv
 
 # Windows
@@ -61,7 +61,7 @@ Default: 2 SFT epochs → GRPO smoke with `configs/qwen_4b_smoke_v11.yaml` (30 s
 
 ```bash
 # 1) Cold-start SFT
-python -m rlvr_sota sft \
+python -m rlvr_pipeline sft \
   --config configs/qwen_4b_qlora.yaml \
   --output ./runs/sft_v1 \
   --num-train-epochs 2
@@ -70,7 +70,7 @@ python -m rlvr_sota sft \
 python scripts/format_probe_sft.py ./runs/sft_v1 512
 
 # 3) GRPO — recommended smoke recipe
-python -m rlvr_sota train \
+python -m rlvr_pipeline train \
   --config configs/qwen_4b_smoke_v11.yaml \
   --sft-checkpoint ./runs/sft_v1 \
   --output ./runs/grpo_v1 \
@@ -83,7 +83,7 @@ python -m rlvr_sota train \
 
 | File | Use |
 |------|-----|
-| `configs/qwen_4b_qlora.yaml` | Canonical QLoRA defaults |
+| `configs/qwen_4b_qlora.yaml` | Default QLoRA settings |
 | `configs/qwen_4b_smoke_v11.yaml` | Recommended GRPO smoke (post chat-template + adapter fixes) |
 
 ## Tests
@@ -108,13 +108,13 @@ pytest tests/rlvr -q
 ## Layout
 
 ```
-arabic-rlvr-pipeline-team/
+team_pack/
   configs/
   data/
   docs/
   scripts/
   src/rlvr/
-  src/rlvr_sota/
+  src/rlvr_pipeline/
   src/rlvr_contracts/
   tests/
   requirements.txt
