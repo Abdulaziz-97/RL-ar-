@@ -1,0 +1,120 @@
+{
+  "verdict": "PASS",
+  "cold_train_eval_overlap": 0,
+  "cold_train_n": 640,
+  "cold_eval_n": 160,
+  "gate": {
+    "pass": true,
+    "pass_rate_floor": 0.98,
+    "mean_rate": 1.0,
+    "checks": {
+      "no_trailing_salt": {
+        "ok": true,
+        "detail": 0
+      },
+      "no_marji_junk": {
+        "ok": true,
+        "detail": 0
+      },
+      "no_mutabaa_junk": {
+        "ok": true,
+        "detail": 0
+      },
+      "no_gt_in_prompt": {
+        "ok": true,
+        "rate": 1.0,
+        "fail_n": 0
+      },
+      "cold_xml_format": {
+        "ok": true,
+        "rate": 1.0
+      },
+      "rlvr_answer_filled": {
+        "ok": true,
+        "rate": 1.0
+      },
+      "no_final_gt_leak_think": {
+        "ok": true,
+        "rate": 1.0
+      },
+      "flash_agree_honest": {
+        "ok": true,
+        "soft_pass_n": 0,
+        "verify_method_lie_n": 0,
+        "flash_agree_true_n": 800
+      },
+      "flash_agree_coverage": {
+        "ok": true,
+        "rate": 1.0,
+        "true_n": 800,
+        "mode": "required"
+      },
+      "no_mmlu_in_sft": {
+        "ok": true,
+        "detail": 0
+      },
+      "logic_schema": {
+        "ok": true,
+        "rate": 1.0
+      },
+      "think_quality": {
+        "ok": true,
+        "rate": 1.0
+      },
+      "uniqueness": {
+        "ok": true,
+        "near_dup_pairs_rlvr": 0,
+        "near_dup_pairs_cold": 0
+      },
+      "difficulty_labels": {
+        "ok": true,
+        "rate": 1.0
+      },
+      "sizes": {
+        "ok": true,
+        "rlvr": 800,
+        "cold": 800
+      },
+      "unique_ids": {
+        "ok": true,
+        "rlvr_duplicate_id_rows": 0,
+        "cold_duplicate_id_rows": 0,
+        "rlvr_unique": 800,
+        "cold_unique": 800
+      },
+      "train_eval_id_overlap": {
+        "ok": true,
+        "rlvr_overlap": 0,
+        "cold_overlap": 0,
+        "cold_train_n": 640,
+        "cold_eval_n": 160,
+        "rlvr_train_n": 640,
+        "rlvr_eval_n": 160
+      },
+      "hard_share": {
+        "ok": true,
+        "share": 0.4
+      },
+      "domain_mix": {
+        "ok": true,
+        "mix": {
+          "math_comp": 180,
+          "gsm8k": 280,
+          "math": 180,
+          "logic": 160
+        }
+      },
+      "cold_answer_matches_gt": {
+        "ok": true,
+        "rate": 1.0
+      }
+    },
+    "corpus_version": "v1_frontier_regen",
+    "notes": {
+      "split_fix": "Uniquified duplicate cold refill IDs; re-split stratified ~80/20; train∩eval=0",
+      "soft_marji_stripped_prompts": 0,
+      "gt_in_prompt_policy": "Gate bans bare GT with len>=2 as whole token. 1-digit GT and substring-inside-larger-number (17 in 170) are intentional non-rejects.",
+      "math_cot_last_eq_line": "Last arithmetic line ending with = <value> is NOT treated as final-answer leak; only classic closers (الجواب النهائي / إذن…هو N) are banned."
+    }
+  }
+}

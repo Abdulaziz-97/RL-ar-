@@ -1,7 +1,7 @@
-﻿[project]
-name = "rlvr-pipeline"
+[project]
+name = "arabic-rlvr-pipeline"
 version = "0.1.0"
-description = "Arabic Reasoning RLVR Pipeline (TRL GRPOTrainer + QLoRA + Arabic rewards)"
+description = "Arabic Reasoning RLVR pipeline (SFT + GRPO/QLoRA) — team distribution pack"
 requires-python = ">=3.10"
 dependencies = []
 

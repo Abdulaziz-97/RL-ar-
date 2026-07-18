@@ -1,0 +1,89 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rlvr.local/schemas/problem.schema.json",
+  "title": "ProblemRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "problem_id",
+    "family_id",
+    "partition",
+    "domain",
+    "prompt",
+    "answer_spec",
+    "verifier_type",
+    "verifier_version",
+    "provenance",
+    "licensing"
+  ],
+  "properties": {
+    "problem_id": { "type": "string", "minLength": 1 },
+    "family_id": { "type": "string", "minLength": 1 },
+    "partition": {
+      "type": "string",
+      "enum": ["sft_train", "sft_eval", "rlvr_train", "rlvr_eval", "private_eval", "rejection_sft", "quarantine"]
+    },
+    "domain": { "type": "string", "enum": ["gsm8k", "math", "math_comp", "logic"] },
+    "prompt": { "type": "string", "minLength": 1 },
+    "answer_spec": {
+      "type": "object",
+      "required": ["type", "canonical"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["integer", "rational", "decimal_exact", "decimal_approx", "logic_json"]
+        },
+        "canonical": { "type": ["string", "number", "object", "array"] },
+        "tolerance": { "type": "number" },
+        "verifier_artifact": { "type": "string" },
+        "ground_truth_structured": {}
+      },
+      "additionalProperties": true,
+      "not": {
+        "properties": { "type": { "const": "symbolic" } }
+      }
+    },
+    "verifier_type": { "type": "string", "enum": ["python", "z3", "hybrid"] },
+    "verifier_version": { "type": "string", "minLength": 1 },
+    "lineage": {
+      "type": "object",
+      "properties": {
+        "parent_problem_id": { "type": "string" },
+        "generator_version": { "type": "string" },
+        "render_version": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": { "type": "string" },
+        "created_at": { "type": "string" },
+        "teacher_role": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "licensing": {
+      "type": "object",
+      "required": ["license"],
+      "properties": {
+        "license": { "type": "string" },
+        "attribution": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "empirical_difficulty": {
+      "type": "object",
+      "properties": {
+        "pass_at_8": { "type": "number", "minimum": 0, "maximum": 1 },
+        "band": {
+          "type": "string",
+          "enum": ["easy", "medium", "hard", "deferred", "mastered"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}
