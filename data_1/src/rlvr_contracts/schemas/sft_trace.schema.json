@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rlvr.local/schemas/sft_trace.schema.json",
+  "title": "SFTTraceRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "problem_id",
+    "family_id",
+    "partition",
+    "prompt",
+    "response",
+    "answer_spec",
+    "trace_audit",
+    "verifier_result",
+    "verifier_version"
+  ],
+  "properties": {
+    "problem_id": { "type": "string", "minLength": 1 },
+    "family_id": { "type": "string", "minLength": 1 },
+    "partition": {
+      "type": "string",
+      "enum": ["sft_train", "sft_eval", "rejection_sft", "quarantine"]
+    },
+    "domain": { "type": "string" },
+    "prompt": { "type": "string", "minLength": 1 },
+    "response": { "type": "string", "minLength": 1 },
+    "answer_spec": {
+      "type": "object",
+      "required": ["type", "canonical"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["integer", "rational", "decimal_exact", "decimal_approx", "logic_json"]
+        },
+        "canonical": { "type": ["string", "number", "object", "array"] },
+        "tolerance": { "type": "number" },
+        "verifier_artifact": { "type": "string" },
+        "ground_truth_structured": {}
+      },
+      "additionalProperties": true
+    },
+    "verifier_result": { "type": "boolean", "const": true },
+    "verifier_version": { "type": "string", "minLength": 1 },
+    "trace_audit": {
+      "type": "object",
+      "required": ["format_ok", "step_verified", "concision_tokens"],
+      "properties": {
+        "format_ok": { "type": "boolean" },
+        "step_verified": { "type": "boolean" },
+        "concision_tokens": { "type": "integer", "minimum": 0 },
+        "method_id": { "type": "string" },
+        "rejection_reasons": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "lineage": { "type": "object", "additionalProperties": true },
+    "provenance": { "type": "object", "additionalProperties": true },
+    "licensing": { "type": "object", "additionalProperties": true },
+    "quality": { "type": "object", "additionalProperties": true },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rlvr.local/schemas/evaluation.schema.json",
+  "title": "EvaluationRecord",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "problem_id",
+    "family_id",
+    "partition",
+    "prompt",
+    "answer_spec",
+    "verifier_version",
+    "access_control"
+  ],
+  "properties": {
+    "problem_id": { "type": "string", "minLength": 1 },
+    "family_id": { "type": "string", "minLength": 1 },
+    "partition": {
+      "type": "string",
+      "enum": ["private_eval", "contaminated_diagnostic"]
+    },
+    "domain": { "type": "string" },
+    "prompt": { "type": "string", "minLength": 1 },
+    "answer_spec": {
+      "type": "object",
+      "required": ["type", "canonical"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["integer", "rational", "decimal_exact", "decimal_approx", "logic_json"]
+        },
+        "canonical": { "type": ["string", "number", "object", "array"] },
+        "tolerance": { "type": "number" },
+        "verifier_artifact": { "type": "string" },
+        "ground_truth_structured": {}
+      },
+      "additionalProperties": true
+    },
+    "verifier_version": { "type": "string", "minLength": 1 },
+    "access_control": {
+      "type": "object",
+      "required": ["labels_isolated"],
+      "properties": {
+        "labels_isolated": { "type": "boolean", "const": true },
+        "allowed_roles": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": true
+    },
+    "lineage": { "type": "object", "additionalProperties": true },
+    "provenance": { "type": "object", "additionalProperties": true },
+    "licensing": { "type": "object", "additionalProperties": true },
+    "metadata": { "type": "object", "additionalProperties": true }
+  }
+}

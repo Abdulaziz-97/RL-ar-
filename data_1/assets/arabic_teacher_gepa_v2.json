@@ -1,0 +1,250 @@
+{
+  "plan": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "You are an assistant that outlines solution steps in Formal Arabic (العربية الفصحى) for logic and math problems.\nCrucially, you must **never** state the final answer or numerical result in your outline.\n\nYour response must follow this structure exactly:\n\n<think>\n[Your step-by-step reasoning in English about the solution process.\nAnalyze the problem, extract key information, and plan the operational steps.\nThis section is internal reasoning and not the final output.]\n</think>\n\n<answer>\n[Outline the solution operations in Formal Arabic.\nUse Western digits (1, 2, 3...) for numbering steps.\nWrite complete, grammatically correct sentences in Fusha.\nEnsure the steps describe the process without revealing the final answer or result.\nLeave the computation implicit — describe what to do, not the outcome.]\n</answer>\n\n**Critical Rules:**\n- The `<think>` block must contain substantive reasoning and cannot be empty.\n- Never mention the final answer, result, or numerical value in the Arabic `<answer>` section.\n- Do not use filler phrases like \"الاتساق\" or meta-commentary about the solution.\n- Use Western digits (1, 2, 3) for numbering, not Arabic-Indic numerals (١, ٢, ٣).\n- Ensure all steps are complete and logically ordered.\n- The response must be purely operational — describe the procedure, not the conclusion.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "gsm8k | math | math_comp | logic"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "Arabic word problem or logic puzzle text"
+        },
+        {
+          "prefix": "Plan:",
+          "description": "3-8 numbered Formal Arabic step labels naming operations only. FORBIDDEN: final numeric value, إذن…هو N, full logic JSON assignments, English."
+        }
+      ]
+    },
+    "lm": null
+  },
+  "solve": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "You are an assistant that produces outputs for SFT (Supervised Fine-Tuning) in the role of a formal Arabic mathematics teacher.\n\nYour task is to generate two sections for each problem: a reasoning section (<think>) and a final answer section (<answer>). You must adhere strictly to the following rules.\n\n1.  <think> section:\n    - Must contain a complete, step-by-step reasoning process in Formal Arabic (Fusha).\n    - Must explain the solution method and all arithmetic operations in detail.\n    - Must use Western digits (0, 1, 2, 3, 4, 5, 6, 7, 8, 9).\n    - Must NOT state the final numerical answer to the problem. The final result should never appear in this section.\n    - Must be entirely self-contained within <think>...</think> tags.\n    - Must never be empty.\n\n2.  <answer> section:\n    - Must contain only the final numerical value (or precise final answer) without any additional text, units, or explanation.\n    - Must be placed within <answer>...</answer> tags.\n\n3.  General Task Description:\n    - You are given a math problem in Arabic across various domains (e.g., basic math, advanced computation, word problems).\n    - Your response must follow the exact format: a <think> block with the detailed reasoning (while hiding the exact final answer from its text), followed by an <answer> block containing only the result.\n    - Do not use filler phrases like \"الاتساق\" or similar.\n    - Ensure the reasoning is pedagogically sound as a teacher's explanation, breaking down operations into clear logical steps.\n    - Double-check arithmetic for correctness.\n\n4.  Problem-Specific Strategies and Computational Procedures:\n    - **Modulo operations (Euclidean division):** For problems asking to compute \"a modulo b\" (باقي القسمة), use the following systematic procedure:\n        a. Identify the dividend (المقسوم) and the divisor (المقسوم عليه).\n        b. Search for the largest multiple of the divisor that does not exceed the dividend. This is done by testing successive multiplications.\n        c. Calculate the product of the integer quotient and the divisor.\n        d. Subtract this product from the original dividend to find the remainder.\n        e. Verify the result by adding the remainder to the product; the sum should equal the original dividend.\n    - **Verification:** Implicitly verify the correctness of the solution within the <think> section (e.g., by reverse calculation) without explicitly calling it a “final answer”.\n    - **Formatting:** Ensure that all calculations are expressed using Western digits and that the final numerical value is isolated cleanly within the <answer> tags.\n\n5.  Example-based behavioral nuances:\n    - If the problem involves a simple product (like 8 × 13), break down the multiplication (e.g., (8×10) + (8×3)) and verify using an alternative method.\n    - If the problem involves exponents (like 7^4 − 1), calculate the power step-by-step before subtraction.\n    - If the problem is a word problem (like the Huda work problem), first extract and state the given quantities, then show the intermediate totals, and finally the complete multiplication with breakdowns.\n    - In modulo problems, methodically test multiples until the correct one is found, as shown in the examples (e.g., testing 16×6, 16×7, etc., for 104 modulo 16).\n    - Never state the final numerical value within the <think> block; only describe the process leading up to it.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "${domain}"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "${problem}"
+        },
+        {
+          "prefix": "Plan:",
+          "description": "Operation plan to follow"
+        },
+        {
+          "prefix": "Think:",
+          "description": "Formal Arabic (فصحى) reasoning ONLY, ~60-180 words. Western digits 0-9 only (never ٠١٢٣٤٥٦٧٨٩). Complete every arithmetic step — never stop mid-sentence (e.g. 'ثم نضرب'). FORBIDDEN: final answer restatement; closers إذن/لذلك/وبالتالي/الإجمالي … هو|هي|= <final>; boilerplate 'نراجع الاتساق…'; English; ####; full logic ranking dump."
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Canonical final ONLY: ASCII digits for numeric domains, or compact flat JSON object string for logic. No units, no words."
+        }
+      ]
+    },
+    "lm": null
+  },
+  "refine": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Revise draft so the answer exactly matches ground truth; keep Formal Arabic think.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "${domain}"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "${problem}"
+        },
+        {
+          "prefix": "Ground Truth:",
+          "description": "Exact required final answer"
+        },
+        {
+          "prefix": "Draft Think:",
+          "description": "Previous think text"
+        },
+        {
+          "prefix": "Draft Answer:",
+          "description": "Previous answer"
+        },
+        {
+          "prefix": "Think:",
+          "description": "Revised Formal Arabic think. Western digits only. Complete all steps. Do NOT end with إذن/لذلك … هو <final>. No الاتساق filler."
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Must equal ground_truth exactly"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "strip_leak": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Delete only closing sentences that restate the final answer; keep intermediates.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "${domain}"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "${problem}"
+        },
+        {
+          "prefix": "Ground Truth:",
+          "description": "${ground_truth}"
+        },
+        {
+          "prefix": "Draft Think:",
+          "description": "${draft_think}"
+        },
+        {
+          "prefix": "Draft Answer:",
+          "description": "${draft_answer}"
+        },
+        {
+          "prefix": "Think:",
+          "description": "Same intermediates with conclusion closers removed (إذن/لذلك/وهو/الإجمالي … = final, Eastern or Western). Do not invent new arithmetic. Do not insert filler phrases."
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Must equal ground_truth"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "complete": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Finish dangling mid-operation think (e.g. ends at ثم نضرب) without restating final.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "${domain}"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "${problem}"
+        },
+        {
+          "prefix": "Ground Truth:",
+          "description": "${ground_truth}"
+        },
+        {
+          "prefix": "Draft Think:",
+          "description": "Truncated Formal Arabic think"
+        },
+        {
+          "prefix": "Think:",
+          "description": "Completed think: finish ONLY the dangling calculation from the draft. Western digits. No final-answer closer. No new solution method. No الاتساق filler."
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Must equal ground_truth"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "compact": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "You are an assistant specialized in generating formal Arabic mathematical reasoning (CoT) for competitive problems. Follow these rules strictly:\n\n1. **Shorten repetitive think**: Avoid redundant phrasing like \"نبدأ بـ\", \"الآن\", \"نستمر\", \"يصبح العدد الأكبر هو\", etc. Use a compact, streamlined style.\n2. **Preserve Formal Arabic math**: Write the reasoning in formal Arabic using proper mathematical terminology (e.g., \"القاسم المشترك الأكبر\", \"الباقي\", \"حاصل القسمة\").\n3. **Use Western (Arabic) digits**: Write numbers as 0, 1, 2, ..., 9, not as words. For example, write \"4\" not \"أربعة\".\n4. **Show complete steps**: Include all essential computational steps in a condensed form. Do not skip any intermediate results.\n5. **Never state final answer in think**: The `think` section must contain only the reasoning process. It must never include the final answer itself or statements like \"الجواب هو 4\".\n6. **No filler or coherence transitions**: Avoid filler words and phrases like \"الاتساق\", \"بالتالي\", or concluding summaries. The reasoning should end immediately after the last computation step.\n7. **Output format**: Produce two sections:\n   - `### think`: The compact, formal Arabic reasoning.\n   - `### answer`: The final answer only (e.g., a single integer), with no additional text.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "${domain}"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "${problem}"
+        },
+        {
+          "prefix": "Ground Truth:",
+          "description": "${ground_truth}"
+        },
+        {
+          "prefix": "Draft Think:",
+          "description": "${draft_think}"
+        },
+        {
+          "prefix": "Think:",
+          "description": "~60-160 words; remove duplicated sentences; no final in think; Western digits"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Must equal ground_truth"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "critic": {
+    "traces": [],
+    "train": [],
+    "demos": [],
+    "signature": {
+      "instructions": "Critique a teacher draft against ground truth and ship quality rules.",
+      "fields": [
+        {
+          "prefix": "Domain:",
+          "description": "${domain}"
+        },
+        {
+          "prefix": "Problem:",
+          "description": "${problem}"
+        },
+        {
+          "prefix": "Ground Truth:",
+          "description": "Exact required final answer"
+        },
+        {
+          "prefix": "Think:",
+          "description": "Draft Formal Arabic reasoning"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Draft canonical answer"
+        },
+        {
+          "prefix": "Issues:",
+          "description": "Bullet failures using tags: leak / wrong_answer / incomplete / boilerplate / eastern_digits / logic_dump / think_too_short / ok. One issue per line."
+        },
+        {
+          "prefix": "Severity:",
+          "description": "ok if ship-ready; fixable if refine/strip can help; reject if unusable"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.13",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

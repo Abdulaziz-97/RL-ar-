@@ -1,0 +1,15 @@
+{
+  "completed_stages": [
+    "gates",
+    "family_partition",
+    "deterministic_solve",
+    "step_verify",
+    "release_prep",
+    "latent_spec",
+    "multi_trace",
+    "arabic_render",
+    "concision",
+    "select_quarantine"
+  ],
+  "seed": 890
+}

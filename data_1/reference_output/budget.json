@@ -1,0 +1,10 @@
+{
+  "spent_usd": 0.041812199999999966,
+  "tokens_in": 61810,
+  "tokens_out": 17155,
+  "calls": 70,
+  "pro_calls": 70,
+  "flash_calls": 0,
+  "budget_usd": 10.0,
+  "cap_hit": false
+}

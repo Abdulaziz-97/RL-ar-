@@ -1,0 +1,25 @@
+{
+  "positive": [
+    {
+      "completion": "<think>\nنحسب 2 + 2 بحرص.\nالناتج النهائي واضح.\nإذن الناتج = 4\n</think>\n<answer>4</answer>",
+      "answer_spec": {"type": "integer", "canonical": 4},
+      "expect_format": true,
+      "expect_correct": true,
+      "expect_leak": 0.0
+    }
+  ],
+  "adversarial": [
+    {
+      "completion": "<think></think><answer>4</answer>",
+      "expect_format": false
+    },
+    {
+      "completion": "<think>\nthe answer is 4\n</think>\n<answer>4</answer>",
+      "expect_leak": 1.0
+    },
+    {
+      "answer_spec": {"type": "symbolic", "canonical": "x**2"},
+      "expect_reject_symbolic": true
+    }
+  ]
+}

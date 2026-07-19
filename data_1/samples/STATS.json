@@ -1,0 +1,89 @@
+{
+  "coldstart_200": {
+    "n": 200,
+    "domains": {
+      "gsm8k": 57,
+      "math": 54,
+      "math_comp": 43,
+      "logic": 46
+    },
+    "num_steps": {
+      "3": 28,
+      "2": 89,
+      "4": 52,
+      "7": 4,
+      "1": 27
+    },
+    "grade_level": {
+      "grade_5": 18,
+      "grade_4": 29,
+      "grade_6": 6,
+      "grade_8": 4
+    },
+    "difficulty_tag_or_level": {
+      "easy": 75,
+      "level_2": 21,
+      "medium": 14,
+      "level_3": 14,
+      "hard": 54,
+      "level_4": 8
+    },
+    "difficulty_band": {}
+  },
+  "rlvr_200": {
+    "n": 200,
+    "domains": {
+      "gsm8k": 66,
+      "math": 50,
+      "math_comp": 44,
+      "logic": 40
+    },
+    "num_steps": {
+      "2": 91,
+      "1": 24,
+      "3": 32,
+      "4": 44,
+      "7": 9
+    },
+    "grade_level": {
+      "grade_4": 31,
+      "grade_5": 22,
+      "grade_6": 4,
+      "grade_8": 9
+    },
+    "difficulty_tag_or_level": {
+      "easy": 66,
+      "level_2": 16,
+      "medium": 23,
+      "level_3": 23,
+      "hard": 45,
+      "level_4": 5
+    },
+    "difficulty_band": {
+      "easy": 97,
+      "medium": 49,
+      "hard": 54
+    }
+  },
+  "rlvr_deferred_n": 51,
+  "rlvr_mastered_n": 199,
+  "pools": {
+    "cold_raw": 227,
+    "rlvr_raw": 252,
+    "rlvr_flash_usable_bands": 2,
+    "rlvr_sampling_usable": 252
+  },
+  "band_policy": {
+    "mode": "hybrid_flash_plus_teacher",
+    "flash_kept": 2,
+    "deferred_as_hard": 51,
+    "mastered_teacher_fallback": 199
+  },
+  "protocol": {
+    "generation_model": "deepseek-v4-pro",
+    "pass8_model": "deepseek-v4-flash",
+    "difficulty_source": "hybrid_flash_plus_teacher",
+    "target_band_mix": "30% easy / 50% medium / 18% hard / ~2% hard-diagnostic",
+    "note": "Flash pass@8 collapsed on this pool (mostly 8/8 math + 0/8 logic). Sampling bands use hybrid: keep flash easy/medium/hard; deferred→hard; mastered→teacher tags. Recalibrate on real GRPO student before full scale."
+  }
+}

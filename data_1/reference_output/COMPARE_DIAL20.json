@@ -1,0 +1,52 @@
+{
+  "budget": {
+    "spent_usd": 0.041812199999999966,
+    "tokens_in": 61810,
+    "tokens_out": 17155,
+    "calls": 70,
+    "pro_calls": 70,
+    "flash_calls": 0,
+    "budget_usd": 10.0,
+    "cap_hit": false
+  },
+  "yield": {
+    "requested": 20,
+    "candidates": 20,
+    "empty_think_cands": 2,
+    "kept": 17,
+    "quarantine": 6
+  },
+  "scores": {
+    "label": "pro_dial_20",
+    "n": 17,
+    "domains": {
+      "gsm8k": 5,
+      "math": 5,
+      "math_comp": 4,
+      "logic": 3
+    },
+    "format_rate": 1.0,
+    "correct_rate_among_scored": 1.0,
+    "scored": 17,
+    "leak_rate": 0.0,
+    "arabic_pass_rate": 1.0,
+    "think_tokens_median": 113,
+    "think_tokens_p90": 166,
+    "top_fail_reasons": []
+  },
+  "polish_on_kept": {
+    "clean": 11,
+    "bare_op": 6
+  },
+  "vague_on_kept": 0,
+  "quarantine_reasons": {
+    "('empty_think', 'empty_answer')": 2,
+    "('empty_think', 'empty_answer', 'no_gate_pass')": 2,
+    "(\"invalid_predicted_integer:invalid integer: 'x = 20'\",)": 1,
+    "(\"invalid_predicted_integer:invalid integer: 'x = 20'\", 'no_gate_pass')": 1
+  },
+  "vs_strict_polish20": {
+    "strict_kept": 7,
+    "dial_kept": 17
+  }
+}
