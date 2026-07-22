@@ -74,9 +74,12 @@ def main() -> int:
                 pad_token_id=tok.pad_token_id,
             )
         text = tok.decode(out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=False)
-        has_think = "<think>" in text and "</think>" in text
-        has_ans = "<answer>" in text and "</answer>" in text
-        fmt = float(reward_format(text)) if has_think and has_ans else 0.0
+        eval_text = text
+        if ("<think>" in prompt or prompt.rstrip().endswith("<think>")) and not eval_text.startswith("<think>"):
+            eval_text = "<think>\n" + eval_text
+        has_think = "<think>" in eval_text and "</think>" in eval_text
+        has_ans = "<answer>" in eval_text and "</answer>" in eval_text
+        fmt = float(reward_format(eval_text)) if has_think and has_ans else 0.0
         ok = bool(has_think and has_ans and fmt > 0)
         passed += int(ok)
         rows.append(
@@ -88,6 +91,7 @@ def main() -> int:
                 "pass": ok,
                 "n_chars": len(text),
                 "completion": text,
+                "eval_text": eval_text,
             }
         )
         print(f"PASS={ok} format={fmt:.2f} think={has_think} answer={has_ans} chars={len(text)}")
