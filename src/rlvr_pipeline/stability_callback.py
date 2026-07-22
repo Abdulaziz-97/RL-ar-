@@ -158,22 +158,22 @@ class StabilityCallback(TrainerCallback):
                 entropy,
             )
 
+        if self.enable_adaptive_temperature:
+            self._maybe_bump_temperature(
+                entropy=entropy,
+                entropy_collapsing=alerts["entropy_collapsing"] or alerts["entropy_zero"],
+                step=state.global_step,
+            )
+        if self.enable_adaptive_beta:
+            self._maybe_reduce_beta(
+                kl=kl,
+                entropy=entropy,
+                entropy_collapsing=alerts["entropy_collapsing"],
+                step=state.global_step,
+            )
+
         if alerts["entropy_zero"]:
             self._handle_entropy_zero(args, state, control)
-        else:
-            if self.enable_adaptive_temperature:
-                self._maybe_bump_temperature(
-                    entropy=entropy,
-                    entropy_collapsing=alerts["entropy_collapsing"],
-                    step=state.global_step,
-                )
-            if self.enable_adaptive_beta:
-                self._maybe_reduce_beta(
-                    kl=kl,
-                    entropy=entropy,
-                    entropy_collapsing=alerts["entropy_collapsing"],
-                    step=state.global_step,
-                )
 
     def _maybe_bump_temperature(
         self,
