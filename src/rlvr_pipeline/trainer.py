@@ -8,6 +8,8 @@ from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.data import load_rlvr_dataset, load_cold_start_sft_dataset
 from rlvr_pipeline.rewards import ALL_REWARD_FUNCS, DEFAULT_REWARD_WEIGHTS
 
+import re
+
 # Qwen3.5 injects a pre-closed empty <think></think> into generation prompts.
 # That makes reward_format unearnable; strip it so rollouts match SFT targets.
 _EMPTY_THINK_INJECTION = "{{- '<think>\\n\\n</think>\\n\\n' }}"
@@ -15,9 +17,20 @@ _EMPTY_THINK_INJECTION = "{{- '<think>\\n\\n</think>\\n\\n' }}"
 
 def strip_think_injection(template: str | None) -> str | None:
     """Remove the pre-closed empty <think> block from a chat template string."""
-    if not template or _EMPTY_THINK_INJECTION not in template:
+    if not template:
         return template
-    return template.replace(_EMPTY_THINK_INJECTION, "")
+    # Match Jinja tags containing pre-closed empty <think>...</think>
+    cleaned = re.sub(
+        r"\{\{-\s*['\"]<think>(?:(?!<think>).)*?</think>.*?['\"]\s*\}\}",
+        "",
+        template,
+        flags=re.DOTALL,
+    )
+    cleaned = re.sub(r"<think>\s*</think>\s*", "", cleaned)
+    return cleaned
+
+
+
 
 
 def load_sft_adapter_strict(peft_model, ckpt_dir: str) -> None:
