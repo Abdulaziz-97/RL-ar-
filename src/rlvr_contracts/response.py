@@ -33,6 +33,7 @@ def parse_response(completion: str) -> ParsedResponse:
     non-empty, and uniqueness of think tokens is not pathologically low.
     """
     text = completion if isinstance(completion, str) else str(completion)
+    text = re.sub(r"<\|im_end\|>|<\|endoftext\|>|<\|im_start\|>", "", text).strip()
     errors: list[str] = []
 
     think_m = _THINK_RE.search(text)
