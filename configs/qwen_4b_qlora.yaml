@@ -17,9 +17,9 @@ coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 num_generations: 16
 max_completion_length: 1024
-temperature: 1.15
+temperature: 1.35
 top_p: 0.95
-top_k: 20
+top_k: 40
 stop_strings: ["</answer>"]
 
 learning_rate: 1.0e-5
@@ -50,6 +50,11 @@ entropy_lr_reduction_factor: 0.5
 enable_adaptive_beta: true
 kl_near_zero_threshold: 0.001
 stuck_beta: 0.02
+enable_adaptive_temperature: true
+entropy_target_min: 1.5
+temp_bump: 0.15
+temp_max: 1.5
+temp_bump_cooldown_steps: 3
 early_diag_steps: 30
 
 output_dir: "./outputs"
