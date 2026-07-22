@@ -1,4 +1,4 @@
-﻿"""TRL reward functions for Arabic Reasoning RLVR.
+"""TRL reward functions for Arabic Reasoning RLVR.
 
 Signature: reward_func(prompts, completions, **kwargs) -> list[float]
 Separate funcs so TRL logs each component; weights applied via reward_weights.
@@ -34,13 +34,20 @@ REWARD_FUNCS_ORDER = (
 def _extract_completion_text(completion: Any) -> str:
     if isinstance(completion, list):
         if len(completion) > 0 and isinstance(completion[0], dict):
-            return completion[0].get("content", "")
-        if len(completion) > 0 and isinstance(completion[0], str):
-            return completion[0]
-        return ""
-    if isinstance(completion, dict):
-        return completion.get("content", "")
-    return str(completion)
+            text = completion[0].get("content", "")
+        elif len(completion) > 0 and isinstance(completion[0], str):
+            text = completion[0]
+        else:
+            text = ""
+    elif isinstance(completion, dict):
+        text = completion.get("content", "")
+    else:
+        text = str(completion)
+
+    # Normalize completion if chat-template prompt pre-filled <think>
+    if "</think>" in text and "<think>" not in text:
+        text = "<think>\n" + text
+    return text
 
 
 def _extract_column(values: list[Any]) -> list[Any]:
