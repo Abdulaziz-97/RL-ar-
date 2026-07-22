@@ -1,0 +1,2 @@
+{"family_id": "fam_gsm8k_00000_s1200", "domain": "gsm8k", "partition": "sft_train", "seed": 1200}
+{"family_id": "fam_math_00001_s1200", "domain": "math", "partition": "sft_train", "seed": 1201}

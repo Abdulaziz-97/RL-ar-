@@ -1,0 +1,26 @@
+{
+  "sft_train": {
+    "path": "data_1\\outputs\\test_live\\release_corpora\\sft_train.jsonl",
+    "n": 3
+  },
+  "sft_eval": {
+    "path": "data_1\\outputs\\test_live\\release_corpora\\sft_eval.jsonl",
+    "n": 0
+  },
+  "rlvr_train": {
+    "path": "data_1\\outputs\\test_live\\release_corpora\\rlvr_train.jsonl",
+    "n": 0
+  },
+  "rlvr_eval": {
+    "path": "data_1\\outputs\\test_live\\release_corpora\\rlvr_eval.jsonl",
+    "n": 0
+  },
+  "private_eval": {
+    "path": "data_1\\outputs\\test_live\\release_corpora\\private_eval.jsonl",
+    "n": 0
+  },
+  "rejection_sft": {
+    "path": "data_1\\outputs\\test_live\\release_corpora\\rejection_sft.jsonl",
+    "n": 0
+  }
+}
