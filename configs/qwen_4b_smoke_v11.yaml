@@ -16,7 +16,7 @@ eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 num_generations: 16
-max_completion_length: 512
+max_completion_length: 1024
 temperature: 1.35
 top_p: 0.95
 top_k: 40
