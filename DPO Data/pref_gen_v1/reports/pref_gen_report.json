@@ -1,0 +1,67 @@
+{
+  "created_at": "2026-07-22T17:30:18Z",
+  "n_pairs": 100,
+  "pairs_by_submix": {
+    "general_chat": 40,
+    "instruction_following": 20,
+    "register": 40
+  },
+  "chosen_model_dist": {
+    "glm": 21,
+    "deepseek": 58,
+    "kimi": 21
+  },
+  "rejected_model_dist": {
+    "sft_checkpoint": 50,
+    "kimi": 25,
+    "deepseek": 4,
+    "glm": 21
+  },
+  "margin": {
+    "mean": 1.288,
+    "median": 1.0
+  },
+  "register_pairs_by_register": {
+    "NAJDI": 18,
+    "CODE_MIXED": 7,
+    "HIJAZI": 15
+  },
+  "aspect_means_by_submix": {
+    "general_chat": {
+      "helpfulness": 4.45,
+      "truthfulness": 4.48,
+      "honesty": 4.36,
+      "honesty_na_count": 8,
+      "instruction_following": 4.26,
+      "register_compliance": 4.34
+    },
+    "instruction_following": {
+      "helpfulness": 4.47,
+      "truthfulness": 4.69,
+      "honesty": 4.55,
+      "instruction_following": 4.12,
+      "register_compliance": 4.5
+    },
+    "register": {
+      "helpfulness": 3.99,
+      "truthfulness": 4.17,
+      "honesty": 4.1,
+      "honesty_na_count": 5,
+      "instruction_following": 3.76,
+      "register_compliance": 4.16
+    }
+  },
+  "register_compliance_dist": {
+    "5": 96,
+    "3": 21,
+    "2": 16,
+    "4": 20,
+    "1": 6
+  },
+  "register_compliance_stdev": 1.206,
+  "onpolicy_chosen_fraction": 0.0,
+  "length_bias_chars": {
+    "chosen_mean": 1551,
+    "rejected_mean": 1252
+  }
+}
