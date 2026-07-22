@@ -1,14 +1,14 @@
-# Canonical QLoRA config — RTX 2080 Super 8GB / similar.
-# Model: Qwen3.5-2B. Pipeline: SFT cold-start → GRPO with Dr.GRPO + batch reward scale.
+# Canonical config — Optimized for Vast.ai NVIDIA A40 48GB GPU
+# Model: Qwen3.5-4B. Pipeline: SFT cold-start → GRPO with Dr.GRPO + batch reward scale.
 
-model_name: "Qwen/Qwen3.5-2B"
-load_in_4bit: true
-bnb_4bit_compute_dtype: "float16"
+model_name: "Qwen/Qwen3.5-4B"
+load_in_4bit: false
+bnb_4bit_compute_dtype: "bfloat16"
 bnb_4bit_quant_type: "nf4"
 bnb_4bit_use_double_quant: true
 
-lora_r: 64
-lora_alpha: 128
+lora_r: 128
+lora_alpha: 256
 lora_dropout: 0.05
 
 train_data_path: "data/arabic_reasoning_rlvr_train.jsonl"
@@ -16,7 +16,7 @@ eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 num_generations: 16
-max_completion_length: 384
+max_completion_length: 1024
 temperature: 1.15
 top_p: 0.95
 top_k: 20
@@ -24,12 +24,12 @@ stop_strings: ["</answer>"]
 
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 2
-gradient_accumulation_steps: 8
+per_device_train_batch_size: 8
+gradient_accumulation_steps: 2
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
-optim: "paged_adamw_8bit"
+optim: "adamw_torch"
 seed: 42
 
 loss_type: "dr_grpo"
@@ -55,8 +55,8 @@ early_diag_steps: 30
 output_dir: "./outputs"
 logging_steps: 10
 save_steps: 500
-bf16: false
-fp16: true
+bf16: true
+fp16: false
 gradient_checkpointing: true
 use_transformers_continuous_batching: false
 use_wandb: false
