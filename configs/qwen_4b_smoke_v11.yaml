@@ -2,7 +2,7 @@
 # Model: Qwen3.5-4B. Soft length, ungated language, partial format shaping.
 
 model_name: "Qwen/Qwen3.5-4B"
-load_in_4bit: false
+load_in_4bit: true
 bnb_4bit_compute_dtype: "bfloat16"
 bnb_4bit_quant_type: "nf4"
 bnb_4bit_use_double_quant: true
@@ -24,8 +24,8 @@ stop_strings: ["</answer>"]
 
 learning_rate: 3.0e-6
 num_train_epochs: 2
-per_device_train_batch_size: 8
-gradient_accumulation_steps: 2
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
