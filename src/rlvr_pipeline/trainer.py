@@ -250,7 +250,6 @@ def build_trainer(
         train_dataset = load_rlvr_dataset(
             config.train_data_path,
             system_prompt=config.system_prompt,
-            allowed_partitions={"rlvr_train"},
         )
         print(f"Loaded {len(train_dataset)} training samples", flush=True)
 
@@ -258,7 +257,6 @@ def build_trainer(
         eval_dataset = load_rlvr_dataset(
             config.eval_data_path,
             system_prompt=config.system_prompt,
-            allowed_partitions={"rlvr_eval"},
         )
 
     print("Building GRPO config...", flush=True)
