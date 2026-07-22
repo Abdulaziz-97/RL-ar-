@@ -1,10 +1,7 @@
-"""
-Pipeline orchestrator — ties all eight modules into a single training step.
+"""Diagnostic simulation that exercises the pure-math RLVR modules.
 
-Supports single-flag switching (per Definition of Done):
-  - policy_update_mode:   "grpo" <-> "gspo"
-  - entropy_guard_mode:   "clip_cov" <-> "kl_cov"
-  - curriculum_stage:     "easy" <-> "hard"
+This module does not backpropagate or update a model. Production training uses
+``rlvr_pipeline.trainer`` and TRL's ``GRPOTrainer``.
 """
 
 import math
@@ -22,7 +19,7 @@ from rlvr.entropy_guard import (
     compute_token_covariance,
     kl_cov_penalty,
 )
-from rlvr.failure_bank import bank_failed_group, retrieve_banked_failures
+from rlvr.failure_bank import bank_failed_group
 from rlvr.monitoring import StepMetrics, compute_step_metrics
 from rlvr.policy_update import grpo_loss, gspo_loss
 from rlvr.reward_composer import compose_reward
@@ -42,18 +39,14 @@ def _flatten(nested):
     return [item for group in nested for item in group]
 
 
-def run_training_step(
+def simulate_training_step(
     config: PipelineConfig,
     model,
     samples: list[dict],
     step: int = 0,
     validation_set: Optional[dict] = None,
 ) -> StepResult:
-    if config.curriculum_stage == "hard":
-        banked = retrieve_banked_failures("hard")
-    else:
-        banked = []
-
+    """Run one detached diagnostic simulation; this is not a training update."""
     completions = [
         generate_group(
             model,

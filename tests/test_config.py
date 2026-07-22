@@ -31,8 +31,25 @@ def test_default_config_values():
     assert config.zero_variance_strategy == "direct_scoring"
     assert config.curriculum_schedule_type == "gaussian"
     assert config.enable_crps is True
-    assert config.replay_buffer_size == 512
     assert config.sigma_fraction == 0.2
+
+
+def test_eval_batch_defaults_to_generation_group_size():
+    config = RLVRConfig(load_in_4bit=False, bf16=False, num_generations=16)
+    args = config.build_grpo_config()
+    assert args.num_generations_eval == 16
+    assert args.per_device_eval_batch_size == 16
+
+
+def test_explicit_eval_batch_is_deferred_to_distributed_runtime_validation():
+    config = RLVRConfig(
+        load_in_4bit=False,
+        bf16=False,
+        num_generations=16,
+        per_device_eval_batch_size=8,
+    )
+    args = config.build_grpo_config()
+    assert args.per_device_eval_batch_size == 8
 
 
 def test_from_yaml(tmp_path):
@@ -54,6 +71,15 @@ def test_from_yaml(tmp_path):
     assert config.beta == 0.0
     assert config.num_generations == 4
     assert config.load_in_4bit is False
+
+
+def test_from_yaml_resolves_data_paths_from_pack_root(tmp_path):
+    config_dir = tmp_path / "configs"
+    config_dir.mkdir()
+    path = config_dir / "config.yaml"
+    path.write_text('train_data_path: "data/train.jsonl"\n', encoding="utf-8")
+    config = RLVRConfig.from_yaml(path)
+    assert config.train_data_path == str((tmp_path / "data" / "train.jsonl").resolve())
 
 
 def test_build_grpo_config():

@@ -1,0 +1,61 @@
+# Short Qwen3.5-2B QLoRA SFT smoke — real data, GPU, bug-free pipeline check.
+
+model_name: "Qwen/Qwen3.5-2B"
+load_in_4bit: true
+bnb_4bit_compute_dtype: "float16"
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_use_double_quant: true
+
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+
+train_data_path: "data/arabic_reasoning_rlvr_train.jsonl"
+eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
+coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
+
+num_generations: 4
+max_completion_length: 192
+temperature: 1.15
+top_p: 0.95
+top_k: 20
+stop_strings: ["</answer>"]
+
+learning_rate: 2.0e-5
+num_train_epochs: 1
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 4
+max_grad_norm: 1.0
+warmup_ratio: 0.05
+lr_scheduler_type: "cosine"
+optim: "paged_adamw_8bit"
+seed: 42
+max_steps: 15
+
+loss_type: "dr_grpo"
+scale_rewards: "batch"
+beta: 0.04
+epsilon: 0.2
+epsilon_high: 0.28
+importance_sampling_level: "token"
+mask_truncated_completions: true
+
+reward_weights: [0.6, 0.2, 0.05, 0.5, 0.3, 0.15]
+
+enable_stability_callback: false
+output_dir: "./runs/qwen35_2b_sft_bugcheck"
+logging_steps: 1
+save_steps: 15
+bf16: false
+fp16: true
+gradient_checkpointing: true
+use_transformers_continuous_batching: false
+use_wandb: false
+wandb_project: "arabic-reasoning-rlvr"
+
+zero_variance_strategy: "discard"
+curriculum_schedule_type: "none"
+enable_crps: false
+
+log_completions: false
+num_completions_to_print: 1

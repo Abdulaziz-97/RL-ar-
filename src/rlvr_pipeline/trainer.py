@@ -129,6 +129,39 @@ def _attach_stop_string_criteria(trainer, stop_strings: list[str]) -> None:
         model._rlvr_answer_stop_patched = True
 
 
+def _align_trainable_dtype_for_amp(trainer, *, fp16: bool, bf16: bool) -> None:
+    """Make QLoRA trainable weights GradScaler-safe on RTX 20-series.
+
+    Qwen3.5 adapters often inherit bf16. With ``fp16=True`` GradScaler then either:
+      - fails on bf16 grads (no CUDA unscale kernel), or
+      - fails after casting adapters to fp16 ("Attempting to unscale FP16 gradients").
+    Keep LoRA in float32 and disable AMP for this path.
+    """
+    model = getattr(trainer, "model", None)
+    if model is None or bf16:
+        return
+    if not fp16:
+        return
+
+    import torch
+
+    cast = 0
+    for _, param in model.named_parameters():
+        if param.requires_grad and param.dtype != torch.float32:
+            param.data = param.data.to(dtype=torch.float32)
+            cast += 1
+
+    args = getattr(trainer, "args", None)
+    if args is not None:
+        args.fp16 = False
+        args.bf16 = False
+
+    print(
+        f"QLoRA AMP fix: cast {cast} trainable params to float32; disabled fp16/bf16 GradScaler",
+        flush=True,
+    )
+
+
 def build_sft_trainer(
     config: RLVRConfig,
     sft_dataset=None,
@@ -150,7 +183,7 @@ def build_sft_trainer(
             system_prompt=config.system_prompt,
         )
 
-    peft_config = config.build_peft_config() if config.load_in_4bit and model is None else None
+    peft_config = config.build_peft_config() if model is None else None
     model_init_kwargs = config.build_model_init_kwargs() if model is None else None
 
     sft_config = SFTConfig(
@@ -166,6 +199,7 @@ def build_sft_trainer(
         optim=config.optim,
         seed=config.seed,
         bf16=config.bf16,
+        fp16=config.fp16,
         gradient_checkpointing=config.gradient_checkpointing,
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
@@ -188,6 +222,7 @@ def build_sft_trainer(
     if fix_chat_template(getattr(trainer, "processing_class", None)):
         print("Chat template fixed: removed empty <think> injection (SFT)", flush=True)
 
+    _align_trainable_dtype_for_amp(trainer, fp16=config.fp16, bf16=config.bf16)
     return trainer
 
 
@@ -199,6 +234,7 @@ def build_trainer(
     reward_weights=None,
     model=None,
     processing_class=None,
+    evaluation_only: bool = False,
 ):
     """Build GRPOTrainer (Stage 2). Run build_sft_trainer() first for cold-start."""
     if reward_funcs is None:
@@ -207,13 +243,14 @@ def build_trainer(
         reward_weights = config.reward_weights if config.reward_weights else DEFAULT_REWARD_WEIGHTS
     config.reward_weights = reward_weights
 
-    if train_dataset is None:
+    if train_dataset is None and not evaluation_only:
         if not config.train_data_path:
             raise ValueError("Either train_dataset or config.train_data_path must be set")
         print("Loading training data...", flush=True)
         train_dataset = load_rlvr_dataset(
             config.train_data_path,
             system_prompt=config.system_prompt,
+            allowed_partitions={"rlvr_train"},
         )
         print(f"Loaded {len(train_dataset)} training samples", flush=True)
 
@@ -221,18 +258,30 @@ def build_trainer(
         eval_dataset = load_rlvr_dataset(
             config.eval_data_path,
             system_prompt=config.system_prompt,
+            allowed_partitions={"rlvr_eval"},
         )
 
     print("Building GRPO config...", flush=True)
 
     model_init_kwargs = config.build_model_init_kwargs() if model is None else None
-    peft_config = config.build_peft_config() if config.load_in_4bit and model is None else None
+    peft_config = config.build_peft_config() if model is None else None
 
     grpo_config = config.build_grpo_config(include_model_init=(model is None))
 
-    use_failure_mining = config.zero_variance_strategy != "discard" or config.enable_crps
+    use_extended_trainer = (
+        config.zero_variance_strategy != "discard"
+        or config.enable_crps
+        or config.curriculum_schedule_type != "none"
+    )
 
-    if use_failure_mining:
+    if config.importance_sampling_level == "sequence_token" and use_extended_trainer:
+        raise ValueError(
+            "sequence_token is incompatible with direct scoring, CRPS, and the "
+            "custom curriculum; set zero_variance_strategy='discard', "
+            "enable_crps=false, and curriculum_schedule_type='none'"
+        )
+
+    if use_extended_trainer:
         from rlvr_pipeline.failure_mining_trainer import GRPOTrainerWithFailureMining as TrainerCls
     elif config.importance_sampling_level == "sequence_token":
         try:
@@ -254,9 +303,8 @@ def build_trainer(
         processing_class=processing_class,
     )
 
-    if use_failure_mining:
+    if use_extended_trainer:
         trainer_kwargs["zero_variance_strategy"] = config.zero_variance_strategy
-        trainer_kwargs["replay_buffer_size"] = config.replay_buffer_size
         trainer_kwargs["enable_crps"] = config.enable_crps
         trainer_kwargs["crps_max_age_steps"] = config.crps_max_age_steps
         trainer_kwargs["crps_max_traces"] = config.crps_max_traces
@@ -272,11 +320,13 @@ def build_trainer(
     if config.sft_checkpoint_path:
         load_sft_adapter_strict(trainer.model, config.sft_checkpoint_path)
 
+    _align_trainable_dtype_for_amp(trainer, fp16=config.fp16, bf16=config.bf16)
+
     if config.stop_strings:
         _attach_stop_string_criteria(trainer, config.stop_strings)
 
     if (
-        use_failure_mining
+        use_extended_trainer
         and config.curriculum_schedule_type != "none"
         and hasattr(train_dataset, "column_names")
         and "difficulty_tag" in train_dataset.column_names

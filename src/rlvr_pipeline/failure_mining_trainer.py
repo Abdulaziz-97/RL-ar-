@@ -1,11 +1,10 @@
 """
 GRPOTrainer subclass with failure mining integration.
 
-Injects RL-ZVP (direct confidence-scaled scoring) for zero-variance groups,
-POPO (prioritized replay buffer) as secondary mode, and CRPS (progressive
-suffix hints) for the hard curriculum stage.
+Injects direct confidence-scaled scoring for zero-variance groups and CRPS
+(progressive suffix hints) for the hard curriculum stage.
 
-All three methodologies are switchable via config flags -- no code change needed.
+Both methodologies are switchable via config flags.
 """
 
 from __future__ import annotations
@@ -16,13 +15,7 @@ from typing import Any, Optional
 import torch
 from torch.utils.data import Sampler
 
-from rlvr.failure_mining import (
-    ReplayBuffer,
-    ReplayEntry,
-    is_zero_variance_group,
-    is_effective_group,
-    maybe_push_to_buffer,
-)
+from rlvr.failure_mining import is_zero_variance_group
 from rlvr.crps import (
     SuccessTrace,
     SuccessTraceStore,
@@ -37,20 +30,29 @@ FORMAT_IDX = 1
 
 
 class GRPOTrainerWithFailureMining(GRPOTrainer):
-    """GRPOTrainer with RL-ZVP / POPO / CRPS failure mining integration.
+    """GRPOTrainer with direct zero-variance scoring and CRPS integration.
 
     Config flags (set via RLVRConfig):
-        zero_variance_strategy: "direct_scoring" | "replay_buffer" | "discard"
+        zero_variance_strategy: "direct_scoring" | "discard"
         enable_crps: bool
     """
 
     def __init__(self, *args, zero_variance_strategy: str = "direct_scoring",
-                 replay_buffer_size: int = 512, enable_crps: bool = True,
+                 enable_crps: bool = True,
                  crps_max_age_steps: int = 100, crps_max_traces: int = 256,
                  **kwargs):
+        if zero_variance_strategy not in {"direct_scoring", "discard"}:
+            raise ValueError(
+                "zero_variance_strategy must be 'direct_scoring' or 'discard'; "
+                "'replay_buffer' is not implemented safely in the trainer"
+            )
         super().__init__(*args, **kwargs)
+        if enable_crps and self.accelerator.num_processes > 1:
+            raise ValueError(
+                "CRPS is rank-local and cannot preserve identical prompts for a "
+                "generation group under DDP; disable CRPS for multi-GPU training"
+            )
         self.zero_variance_strategy = zero_variance_strategy
-        self.replay_buffer = ReplayBuffer(max_size=replay_buffer_size)
         self.enable_crps = enable_crps
         self.crps_max_age_steps = crps_max_age_steps
         self.success_trace_store = SuccessTraceStore(max_traces=crps_max_traces)
@@ -65,7 +67,11 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         difficulty_tags = list(dataset["difficulty_tag"])
         batch_size = config.per_device_train_batch_size
         steps_per_epoch = max(len(dataset) // max(batch_size * config.gradient_accumulation_steps, 1), 1)
-        total_steps = steps_per_epoch * config.num_train_epochs
+        total_steps = (
+            config.max_steps
+            if config.max_steps is not None and config.max_steps > 0
+            else max(int(steps_per_epoch * config.num_train_epochs), 1)
+        )
 
         sampler = CurriculumSampler(
             difficulty_tags=difficulty_tags,
@@ -73,6 +79,9 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             schedule_type=config.curriculum_schedule_type,
             sigma_fraction=config.sigma_fraction,
             seed=config.seed,
+            mini_repeat_count=self.num_generations,
+            batch_size=self.args.generation_batch_size // self.num_generations,
+            repeat_count=self.num_iterations * self.args.steps_per_generation,
         )
         self._curriculum_sampler = sampler
         self._curriculum_config = {
@@ -104,29 +113,41 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         completion_ids = output["completion_ids"]
         prompt_ids = output["prompt_ids"]
         advantages = output["advantages"]
-        completion_mask = output.get("completion_mask")
-        old_per_token_logps = output.get("old_per_token_logps")
 
         completions_text = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
         prompts_text = self.processing_class.batch_decode(prompt_ids, skip_special_tokens=True)
         completion_ids_list = [ids.tolist() for ids in completion_ids]
 
-        rewards_per_func = self._calculate_rewards(inputs, prompts_text, completions_text, completion_ids_list)
-        rewards = (rewards_per_func * self.reward_weights.to(rewards_per_func.device).unsqueeze(0)).nansum(dim=1)
+        global_rewards_per_func = self._calculate_rewards(
+            inputs, prompts_text, completions_text, completion_ids_list
+        )
+        local_count = len(inputs)
+        process_index = self.accelerator.process_index
+        process_start = process_index * local_count
+        process_end = process_start + local_count
+        local_rewards_per_func = global_rewards_per_func[process_start:process_end]
+        global_rewards = (
+            global_rewards_per_func
+            * self.reward_weights.to(global_rewards_per_func.device).unsqueeze(0)
+        ).nansum(dim=1)
 
         num_gen = self.num_generations
-        B_val = rewards.shape[0]
-        num_groups = B_val // num_gen
+        num_groups = global_rewards.shape[0] // num_gen
 
         self._process_failure_mining(
-            output, rewards_per_func, rewards, advantages,
-            completion_mask, old_per_token_logps,
-            num_gen, num_groups,
+            output,
+            global_rewards_per_func,
+            global_rewards,
+            advantages,
+            num_gen,
+            num_groups,
+            process_start,
+            process_end,
         )
 
         if self.enable_crps and self.state.global_step > 0:
             self._maybe_record_success_traces(
-                completion_ids, rewards_per_func, inputs, num_gen, num_groups,
+                completion_ids, local_rewards_per_func, inputs,
             )
 
         return output
@@ -147,18 +168,24 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         current_step = self.state.global_step
         result = list(inputs)
 
-        for i, inp in enumerate(result):
+        grouped_indices: dict[str, list[int]] = {}
+        for i, inp in enumerate(inputs):
+            grouped_indices.setdefault(self._crps_failure_key(inp), []).append(i)
+
+        for failure_key, indices in grouped_indices.items():
+            first_index = indices[0]
+            inp = inputs[first_index]
             difficulty = inp.get("difficulty_tag", "medium")
             if difficulty != "hard":
                 continue
 
             domain = inp.get("domain", "")
             puzzle_type = inp.get("puzzle_type", domain) or domain
-            failure_key = self._crps_failure_key(inp)
 
             trace = find_related_success_trace(
                 traces, puzzle_type=puzzle_type, difficulty_tag=difficulty,
                 max_age_steps=self.crps_max_age_steps, current_step=current_step,
+                prompt_id=str(inp.get("sample_id", "") or ""),
             )
             if trace is None:
                 continue
@@ -177,79 +204,54 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             if not (prompt_messages and isinstance(prompt_messages[-1], dict)):
                 continue
 
-            inp = result[i] = copy.deepcopy(inp)
-            inp["prompt"][-1]["content"] = (
-                inp["prompt"][-1].get("content", "")
-                + "\n\nHint (partial solution):\n" + suffix
+            modified = copy.deepcopy(inp)
+            modified["prompt"][-1]["content"] = (
+                modified["prompt"][-1].get("content", "")
+                + "\n\nتلميح من محاولة سابقة للمسألة نفسها:\n" + suffix
             )
+            for i in indices:
+                result[i] = copy.deepcopy(modified)
             self._failure_counter[failure_key] = failure_count + 1
 
         return result
 
-    def _process_failure_mining(self, output, rewards_per_func, rewards,
-                                 advantages, completion_mask, old_per_token_logps,
-                                 num_gen, num_groups):
+    def _process_failure_mining(
+        self,
+        output,
+        rewards_per_func,
+        rewards,
+        advantages,
+        num_gen,
+        num_groups,
+        process_start=0,
+        process_end=None,
+    ):
+        process_end = process_end if process_end is not None else process_start + len(advantages)
         zero_var_count = 0
 
-        if self.zero_variance_strategy == "direct_scoring":
-            if old_per_token_logps is not None and completion_mask is not None:
-                for g in range(num_groups):
-                    start = g * num_gen
-                    end = start + num_gen
+        for g in range(num_groups):
+            start = g * num_gen
+            end = start + num_gen
+            group_rewards = rewards[start:end].tolist()
 
-                    group_correctness = rewards_per_func[start:end, CORRECTNESS_IDX].tolist()
-                    group_format = rewards_per_func[start:end, FORMAT_IDX].tolist()
-                    group_rewards = rewards[start:end].tolist()
+            if is_zero_variance_group(group_rewards):
+                zero_var_count += 1
+                if self.zero_variance_strategy == "direct_scoring":
+                    # Preserve normal GRPO advantages whenever auxiliary rewards
+                    # vary. For truly flat groups, apply a bounded signal.
+                    correctness = rewards_per_func[start:end, CORRECTNESS_IDX]
+                    all_wrong = (correctness < 0.5).all().item()
+                    all_correct = (correctness >= 0.5).all().item()
+                    if not (all_wrong or all_correct):
+                        continue
+                    overlap_start = max(start, process_start)
+                    overlap_end = min(end, process_end)
+                    if overlap_start < overlap_end:
+                        local_start = overlap_start - process_start
+                        local_end = overlap_end - process_start
+                        advantages[local_start:local_end] = -1.0 if all_wrong else 1.0
 
-                    is_correctness_zero = (
-                        is_zero_variance_group(group_correctness) and abs(group_correctness[0]) < 1e-6
-                    )
-                    is_format_zero = (
-                        is_zero_variance_group(group_format) and abs(group_format[0]) < 1e-6
-                    )
-                    is_composite_zero = (
-                        is_zero_variance_group(group_rewards) and abs(group_rewards[0]) < 1e-6
-                    )
-
-                    if is_correctness_zero:
-                        # Only override when correctness itself is degenerate.
-                        zero_var_count += 1
-                        all_wrong = (rewards_per_func[start:end, CORRECTNESS_IDX] < 0.5).all().item()
-                        group_logps = old_per_token_logps[start:end]
-                        confidences = torch.exp(group_logps).float()
-                        signals = -confidences if all_wrong else (1.0 - confidences)
-
-                        signals = signals * completion_mask[start:end].float()
-                        mask_sums = completion_mask[start:end].sum(dim=1).clamp(min=1)
-                        scalar_advantages = signals.sum(dim=1) / mask_sums
-
-                        for j in range(end - start):
-                            advantages[start + j] = scalar_advantages[j]
-                    elif is_format_zero or is_composite_zero:
-                        # Log for monitoring, but do not override advantages —
-                        # correctness may still vary meaningfully within the group.
-                        zero_var_count += 1
-
-                output["advantages"] = advantages
-
-        elif self.zero_variance_strategy == "replay_buffer":
-            for g in range(num_groups):
-                start = g * num_gen
-                end = start + num_gen
-                group_rewards = rewards[start:end].tolist()
-
-                if is_effective_group(group_rewards):
-                    if old_per_token_logps is not None:
-                        entry = ReplayEntry(
-                            prompt_id="",
-                            completions=[],
-                            rewards=group_rewards,
-                            old_policy_log_probs=old_per_token_logps[start:end].cpu().tolist(),
-                            step_generated=self.state.global_step,
-                        )
-                        maybe_push_to_buffer(self.replay_buffer, entry)
-                else:
-                    zero_var_count += 1
+        output["advantages"] = advantages
 
         effective_count = num_groups - zero_var_count
         total_groups = max(num_groups, 1)
@@ -257,46 +259,46 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         self._failure_mining_stats = {
             "effective_sample_ratio": effective_count / total_groups,
             "zero_variance_group_count": float(zero_var_count),
-            "replay_buffer_size": float(len(self.replay_buffer)),
         }
 
-    def _maybe_record_success_traces(self, completion_ids, rewards_per_func, inputs,
-                                      num_gen, num_groups):
+    def _maybe_record_success_traces(self, completion_ids, rewards_per_func, inputs):
         if completion_ids is None:
             return
 
-        for g in range(num_groups):
-            start = g * num_gen
-            end = start + num_gen
-            group_correct = rewards_per_func[start:end, CORRECTNESS_IDX]
-            group_format = rewards_per_func[start:end, FORMAT_IDX]
-            group_inputs = inputs[start:end]
-
-            for i in range(end - start):
-                # Require perfect correctness + structurally valid format (format > 0).
-                # Soft format penalties (short think / low unique ratio) must not block CRPS.
-                if group_correct[i] >= 1.0 - 1e-6 and group_format[i] > 0.0:
-                    idx = start + i
-                    token_ids = completion_ids[idx].tolist()
-                    # Decode the full span at once to preserve Arabic subword morphology.
-                    full_text = self.processing_class.decode(token_ids, skip_special_tokens=True)
-                    # Store as word list so build_progressive_suffix can take a suffix.
-                    words = full_text.split() if full_text.strip() else [full_text]
-                    difficulty = group_inputs[i].get("difficulty_tag", "hard")
-                    puzzle = group_inputs[i].get("puzzle_type", "") or group_inputs[i].get("domain", "")
-                    sample_id = group_inputs[i].get("sample_id", "")
-                    trace = SuccessTrace(
-                        prompt_id=sample_id,
-                        puzzle_type=puzzle,
-                        difficulty_tag=difficulty,
-                        token_sequence=words,
-                        step_recorded=self.state.global_step,
-                    )
-                    self.success_trace_store.add(trace)
-                    # Reset CRPS failure counter on success for this sample.
-                    failure_key = self._crps_failure_key(group_inputs[i])
-                    self._failure_counter.pop(failure_key, None)
-                    break
+        recorded_ids: set[str] = set()
+        for idx, inp in enumerate(inputs):
+            sample_id = str(inp.get("sample_id", "") or "")
+            if not sample_id or sample_id in recorded_ids:
+                continue
+            if (
+                rewards_per_func[idx, CORRECTNESS_IDX] >= 1.0 - 1e-6
+                and rewards_per_func[idx, FORMAT_IDX] > 0.0
+            ):
+                token_ids = completion_ids[idx].tolist()
+                full_text = self.processing_class.decode(token_ids, skip_special_tokens=True)
+                # Never put a prior final answer into a future prompt.
+                think_start = full_text.find("<think>")
+                think_end = full_text.find("</think>")
+                if think_start >= 0 and think_end > think_start:
+                    full_text = full_text[think_start + len("<think>") : think_end]
+                elif "<answer>" in full_text:
+                    full_text = full_text.split("<answer>", 1)[0]
+                words = full_text.split()
+                if not words:
+                    continue
+                difficulty = inp.get("difficulty_tag", "hard")
+                puzzle = inp.get("puzzle_type", "") or inp.get("domain", "")
+                trace = SuccessTrace(
+                    prompt_id=sample_id,
+                    puzzle_type=puzzle,
+                    difficulty_tag=difficulty,
+                    token_sequence=words,
+                    step_recorded=self.state.global_step,
+                )
+                self.success_trace_store.add(trace)
+                recorded_ids.add(sample_id)
+                failure_key = self._crps_failure_key(inp)
+                self._failure_counter.pop(failure_key, None)
 
     def log_metrics(self, split, metrics, **kwargs):
         merged = {**metrics, **self._failure_mining_stats}

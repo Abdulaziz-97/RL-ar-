@@ -29,6 +29,8 @@ def compute_stage_sampling_weights(
     """
     if total_steps <= 0:
         return {name: 0.25 for name in BUCKET_NAMES}
+    if not math.isfinite(sigma_fraction) or sigma_fraction <= 0:
+        raise ValueError("sigma_fraction must be finite and greater than zero")
 
     centers = {
         "trivial": 0.10 * total_steps,
@@ -38,9 +40,14 @@ def compute_stage_sampling_weights(
     }
     sigma = sigma_fraction * total_steps
 
-    raw_weights = {
-        name: math.exp(-((step - mu) ** 2) / (2.0 * sigma * sigma))
+    log_weights = {
+        name: -((step - mu) ** 2) / (2.0 * sigma * sigma)
         for name, mu in centers.items()
+    }
+    max_log_weight = max(log_weights.values())
+    raw_weights = {
+        name: math.exp(log_weight - max_log_weight)
+        for name, log_weight in log_weights.items()
     }
 
     total = sum(raw_weights.values())

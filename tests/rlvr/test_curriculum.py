@@ -25,6 +25,12 @@ def test_schedule_never_assigns_exactly_zero_probability_to_any_bucket():
             )
 
 
+@pytest.mark.parametrize("sigma", [0, -0.1, float("nan")])
+def test_gaussian_schedule_rejects_invalid_sigma(sigma):
+    with pytest.raises(ValueError, match="sigma_fraction"):
+        compute_stage_sampling_weights(1, 100, sigma)
+
+
 def test_schedule_weights_sum_to_one_at_every_step():
     total_steps = 1000
     for step in [0, 1, 100, 250, 350, 500, 650, 900, 999]:

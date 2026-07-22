@@ -32,7 +32,7 @@ Load prompts (Arabic math/logic questions)
     →
 Model generates G=8 completions per prompt (with <think> and <answer> tags)
     →
-Each completion is scored by 5 reward functions:
+Each completion is scored by 6 reward functions:
   correctness (60%) + format (20%) + Arabic language (20%)
   - answer-leak penalty (50%) - structural-leak penalty (30%)
     →
@@ -120,7 +120,7 @@ All three are on `PYTHONPATH` via `pip install -e .` from this folder.
 │    ├── Loads model (Qwen 2.5 3B) with bitsandbytes 4-bit    │
 │    ├── Applies LoRA adapters (r=64, alpha=128)              │
 │    ├── Loads dataset from JSONL as HF conversational format │
-│    ├── Wires 5 reward functions from rlvr.reward_composer   │
+│    ├── Wires 6 reward functions from rlvr.reward_composer   │
 │    └── Creates TRL GRPOTrainer(model, config, rewards, ds)  │
 │         │                                                   │
 │         ▼                                                   │
@@ -129,7 +129,7 @@ All three are on `PYTHONPATH` via `pip install -e .` from this folder.
 │    │ 1. Sample batch of prompts from dataset       │         │
 │    │ 2. Generate G=8 completions per prompt        │         │
 │    │    (continuous batching, temp=0.9)            │         │
-│    │ 3. Decode → score with 5 reward functions     │
+│    │ 3. Decode → score with 6 reward functions     │
 │    │    correct(0.6) + format(0.2) + lang(0.2)    │         │
 │    │    - leak(0.5) - struct(0.3)                  │         │
 │    │ 4. Compute group advantages: (R_i-mean)/std   │         │
@@ -215,7 +215,7 @@ The config file drives everything. Here is every parameter with its meaning and 
 ### Model
 
 ```yaml
-model_name: "Qwen/Qwen2.5-3B-Instruct"  # HF model ID or local path
+model_name: "Qwen/Qwen3.5-2B"  # HF model ID or local path
 load_in_4bit: true                        # Use 4-bit NF4 quantization (8GB VRAM)
 bnb_4bit_compute_dtype: "bfloat16"        # Computation precision
 bnb_4bit_quant_type: "nf4"               # Quantization type (nf4 = best quality)
@@ -241,7 +241,7 @@ lora_dropout: 0.05     # Dropout on LoRA layers (regularization)
 ### Data
 
 ```yaml
-train_data_path: "data/math.jsonl"    # Path to your JSONL training data
+train_data_path: "data/arabic_reasoning_rlvr_train.jsonl"
 eval_data_path: ""                     # Optional eval set (same format)
 system_prompt: "..."                   # Arabic system prompt (shown to model)
 ```
@@ -407,7 +407,7 @@ Internally, each sample is converted into a conversational format before being f
 ]
 # Model generates (G times with temperature):
 # "<think>أجمع العددين معا ثم أحسب الناتج بدقة</think><answer>5</answer>"
-# The completion is decoded → 5 reward functions score it → advantage → loss
+# The completion is decoded → 6 reward functions score it → advantage → loss
 ```
 
 ### Validation
@@ -470,32 +470,32 @@ cd team_pack
 # Run with the local QLoRA config
 python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
-  --data data/example_math.jsonl
+  --data data/arabic_reasoning_rlvr_train.jsonl
 
 # With wandb logging (set up wandb first: wandb login)
 python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
-  --data data/example_math.jsonl `
+  --data data/arabic_reasoning_rlvr_train.jsonl `
   --wandb
 
 # Quick test — just 10 steps to verify everything works
 python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
-  --data data/example_math.jsonl `
+  --data data/arabic_reasoning_rlvr_train.jsonl `
   --max-steps 10
 
 # With a different model (must match architecture for target_modules!)
 python -m rlvr_pipeline train `
   --config configs/qwen_4b_qlora.yaml `
-  --data data/math.jsonl `
-  --model "Qwen/Qwen2.5-7B-Instruct"
+  --data data/arabic_reasoning_rlvr_train.jsonl `
+  --model "Qwen/Qwen3.5-2B"
 ```
 
 ### What you'll see during training
 
 ```
-Model:    Qwen/Qwen2.5-3B-Instruct
-Data:     data/math.jsonl
+Model:    Qwen/Qwen3.5-2B
+Data:     data/arabic_reasoning_rlvr_train.jsonl
 Loss:     dr_grpo
 Sampling: token
 4-bit:    True
@@ -567,8 +567,8 @@ wandb login
 ```bash
 # Full-precision or LoRA on cloud with larger batch
 python -m rlvr_pipeline train \
-  --config configs/cloud_a100.yaml \
-  --data data/math.jsonl \
+  --config configs/qwen_4b_qlora.yaml \
+  --data data/arabic_reasoning_rlvr_train.jsonl \
   --wandb
 
 # With vLLM for 10-20x faster generation (Linux only!)
@@ -762,7 +762,7 @@ No code changes needed. The pipeline imports the correct trainer class automatic
 
 | Metric | Meaning | Healthy Range |
 |---|---|---|
-| `reward` | Weighted sum of all 5 reward functions | Should increase over training |
+| `reward` | Weighted sum of all 6 reward functions | Should increase over training |
 | `reward_std` | Standard deviation of rewards in batch | 0.1-0.3, not 0 (no diversity = reward hacking) |
 | `kl` | KL divergence from reference model | < 0.1, spike means policy drifting too fast |
 | `entropy` | Mean per-token entropy of completions | 2-8 nats, dropping to < 1 = entropy collapse |
@@ -784,7 +784,7 @@ rewards/structural_leak_penalty_func/mean → structural leak rate (negative)
 
 **Watch for**:
 - `correctness` increases but `format` drops → model is solving correctly but losing structure. Adjust reward weights.
-- `answer_leak_penalty_func/mean` becomes strongly negative → model is leaking answers. Increase `w_answer_leak` (third element of `reward_weights`).
+- `answer_leak_penalty_func/mean` becomes strongly negative → model is leaking answers. Increase the fourth element of `reward_weights`.
 - `language_reward_func/mean` drops → model is switching to English. Check your system prompt and add more Arabic examples.
 
 ### Wandb dashboard
@@ -797,7 +797,7 @@ When `use_wandb: true`:
 
 ```powershell
 # Enable wandb
-python -m rlvr_pipeline train --config configs/qwen_4b_qlora.yaml --data data/math.jsonl --wandb
+python -m rlvr_pipeline train --config configs/qwen_4b_qlora.yaml --data data/arabic_reasoning_rlvr_train.jsonl --wandb
 ```
 
 ### Without wandb
@@ -844,15 +844,7 @@ cd team_pack
 pytest -v
 ```
 
-You'll see ~39 tests pass across 5 test files:
-
-```
-tests/test_rewards.py      — 13 tests  (reward function correctness)
-tests/test_data.py         —  5 tests  (JSONL loading + validation)
-tests/test_config.py       — 10 tests  (YAML parsing, GRPOConfig building)
-tests/test_trainer.py      —  6 tests  (full GRPO training with tiny model)
-tests/test_cli.py          —  5 tests  (CLI argument parsing)
-```
+The complete suite covers pipeline, contracts, reward math, data, and trainer integration.
 
 ### What the integration tests verify
 
@@ -860,22 +852,23 @@ The `test_trainer.py` integration tests run **actual GRPO training** with a rand
 
 1. `test_trainer_constructs_with_tiny_model` — GRPOTrainer builds successfully
 2. `test_trainer_runs_training_steps` — 2 training steps complete, loss is produced, global_step > 0
-3. `test_trainer_reward_functions_called` — All 5 reward functions are invoked during training
+3. `test_trainer_reward_functions_called` — All 6 reward functions are invoked during training
 4. `test_trainer_gspo_mode` — GSPO mode runs without crash (verify flag switching)
 5. `test_trainer_dapo_loss` — DAPO loss type runs without crash
 6. `test_trainer_saves_checkpoint` — Model checkpoint is saved to disk
 
 These tests prove the entire pipeline — generate, reward, advantage, loss, backprop, checkpoint — works end-to-end before touching a real model.
 
-### Running the v1 test suite (100 additional tests)
+### Running the complete test suite
 
 ```powershell
-cd C:\Users\Azooo\arabic-reasoning-rlvr
+cd team_pack
 .venv\Scripts\Activate.ps1
-pytest -v
+pytest -q
 ```
 
-This validates all the reward math, advantage formulas, and schema validation logic.
+This validates the training wrapper, reward math, advantage formulas, data
+contracts, curriculum, failure handling, and schema logic.
 
 ## 13. Troubleshooting
 
@@ -933,12 +926,12 @@ Solutions:
 ### Can't find the model
 
 ```
-OSError: Can't load tokenizer for 'Qwen/Qwen2.5-3B-Instruct'
+OSError: Can't load tokenizer for 'Qwen/Qwen3.5-2B'
 ```
 
 The model needs to be downloaded from HuggingFace on first use (~8GB). Either:
 - Have internet and it downloads automatically (cached in `~/.cache/huggingface/`)
-- Or download it first: `huggingface-cli download Qwen/Qwen2.5-3B-Instruct`
+- Or download it first: `hf download Qwen/Qwen3.5-2B`
 - Or use a local path: `model_name: "/path/to/local/model"`
 
 ### Random seed for reproducibility

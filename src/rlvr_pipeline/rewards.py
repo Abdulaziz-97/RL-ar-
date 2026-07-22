@@ -98,7 +98,11 @@ def correctness_reward_func(prompts, completions, **kwargs) -> list[float]:
         gt = ground_truth[i] if i < len(ground_truth) else None
         dom = domain[i] if i < len(domain) else "math"
         pt = puzzle_type[i] if i < len(puzzle_type) else None
-        spec = _coerce_answer_spec(answer_specs[i] if i < len(answer_specs) else None)
+        raw_spec = answer_specs[i] if i < len(answer_specs) else None
+        spec = _coerce_answer_spec(raw_spec)
+        if raw_spec not in (None, "", {}) and spec is None:
+            rewards.append(0.0)
+            continue
         if dom == "logic":
             gt = _coerce_logic_ground_truth(gt)
         rewards.append(float(reward_correctness(text, gt, dom, pt, answer_spec=spec)))
@@ -191,7 +195,11 @@ def composite_reward_func(prompts, completions, **kwargs) -> list[float]:
         gt = ground_truth[i] if i < len(ground_truth) else None
         dom = domain[i] if i < len(domain) else "math"
         pt = puzzle_type[i] if i < len(puzzle_type) else None
-        spec = _coerce_answer_spec(answer_specs[i] if i < len(answer_specs) else None)
+        raw_spec = answer_specs[i] if i < len(answer_specs) else None
+        spec = _coerce_answer_spec(raw_spec)
+        if raw_spec not in (None, "", {}) and spec is None:
+            rewards.append(0.0)
+            continue
         if dom == "logic":
             gt = _coerce_logic_ground_truth(gt)
         rewards.append(float(compose_reward(text, gt, dom, pt, answer_spec=spec)))

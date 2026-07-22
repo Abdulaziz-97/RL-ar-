@@ -31,11 +31,10 @@ class VerifierResult:
 
 
 def _flat_logic_equal(a: Any, b: Any) -> bool:
-    if type(a) is not type(b) and not (
-        isinstance(a, (int, float)) and isinstance(b, (int, float))
-    ):
-        # Allow JSON number int/float equivalence only for leaves.
-        pass
+    numeric_a = isinstance(a, (int, float)) and not isinstance(a, bool)
+    numeric_b = isinstance(b, (int, float)) and not isinstance(b, bool)
+    if type(a) is not type(b) and not (numeric_a and numeric_b):
+        return False
     if isinstance(a, dict) and isinstance(b, dict):
         if set(a.keys()) != set(b.keys()):
             return False
@@ -44,7 +43,7 @@ def _flat_logic_equal(a: Any, b: Any) -> bool:
         if len(a) != len(b):
             return False
         return all(_flat_logic_equal(x, y) for x, y in zip(a, b))
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+    if numeric_a and numeric_b:
         return abs(float(a) - float(b)) < 1e-12
     return a == b
 

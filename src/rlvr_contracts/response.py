@@ -9,6 +9,10 @@ from typing import Optional
 # Primary grammar (preferred): think block then answer block.
 _THINK_RE = re.compile(r"<think>\s*(.*?)\s*</think>", re.DOTALL | re.IGNORECASE)
 _ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL | re.IGNORECASE)
+_FULL_RESPONSE_RE = re.compile(
+    r"^\s*<think>\s*(.*?)\s*</think>\s*<answer>\s*(.*?)\s*</answer>\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
 _DIGIT_TOKEN_RE = re.compile(r"^[\d\u0660-\u0669.\-+*/=<>()\[\]{},:]+$")
 
 
@@ -33,11 +37,21 @@ def parse_response(completion: str) -> ParsedResponse:
 
     think_m = _THINK_RE.search(text)
     answer_m = _ANSWER_RE.search(text)
+    lowered = text.lower()
+    unique_tags = all(
+        lowered.count(tag) == 1
+        for tag in ("<think>", "</think>", "<answer>", "</answer>")
+    )
+    full_match = _FULL_RESPONSE_RE.fullmatch(text)
 
     if think_m is None:
         errors.append("missing_think_block")
     if answer_m is None:
         errors.append("missing_answer_block")
+    if not unique_tags:
+        errors.append("duplicate_or_unbalanced_tags")
+    if think_m is not None and answer_m is not None and full_match is None:
+        errors.append("invalid_tag_order_or_outside_text")
 
     think = think_m.group(1) if think_m else None
     answer = answer_m.group(1).strip() if answer_m else None
@@ -50,11 +64,20 @@ def parse_response(completion: str) -> ParsedResponse:
 
     format_score = 0.0
     format_ok = False
-    if think is not None and answer is not None and think.strip() and answer:
+    if (
+        think is not None
+        and answer is not None
+        and think.strip()
+        and answer
+        and unique_tags
+        and full_match is not None
+    ):
         tokens = think.split()
         total = len(tokens)
         if total == 0:
             errors.append("empty_think_tokens")
+        elif len(think) > 4096 or any(len(token) > 256 for token in tokens):
+            errors.append("pathological_think_length")
         else:
             unique_ratio = len(set(tokens)) / total
             if unique_ratio < 0.4:
@@ -68,10 +91,6 @@ def parse_response(completion: str) -> ParsedResponse:
                     format_score -= 0.2
                 format_score = max(0.0, min(1.0, format_score))
                 format_ok = format_score > 0.0
-                # Prefer think-before-answer ordering but do not hard-fail if both present.
-                if think_m and answer_m and think_m.start() > answer_m.start():
-                    errors.append("answer_before_think")
-                    format_score = max(0.0, format_score - 0.2)
 
     return ParsedResponse(
         think=think,
@@ -108,6 +127,7 @@ def arabic_language_score(completion: str, target_lang: str = "ar") -> float:
     tokens = think_text.split()
     word_tokens = [t for t in tokens if not _DIGIT_TOKEN_RE.match(t)]
     if not word_tokens:
-        return 1.0
+        # Numbers/operators alone are not evidence of Arabic reasoning.
+        return 0.0
     arabic_count = sum(1 for t in word_tokens if arabic_re.search(t))
     return max(0.0, min(1.0, arabic_count / len(word_tokens)))

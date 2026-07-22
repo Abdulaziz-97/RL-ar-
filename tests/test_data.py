@@ -1,5 +1,7 @@
 """Tests for the data loading module with real Arabic Reasoning schema."""
 
+import json
+
 from datasets import Dataset
 
 from rlvr_pipeline.data import (
@@ -43,6 +45,11 @@ def test_load_rlvr_dataset_domain_mapping(math_jsonl):
         assert row["domain"] == "math"
 
 
+def test_legacy_domain_argument_filters_records(mixed_domain_jsonl):
+    ds = load_rlvr_dataset(mixed_domain_jsonl, domain="logic", production=False)
+    assert all(row["domain"] == "logic" for row in ds)
+
+
 def test_load_rlvr_dataset_logic(logic_jsonl):
     ds = load_rlvr_dataset(logic_jsonl)
     assert len(ds) == 4
@@ -75,6 +82,14 @@ def test_derive_difficulty_from_num_steps():
     assert _derive_difficulty({"num_steps": 3}) == "easy"
     assert _derive_difficulty({"num_steps": 5}) == "medium"
     assert _derive_difficulty({"num_steps": 10}) == "hard"
+
+
+def test_derive_difficulty_prefers_explicit_tag():
+    assert _derive_difficulty({"difficulty_tag": "easy", "num_steps": 1}) == "easy"
+
+
+def test_derive_difficulty_from_empirical_band_object():
+    assert _derive_difficulty({"empirical_difficulty": {"band": "hard"}}) == "hard"
 
 
 def test_derive_difficulty_from_grade_level():
@@ -119,3 +134,63 @@ def test_load_coldstart_sft_dataset(coldstart_jsonl):
     assert first[2]["role"] == "assistant"
     assert "<answer>" in first[2]["content"]
     assert "####" not in first[2]["content"]
+
+
+def test_production_loader_enforces_allowed_partition(tmp_path):
+    records = [
+        {
+            "id": "train",
+            "domain": "math",
+            "partition": "rlvr_train",
+            "prompt": "1+1?",
+            "answer_spec": {"type": "integer", "canonical": "2"},
+        },
+        {
+            "id": "eval",
+            "domain": "math",
+            "partition": "rlvr_eval",
+            "prompt": "2+2?",
+            "answer_spec": {"type": "integer", "canonical": "4"},
+        },
+    ]
+    path = tmp_path / "production.jsonl"
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in records),
+        encoding="utf-8",
+    )
+
+    train = load_rlvr_dataset(path, allowed_partitions={"rlvr_train"})
+    evaluation = load_rlvr_dataset(path, allowed_partitions={"rlvr_eval"})
+    assert train["sample_id"] == ["train"]
+    assert evaluation["sample_id"] == ["eval"]
+
+
+def test_auto_detection_requires_strict_production_majority(tmp_path):
+    records = [
+        {
+            "id": "prod",
+            "domain": "math",
+            "partition": "rlvr_train",
+            "prompt": "1+1?",
+            "answer_spec": {"type": "integer", "canonical": "2"},
+        },
+        {
+            "id": "legacy-1",
+            "domain": "math",
+            "prompt": "2+2?",
+            "metadata": {"ground_truth_answer": "4"},
+        },
+        {
+            "id": "legacy-2",
+            "domain": "math",
+            "prompt": "3+3?",
+            "metadata": {"ground_truth_answer": "6"},
+        },
+    ]
+    path = tmp_path / "mixed.jsonl"
+    path.write_text(
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in records),
+        encoding="utf-8",
+    )
+    dataset = load_rlvr_dataset(path)
+    assert set(dataset["sample_id"]) == {"legacy-1", "legacy-2"}

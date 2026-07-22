@@ -34,10 +34,15 @@ def main() -> int:
         bnb_4bit_quant_type="nf4",
         bnb_4bit_use_double_quant=True,
     )
-    tok = AutoTokenizer.from_pretrained(CKPT, trust_remote_code=True)
+    lora_cfg = LoraConfig.from_pretrained(str(CKPT))
+    try:
+        tok = AutoTokenizer.from_pretrained(CKPT, trust_remote_code=True)
+    except OSError:
+        tok = AutoTokenizer.from_pretrained(
+            lora_cfg.base_model_name_or_path, trust_remote_code=True
+        )
     if fix_chat_template(tok):
         print("chat template fixed: removed empty <think> injection")
-    lora_cfg = LoraConfig.from_pretrained(str(CKPT))
     lora_cfg.inference_mode = True
     base = AutoModelForCausalLM.from_pretrained(
         lora_cfg.base_model_name_or_path,

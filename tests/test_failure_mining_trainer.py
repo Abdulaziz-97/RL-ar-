@@ -1,7 +1,7 @@
-"""Production-grade unit tests for GRPOTrainerWithFailureMining internals.
+"""Unit tests for GRPOTrainerWithFailureMining internals.
 
-Tests zero-variance detection, RL-ZVP all_wrong handling, POPO replay buffer
-interaction, and CRPS trace recording/hint injection.
+Tests zero-variance direct scoring and CRPS trace recording/hint injection.
+The standalone rlvr replay-buffer utilities remain covered separately.
 """
 
 from unittest.mock import MagicMock, patch
@@ -95,7 +95,6 @@ def test_all_wrong_uses_correctness_reward():
 
     trainer._process_failure_mining(
         output, rewards_per_func, rewards, advantages,
-        completion_mask, old_per_token_logps,
         num_gen, B // num_gen,
     )
 
@@ -120,12 +119,75 @@ def test_rlzvp_all_wrong_produces_negative_scalar():
     output = {"advantages": advantages}
     trainer._process_failure_mining(
         output, rewards_per_func, rewards, advantages,
-        completion_mask, old_per_token_logps,
         num_gen, B // num_gen,
     )
 
     result_adv = output["advantages"]
     assert (result_adv <= 0).all(), "All-correctness-zero -> all-wrong -> negative signal"
+
+
+def test_direct_scoring_preserves_varying_auxiliary_advantages():
+    trainer = _make_trainer(enable_crps=False)
+    trainer.reward_weights = torch.tensor([0.6, 0.4, 0.0, 0.0])
+    advantages = torch.tensor([-1.0, 1.0])
+    original = advantages.clone()
+    rewards_per_func = torch.tensor([
+        [0.0, 0.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0, 0.0],
+    ])
+    rewards = (rewards_per_func * trainer.reward_weights.unsqueeze(0)).sum(dim=1)
+    output = {"advantages": advantages}
+
+    trainer._process_failure_mining(
+        output,
+        rewards_per_func,
+        rewards,
+        advantages,
+        2,
+        1,
+    )
+
+    assert torch.equal(output["advantages"], original)
+
+
+def test_direct_scoring_falls_back_when_trl_omits_old_logps():
+    trainer = _make_trainer(enable_crps=False)
+    advantages = torch.zeros(2)
+    rewards_per_func = torch.zeros(2, 4)
+    rewards = torch.zeros(2)
+    output = {"advantages": advantages}
+
+    trainer._process_failure_mining(
+        output,
+        rewards_per_func,
+        rewards,
+        advantages,
+        num_gen=2,
+        num_groups=1,
+    )
+
+    assert torch.equal(output["advantages"], torch.tensor([-1.0, -1.0]))
+
+
+def test_direct_scoring_handles_group_split_across_processes():
+    trainer = _make_trainer(enable_crps=False)
+    global_rewards_per_func = torch.zeros(4, 4)
+    global_rewards = torch.zeros(4)
+    local_advantages = torch.zeros(2)
+    output = {"advantages": local_advantages}
+
+    trainer._process_failure_mining(
+        output,
+        global_rewards_per_func,
+        global_rewards,
+        local_advantages,
+        num_gen=4,
+        num_groups=1,
+        process_start=2,
+        process_end=4,
+    )
+
+    assert torch.equal(output["advantages"], torch.tensor([-1.0, -1.0]))
 
 
 # ----------------------------------------------------------------------
@@ -210,9 +272,7 @@ def test_crps_trace_records_decoded_word_list():
         {"difficulty_tag": "hard", "sample_id": "4"},
     ]
 
-    trainer._maybe_record_success_traces(
-        completion_ids, rewards_per_func, inputs, num_gen, num_groups
-    )
+    trainer._maybe_record_success_traces(completion_ids, rewards_per_func, inputs)
 
     # One success per group (first perfect-correctness+format>0 completion).
     assert len(trainer.success_trace_store) == 2
@@ -231,7 +291,7 @@ def test_crps_hint_injects_suffix_into_prompt():
     trainer.state.global_step = 50
 
     trace = SuccessTrace(
-        prompt_id="test", puzzle_type="math", difficulty_tag="hard",
+        prompt_id="h1", puzzle_type="math", difficulty_tag="hard",
         token_sequence=["Step", "1:", "x=5.", "Step", "2:", "answer", "8."],
         step_recorded=10,
     )
@@ -257,8 +317,8 @@ def test_crps_hint_injects_suffix_into_prompt():
     trainer._inject_crps_hints(inputs)
     result = trainer._inject_crps_hints(inputs)
 
-    assert "Hint (partial solution)" in result[0]["prompt"][-1]["content"]
-    assert "Hint (partial solution)" not in result[1]["prompt"][-1]["content"]
+    assert "تلميح من محاولة سابقة" in result[0]["prompt"][-1]["content"]
+    assert "تلميح من محاولة سابقة" not in result[1]["prompt"][-1]["content"]
     key = trainer._crps_failure_key(inputs[0])
     assert trainer._failure_counter.get(key, 0) >= 1
 
@@ -266,10 +326,14 @@ def test_crps_hint_injects_suffix_into_prompt():
 def test_crps_failure_counter_increments():
     trainer = _make_trainer(enable_crps=True)
     trace = SuccessTrace(
-        prompt_id="t", puzzle_type="math", difficulty_tag="hard",
+        prompt_id="a", puzzle_type="math", difficulty_tag="hard",
         token_sequence=["A", "B", "C"], step_recorded=1,
     )
     trainer.success_trace_store.add(trace)
+    trainer.success_trace_store.add(SuccessTrace(
+        prompt_id="b", puzzle_type="math", difficulty_tag="hard",
+        token_sequence=["A", "B", "C"], step_recorded=1,
+    ))
 
     inputs = [
         {"prompt": [{"role": "user", "content": "Q?"}],
@@ -281,8 +345,8 @@ def test_crps_failure_counter_increments():
     # Warm counters past the fraction=0 first attempt.
     trainer._inject_crps_hints(inputs)
     result = trainer._inject_crps_hints(inputs)
-    assert "Hint" in result[0]["prompt"][-1]["content"]
-    assert "Hint" in result[1]["prompt"][-1]["content"]
+    assert "تلميح من محاولة سابقة" in result[0]["prompt"][-1]["content"]
+    assert "تلميح من محاولة سابقة" in result[1]["prompt"][-1]["content"]
     assert trainer._failure_counter.get(trainer._crps_failure_key(inputs[0]), 0) >= 1
     assert trainer._failure_counter.get(trainer._crps_failure_key(inputs[1]), 0) >= 1
 
@@ -321,7 +385,7 @@ def test_crps_hint_not_injected_for_easy_problems():
 def test_crps_hint_deep_copies_input():
     trainer = _make_trainer(enable_crps=True)
     trace = SuccessTrace(
-        prompt_id="t", puzzle_type="math", difficulty_tag="hard",
+        prompt_id="x", puzzle_type="math", difficulty_tag="hard",
         token_sequence=["A", "B", "C"], step_recorded=1,
     )
     trainer.success_trace_store.add(trace)
@@ -338,7 +402,34 @@ def test_crps_hint_deep_copies_input():
     assert inputs[0]["prompt"] is original_prompt
     assert inputs[0]["prompt"][-1]["content"] == "Q?"
     assert result[0] is not inputs[0]
-    assert "Hint" in result[0]["prompt"][-1]["content"]
+    assert "تلميح من محاولة سابقة" in result[0]["prompt"][-1]["content"]
+
+
+def test_crps_applies_identical_hint_to_all_generations():
+    trainer = _make_trainer(enable_crps=True)
+    trainer.success_trace_store.add(
+        SuccessTrace(
+            prompt_id="same",
+            puzzle_type="math",
+            difficulty_tag="hard",
+            token_sequence=["A", "B", "C", "D"],
+            step_recorded=1,
+        )
+    )
+    inputs = [
+        {
+            "prompt": [{"role": "user", "content": "Q?"}],
+            "domain": "math",
+            "difficulty_tag": "hard",
+            "sample_id": "same",
+        }
+        for _ in range(4)
+    ]
+    trainer._inject_crps_hints(inputs)
+    result = trainer._inject_crps_hints(inputs)
+    contents = [row["prompt"][-1]["content"] for row in result]
+    assert len(set(contents)) == 1
+    assert trainer._failure_counter[trainer._crps_failure_key(inputs[0])] == 2
 
 
 # ----------------------------------------------------------------------

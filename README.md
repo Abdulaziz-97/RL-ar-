@@ -12,7 +12,7 @@ Everything lives under `src/` in this folder:
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11–3.13
 - NVIDIA GPU with CUDA (8GB+ VRAM for Qwen3.5-2B QLoRA; more is better)
 - Hugging Face access to download `Qwen/Qwen3.5-2B`
 
@@ -46,6 +46,17 @@ pip install -e .
 | GRPO eval | `data/arabic_reasoning_rlvr_eval.jsonl` |
 
 Corpus: `v2_dspy_gepa`. See `docs/data_v2_dspy_gepa/` for quality notes and ship gate.
+
+## Experiment grid (ablations)
+
+Full 41-experiment grid lives in `experiments/`. See **`experiments/HOW_TO_RUN_EXPERIMENTS.md`**.
+
+```bash
+cd team_pack
+$env:PYTHONPATH = "src;."
+python -m experiments list
+python -m experiments run --sft-checkpoint ./runs/sft --only B1 --dry-run
+```
 
 ## Run the pipeline
 
@@ -89,9 +100,7 @@ python -m rlvr_pipeline train \
 ## Tests
 
 ```bash
-pytest tests -q --ignore=tests/rlvr
-# Optional: math-layer unit tests
-pytest tests/rlvr -q
+pytest tests -q
 ```
 
 ## Important fixes included
@@ -101,6 +110,7 @@ pytest tests/rlvr -q
 
 ## Docs
 
+- `experiments/HOW_TO_RUN_EXPERIMENTS.md` — ablation grid runner
 - `DOCS.md` — full pipeline guide
 - `docs/FULL_SCALE_SYNTHETIC_DATA_PROPOSAL.md` — next data build proposal
 - `docs/data_v2_dspy_gepa/` — current data handoff / quality
@@ -112,6 +122,7 @@ team_pack/
   configs/
   data/
   docs/
+  experiments/          # ablation grid + HOW_TO_RUN_EXPERIMENTS.md
   scripts/
   src/rlvr/
   src/rlvr_pipeline/

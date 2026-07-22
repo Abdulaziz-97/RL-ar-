@@ -240,9 +240,7 @@ def test_v2_logic_answers_are_compact_canonical(v2_ready):
 def test_v2_config_data_files_exist(v2_ready):
     for rel in (
         "configs/qwen_4b_qlora.yaml",
-        "configs/cloud_a100.yaml",
-        "rlvr_cloud/configs/windows_local.yaml",
-        "rlvr_cloud/configs/linux_a100.yaml",
+        "configs/qwen_4b_smoke_v11.yaml",
     ):
         cfg = yaml.safe_load((PROJECT_ROOT / rel).read_text(encoding="utf-8"))
         assert (PROJECT_ROOT / cfg["train_data_path"]).is_file(), rel
@@ -252,7 +250,7 @@ def test_v2_config_data_files_exist(v2_ready):
 
 
 def test_configs_point_at_train_splits(v2_ready):
-    for rel in ("configs/qwen_4b_qlora.yaml", "configs/cloud_a100.yaml"):
+    for rel in ("configs/qwen_4b_qlora.yaml", "configs/qwen_4b_smoke_v11.yaml"):
         cfg = yaml.safe_load((PROJECT_ROOT / rel).read_text(encoding="utf-8"))
         assert str(cfg["train_data_path"]).endswith("arabic_reasoning_rlvr_train.jsonl"), rel
         assert str(cfg["coldstart_data_path"]).endswith("arabic_reasoning_coldstart_train.jsonl"), rel

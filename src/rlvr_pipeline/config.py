@@ -39,7 +39,7 @@ class RLVRConfig:
     # Model
     model_name: str = "Qwen/Qwen3.5-2B"
     load_in_4bit: bool = True
-    bnb_4bit_compute_dtype: str = "bfloat16"
+    bnb_4bit_compute_dtype: str = "float16"
     bnb_4bit_quant_type: str = "nf4"
     bnb_4bit_use_double_quant: bool = True
 
@@ -75,6 +75,7 @@ class RLVRConfig:
     learning_rate: float = 1e-5
     num_train_epochs: int = 1
     per_device_train_batch_size: int = 4
+    per_device_eval_batch_size: Optional[int] = None
     gradient_accumulation_steps: int = 4
     max_grad_norm: float = 1.0
     warmup_ratio: float = 0.1
@@ -98,8 +99,7 @@ class RLVRConfig:
     )
 
     # Failure mining
-    zero_variance_strategy: Literal["direct_scoring", "replay_buffer", "discard"] = "direct_scoring"
-    replay_buffer_size: int = 512
+    zero_variance_strategy: Literal["direct_scoring", "discard"] = "direct_scoring"
 
     # Curriculum
     curriculum_schedule_type: Literal["gaussian", "fixed_switch", "random_mix", "none"] = "gaussian"
@@ -130,7 +130,8 @@ class RLVRConfig:
     logging_steps: int = 10
     save_steps: int = 500
     eval_steps: Optional[int] = None
-    bf16: bool = True
+    bf16: bool = False
+    fp16: bool = True
     gradient_checkpointing: bool = True
     use_transformers_continuous_batching: bool = True
     report_to: str = "wandb"
@@ -145,8 +146,18 @@ class RLVRConfig:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "RLVRConfig":
-        with open(path, "r", encoding="utf-8") as f:
+        config_path = Path(path).resolve()
+        with open(config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
+        base_dir = (
+            config_path.parent.parent
+            if config_path.parent.name.lower() == "configs"
+            else config_path.parent
+        )
+        for key in ("train_data_path", "eval_data_path", "coldstart_data_path"):
+            value = data.get(key)
+            if value and not Path(value).is_absolute():
+                data[key] = str((base_dir / value).resolve())
         return cls(**data)
 
     def to_dict(self) -> dict[str, Any]:
@@ -162,11 +173,15 @@ class RLVRConfig:
         generation_kwargs: dict[str, Any] = {"top_p": self.top_p, "top_k": self.top_k}
         # stop_strings are attached via StopStringCriteria in build_trainer (TRL generate path).
 
+        num_generations_eval = self.num_generations
+        eval_batch_size = self.per_device_eval_batch_size or num_generations_eval
+
         kwargs: dict[str, Any] = dict(
             output_dir=self.output_dir,
             learning_rate=self.learning_rate,
             num_train_epochs=self.num_train_epochs,
             per_device_train_batch_size=self.per_device_train_batch_size,
+            per_device_eval_batch_size=eval_batch_size,
             gradient_accumulation_steps=self.gradient_accumulation_steps,
             max_grad_norm=self.max_grad_norm,
             warmup_ratio=self.warmup_ratio,
@@ -175,6 +190,7 @@ class RLVRConfig:
             optim=self.optim,
             seed=self.seed,
             num_generations=self.num_generations,
+            num_generations_eval=num_generations_eval,
             max_completion_length=self.max_completion_length,
             temperature=self.temperature,
             generation_kwargs=generation_kwargs,
@@ -188,6 +204,7 @@ class RLVRConfig:
             reward_weights=self.reward_weights,
             gradient_checkpointing=self.gradient_checkpointing,
             bf16=self.bf16,
+            fp16=self.fp16,
             use_transformers_continuous_batching=self.use_transformers_continuous_batching,
             logging_steps=self.logging_steps,
             save_steps=self.save_steps,

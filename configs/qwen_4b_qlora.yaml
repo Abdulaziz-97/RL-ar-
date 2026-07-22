@@ -3,7 +3,7 @@
 
 model_name: "Qwen/Qwen3.5-2B"
 load_in_4bit: true
-bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_compute_dtype: "float16"
 bnb_4bit_quant_type: "nf4"
 bnb_4bit_use_double_quant: true
 
@@ -55,14 +55,14 @@ early_diag_steps: 30
 output_dir: "./outputs"
 logging_steps: 10
 save_steps: 500
-bf16: true
+bf16: false
+fp16: true
 gradient_checkpointing: true
 use_transformers_continuous_batching: false
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
 
 zero_variance_strategy: "direct_scoring"
-replay_buffer_size: 512
 
 curriculum_schedule_type: "gaussian"
 sigma_fraction: 0.2

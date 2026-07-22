@@ -123,8 +123,14 @@ def leak_policy_score(
 
 
 def structural_leak_score(completion: str, max_preamble_words: int = 5) -> float:
-    think_pos = completion.find("<think>")
-    answer_end_pos = completion.rfind("</answer>")
+    lowered = completion.lower()
+    if any(
+        lowered.count(tag) != 1
+        for tag in ("<think>", "</think>", "<answer>", "</answer>")
+    ):
+        return 1.0
+    think_pos = lowered.find("<think>")
+    answer_end_pos = lowered.rfind("</answer>")
     preamble = completion[:think_pos] if think_pos != -1 else ""
     postamble = (
         completion[answer_end_pos + len("</answer>") :] if answer_end_pos != -1 else ""
@@ -135,17 +141,12 @@ def structural_leak_score(completion: str, max_preamble_words: int = 5) -> float
 
 def length_penalty_score(
     completion: str,
-    soft_limit: int = 256,
-    hard_limit: int = 512,
-    *,
-    unit: str = "tokens_approx",
+    soft_limit: int = 80,
+    hard_limit: int = 160,
+    char_soft_limit: int = 2048,
+    char_hard_limit: int = 4096,
 ) -> float:
-    """Soft length pressure on <think>.
-
-    Default unit is whitespace-token approximation aligned with token-based
-    length policy (soft 256 / hard 512). Legacy word limits 80/160 remain
-    available by passing those values with unit='words'.
-    """
+    """Soft word-count pressure on ``<think>`` (80 soft / 160 hard)."""
     if hard_limit <= soft_limit:
         raise ValueError("hard_limit must be greater than soft_limit")
     think = extract_think(completion)
@@ -153,7 +154,17 @@ def length_penalty_score(
         think = completion
     n = len(think.split())
     if n <= soft_limit:
-        return 0.0
-    if n >= hard_limit:
-        return 1.0
-    return (n - soft_limit) / (hard_limit - soft_limit)
+        word_score = 0.0
+    elif n >= hard_limit:
+        word_score = 1.0
+    else:
+        word_score = (n - soft_limit) / (hard_limit - soft_limit)
+
+    chars = len(think)
+    if chars <= char_soft_limit:
+        char_score = 0.0
+    elif chars >= char_hard_limit:
+        char_score = 1.0
+    else:
+        char_score = (chars - char_soft_limit) / (char_hard_limit - char_soft_limit)
+    return max(word_score, char_score)

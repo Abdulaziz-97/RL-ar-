@@ -142,23 +142,40 @@ def canonicalize_decimal_approx(value: Any, tolerance: float | None = None) -> s
         return repr(float(value))
     text = _normalize_numeric_text(str(value))
     try:
-        return repr(float(text))
+        parsed = float(text)
+        if not math.isfinite(parsed):
+            raise AnswerSpecError(f"non-finite decimal_approx: {value}")
+        return repr(parsed)
     except ValueError as exc:
         raise AnswerSpecError(f"invalid decimal_approx: {value!r}") from exc
 
 
 def canonicalize_logic_json(value: Any) -> str:
+    def reject_constant(constant: str):
+        raise ValueError(f"non-standard JSON constant: {constant}")
+
     if isinstance(value, str):
         text = value.strip()
         try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError as exc:
+            parsed = json.loads(text, parse_constant=reject_constant)
+        except (json.JSONDecodeError, ValueError) as exc:
             raise AnswerSpecError(f"logic_json must be valid JSON: {value!r}") from exc
         if not isinstance(parsed, (dict, list)):
             raise AnswerSpecError("logic_json must be a JSON object or array")
-        return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(
+            parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
     if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        try:
+            return json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as exc:
+            raise AnswerSpecError("logic_json contains unsupported values") from exc
     raise AnswerSpecError(f"invalid logic_json: {type(value).__name__}")
 
 
@@ -184,10 +201,7 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     if raw is None:
         raise AnswerSpecError("answer_spec is required")
     if isinstance(raw, AnswerSpec):
-        reject_symbolic(raw.type)
-        if raw.type not in SUPPORTED_ANSWER_TYPES:
-            raise AnswerSpecError(f"unsupported answer type: {raw.type!r}")
-        return raw
+        raw = raw.to_dict()
     if not isinstance(raw, Mapping):
         raise AnswerSpecError(f"answer_spec must be a mapping, got {type(raw).__name__}")
 
@@ -202,6 +216,16 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     tolerance = raw.get("tolerance")
     if key == "decimal_approx" and tolerance is None:
         tolerance = 1e-6
+    if key == "decimal_approx":
+        try:
+            tolerance_value = float(tolerance)
+        except (TypeError, ValueError) as exc:
+            raise AnswerSpecError(f"invalid decimal_approx tolerance: {tolerance!r}") from exc
+        if not math.isfinite(tolerance_value) or not (0.0 < tolerance_value <= 1.0):
+            raise AnswerSpecError(
+                "decimal_approx tolerance must be finite and in the interval (0, 1]"
+            )
+        tolerance = tolerance_value
     if key != "decimal_approx" and tolerance is not None and key not in {"decimal_exact"}:
         # Allow unused tolerance fields only for approx; ignore elsewhere.
         pass
@@ -216,6 +240,12 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     structured = raw.get("ground_truth_structured")
     if structured is None and key == "logic_json":
         structured = json.loads(canonical)
+    elif key == "logic_json":
+        structured_canonical = canonicalize_logic_json(structured)
+        if structured_canonical != canonical:
+            raise AnswerSpecError(
+                "ground_truth_structured conflicts with answer_spec.canonical"
+            )
     elif structured is None and key == "rational":
         num, den = canonical.split("/", 1)
         structured = {"numerator": int(num), "denominator": int(den)}

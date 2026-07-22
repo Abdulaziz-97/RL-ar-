@@ -9,6 +9,7 @@ Plug-and-play CLI.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from rlvr_pipeline.config import RLVRConfig
@@ -47,7 +48,6 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     train_parser.add_argument("--wandb", action="store_true", help="Enable wandb logging")
     train_parser.add_argument("--wandb-group", help="wandb group name for experiment grouping")
     train_parser.add_argument("--max-steps", type=int, help="Override max steps")
-    train_parser.add_argument("--gpus", type=int, help="Override number of GPUs")
 
     # Algorithm flags
     train_parser.add_argument("--loss-type", choices=["grpo", "dapo", "dr_grpo", "sapo", "bnpo"],
@@ -61,7 +61,7 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                               choices=["gaussian", "fixed_switch", "random_mix", "none"],
                               help="Override curriculum schedule")
     train_parser.add_argument("--zero-variance", dest="zero_variance_strategy",
-                              choices=["direct_scoring", "replay_buffer", "discard"],
+                              choices=["direct_scoring", "discard"],
                               help="Override zero-variance strategy")
     train_parser.add_argument("--enable-crps", dest="enable_crps", action="store_true", default=None,
                               help="Enable CRPS progressive suffix hints")
@@ -161,7 +161,7 @@ def _apply_overrides(config: RLVRConfig, args: argparse.Namespace) -> RLVRConfig
         config.report_to = "wandb"
 
     if hasattr(args, "wandb_group") and args.wandb_group:
-        config.wandb_project = args.wandb_group
+        os.environ["WANDB_RUN_GROUP"] = args.wandb_group
 
     return config
 
@@ -238,9 +238,10 @@ def main(argv: list[str] | None = None) -> int:
 
     elif args.command == "eval":
         config.eval_data_path = args.data
-        config.model_name = args.checkpoint
-        config.load_in_4bit = False
-        trainer = build_trainer(config)
+        # Trainer checkpoints are PEFT adapters, not standalone base models.
+        # Keep config.model_name as the base and load the adapter strictly.
+        config.sft_checkpoint_path = args.checkpoint
+        trainer = build_trainer(config, evaluation_only=True)
         metrics = trainer.evaluate()
         print(f"Eval metrics: {metrics}")
         return 0

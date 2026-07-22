@@ -113,6 +113,10 @@ def validate_rlvr_sample(sample: dict, domain: Literal["math", "logic"]) -> RLVR
             f"RLVR sample {label}: domain field must be 'math' or 'logic', "
             f"got {sample_domain!r}"
         )
+    if sample_domain != domain:
+        raise SchemaValidationError(
+            f"RLVR sample {label}: expected domain {domain!r}, got {sample_domain!r}"
+        )
     ground_truth = sample["ground_truth_answer"]
     if ground_truth is None:
         raise SchemaValidationError(

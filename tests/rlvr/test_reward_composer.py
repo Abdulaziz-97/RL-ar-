@@ -19,7 +19,7 @@ from rlvr.reward_composer import (
     reward_format,
     reward_language_consistency,
 )
-from tests.fixtures.hack_patterns import CLEAN_PATTERNS, HACK_PATTERNS
+from .fixtures.hack_patterns import CLEAN_PATTERNS, HACK_PATTERNS
 
 
 def _bow_embed(text: str, dim: int = 64):
@@ -73,6 +73,24 @@ def test_format_reward_rejects_missing_tags():
     assert reward_format("<think>content</think> no answer tag") == 0.0
 
 
+def test_duplicate_answer_tag_is_rejected_as_structural_leak():
+    completion = (
+        "<think>أحل المسألة خطوة خطوة وأتحقق من النتيجة بعناية كاملة</think>"
+        "<answer>4</answer><answer>999</answer>"
+    )
+    assert reward_format(completion) == 0.0
+    assert penalty_structural_leak(completion) == 1.0
+
+
+def test_uppercase_tags_do_not_bypass_structural_leak():
+    completion = (
+        "one two three four five six "
+        "<THINK>تفكير عربي كاف للتحقق من المسألة خطوة خطوة</THINK>"
+        "<ANSWER>4</ANSWER>"
+    )
+    assert penalty_structural_leak(completion, max_preamble_words=5) == 1.0
+
+
 def test_language_reward_penalizes_english_reasoning_in_think_block():
     completion = "<think>First I add two numbers to get the sum then verify</think><answer>4</answer>"
     assert reward_language_consistency(completion, "ar") < 0.3
@@ -81,6 +99,11 @@ def test_language_reward_penalizes_english_reasoning_in_think_block():
 def test_language_reward_does_not_penalize_math_symbols_or_numbers():
     completion = "<think>\u0623\u062c\u0645\u0639 \u0627\u0644\u0639\u062f\u062f\u064a\u0646 2 + 2 = 4 \u062b\u0645 \u0623\u062a\u0623\u0643\u062f</think><answer>4</answer>"
     assert reward_language_consistency(completion, "ar") > 0.8
+
+
+def test_language_reward_rejects_numeric_only_reasoning():
+    completion = "<think>2 + 2 = 4</think><answer>4</answer>"
+    assert reward_language_consistency(completion, "ar") == 0.0
 
 
 def test_answer_leak_penalty_flags_direct_answer_restatement():

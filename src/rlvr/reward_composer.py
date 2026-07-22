@@ -10,14 +10,7 @@ acceptance and training share identical behavior.
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Mapping, Optional
-
-# Prefer local pack layout: src/rlvr + src/rlvr_contracts
-_SRC_ROOT = Path(__file__).resolve().parents[1]
-if str(_SRC_ROOT) not in sys.path:
-    sys.path.insert(0, str(_SRC_ROOT))
 
 from rlvr_contracts.answer_spec import AnswerSpec, AnswerSpecError, parse_answer_spec, reject_symbolic
 from rlvr_contracts.leak import (
@@ -41,9 +34,9 @@ W_ANSWER_LEAK = 0.5
 W_STRUCTURAL_LEAK = 0.3
 W_LENGTH = 0.15
 
-# Token-approx length policy (aligned with 640–768 completion capacity).
-THINK_LENGTH_SOFT_LIMIT = 256
-THINK_LENGTH_HARD_LIMIT = 512
+# Word-count policy: begin pressure at 80 words, full penalty at 160.
+THINK_LENGTH_SOFT_LIMIT = 80
+THINK_LENGTH_HARD_LIMIT = 160
 
 # Back-compat aliases used by older tests / callers.
 _extract_think = extract_think

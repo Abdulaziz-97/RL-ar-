@@ -204,3 +204,26 @@ def test_reward_funcs_handle_missing_columns():
     )
     assert len(rewards) == 1
     assert rewards[0] == 1.0
+
+
+def test_malformed_nonempty_answer_spec_fails_closed():
+    rewards = correctness_reward_func(
+        prompts=["p1"],
+        completions=["<think>أحسب الناتج خطوة خطوة ثم أتحقق منه جيدًا</think><answer>4</answer>"],
+        ground_truth_answer=[4],
+        domain=["math"],
+        answer_spec=["not-json"],
+    )
+    assert rewards == [0.0]
+
+
+def test_logic_boolean_is_not_equal_to_integer():
+    spec = '{"type":"logic_json","canonical":{"x":true}}'
+    rewards = correctness_reward_func(
+        prompts=["p1"],
+        completions=['<think>أطبق القيود ثم أتحقق من كل قيمة بدقة</think><answer>{"x":1}</answer>'],
+        ground_truth_answer=['{"x":true}'],
+        domain=["logic"],
+        answer_spec=[spec],
+    )
+    assert rewards == [0.0]

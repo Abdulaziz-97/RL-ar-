@@ -92,6 +92,28 @@ def test_curriculum_sampler_iterates():
     assert len(indices) == 8
 
 
+def test_curriculum_sampler_preserves_grpo_repeat_groups():
+    tags = ["easy", "hard", "easy", "hard"]
+    sampler = CurriculumSampler(
+        tags,
+        total_steps=10,
+        mini_repeat_count=3,
+        batch_size=2,
+        repeat_count=2,
+    )
+    indices = list(sampler)
+    assert len(indices) == 24
+    for offset in range(0, len(indices), 3):
+        assert len(set(indices[offset : offset + 3])) == 1
+
+
+def test_curriculum_sampler_never_uses_an_unavailable_bucket():
+    tags = ["hard"] * 8
+    sampler = CurriculumSampler(tags, total_steps=100, schedule_type="fixed_switch")
+    sampler.set_step(0)  # schedule asks for trivial, but only hard exists
+    assert all(tags[index] == "hard" for index in sampler)
+
+
 def test_curriculum_callback():
     tags = ["easy"] * 4
     sampler = CurriculumSampler(tags, total_steps=16, schedule_type="gaussian", sigma_fraction=0.3)

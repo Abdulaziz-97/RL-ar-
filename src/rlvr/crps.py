@@ -2,7 +2,7 @@
 Module — CRPS (Curriculum Replay via Progressive Suffixes).
 
 During the hard curriculum stage, when the model fails on a prompt, construct a
-"progressive suffix" from the model's own past successful trajectory on a related
+"progressive suffix" from the model's own past successful reasoning on the same
 prompt. The suffix is prepended to the failed rollout's context as an in-context
 correction hint for subsequent rollouts. The suffix starts small (just the final
 conclusion) and grows with repeated failures, giving progressively stronger hints
@@ -45,14 +45,22 @@ def find_related_success_trace(
     difficulty_tag: str,
     max_age_steps: int,
     current_step: int,
+    prompt_id: str | None = None,
 ) -> SuccessTrace | None:
-    """Find the most recent successful trace matching puzzle_type and difficulty_tag,
-    within max_age_steps of the current step. Returns None if no match found."""
+    """Find a recent compatible success trace.
+
+    When ``prompt_id`` is supplied, require an exact prompt match. This avoids
+    leaking a solution suffix from an unrelated problem that merely shares a
+    broad puzzle type and difficulty.
+    """
+    if prompt_id == "":
+        return None
     candidates = [
         t
         for t in traces
         if t.puzzle_type == puzzle_type
         and t.difficulty_tag == difficulty_tag
+        and (prompt_id is None or t.prompt_id == prompt_id)
         and (current_step - t.step_recorded) <= max_age_steps
     ]
     return candidates[-1] if candidates else None

@@ -36,6 +36,11 @@ def _valid_rlvr_math(**overrides) -> dict:
     return base
 
 
+def test_validate_rlvr_rejects_requested_domain_mismatch():
+    with pytest.raises(SchemaValidationError, match="expected domain"):
+        validate_rlvr_sample(_valid_rlvr_math(), "logic")
+
+
 def _valid_rlvr_logic(**overrides) -> dict:
     base = {
         "id": "rlvr-l-1",

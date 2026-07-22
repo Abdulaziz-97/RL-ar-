@@ -13,7 +13,7 @@ import torch
 from rlvr.config import PipelineConfig
 from rlvr.failure_bank import clear_bank
 from rlvr.monitoring import MonitoringDashboard
-from rlvr.pipeline import run_training_step
+from rlvr.pipeline import simulate_training_step
 
 
 class StubModel:
@@ -54,7 +54,7 @@ def test_full_mock_pipeline_completes_without_crash():
     model = StubModel()
     samples = _make_samples(4)
 
-    result = run_training_step(config, model, samples, step=0)
+    result = simulate_training_step(config, model, samples, step=0)
 
     assert isinstance(result.loss, float)
     assert not math.isnan(result.loss)
@@ -69,7 +69,7 @@ def test_pipeline_produces_advantage_tensor_no_nans():
     model = StubModel()
     samples = _make_samples(3)
 
-    result = run_training_step(config, model, samples, step=1)
+    result = simulate_training_step(config, model, samples, step=1)
 
     assert len(result.advantages) == 3 * 8
     assert not any(math.isnan(a) or math.isinf(a) for a in result.advantages)
@@ -82,9 +82,9 @@ def test_config_switches_grpo_to_gspo_without_code_change():
     grpo_config = PipelineConfig(group_size=4, policy_update_mode="grpo")
     gspo_config = PipelineConfig(group_size=4, policy_update_mode="gspo")
 
-    grpo_result = run_training_step(grpo_config, model, samples, step=0)
+    grpo_result = simulate_training_step(grpo_config, model, samples, step=0)
     clear_bank()
-    gspo_result = run_training_step(gspo_config, model, samples, step=0)
+    gspo_result = simulate_training_step(gspo_config, model, samples, step=0)
 
     assert not grpo_result.has_nan
     assert not gspo_result.has_nan
@@ -99,9 +99,9 @@ def test_config_switches_clip_cov_to_kl_cov_without_code_change():
     clip_config = PipelineConfig(group_size=4, entropy_guard_mode="clip_cov")
     kl_config = PipelineConfig(group_size=4, entropy_guard_mode="kl_cov")
 
-    clip_result = run_training_step(clip_config, model, samples, step=0)
+    clip_result = simulate_training_step(clip_config, model, samples, step=0)
     clear_bank()
-    kl_result = run_training_step(kl_config, model, samples, step=0)
+    kl_result = simulate_training_step(kl_config, model, samples, step=0)
 
     assert not clip_result.has_nan
     assert not kl_result.has_nan
@@ -116,8 +116,8 @@ def test_config_switches_easy_to_hard_curriculum_without_code_change():
     easy_config = PipelineConfig(group_size=4, curriculum_stage="easy")
     hard_config = PipelineConfig(group_size=4, curriculum_stage="hard")
 
-    easy_result = run_training_step(easy_config, model, samples, step=0)
-    hard_result = run_training_step(hard_config, model, samples, step=0)
+    easy_result = simulate_training_step(easy_config, model, samples, step=0)
+    hard_result = simulate_training_step(hard_config, model, samples, step=0)
 
     assert not easy_result.has_nan
     assert not hard_result.has_nan
@@ -130,7 +130,7 @@ def test_monitoring_dashboard_records_metrics():
 
     for step in range(3):
         config = PipelineConfig(group_size=4)
-        result = run_training_step(config, model, samples, step=step)
+        result = simulate_training_step(config, model, samples, step=step)
         dashboard.record(result.metrics)
 
     assert len(dashboard.history) == 3
@@ -151,7 +151,7 @@ def test_pipeline_with_validation_set():
     }
 
     config = PipelineConfig(group_size=4)
-    result = run_training_step(config, model, samples, step=0, validation_set=validation_set)
+    result = simulate_training_step(config, model, samples, step=0, validation_set=validation_set)
 
     assert result.metrics.validation_reward is not None
     assert 0.0 <= result.metrics.validation_reward <= 1.0
@@ -160,7 +160,7 @@ def test_pipeline_with_validation_set():
 def test_pipeline_empty_samples_does_not_crash():
     config = PipelineConfig(group_size=4)
     model = StubModel()
-    result = run_training_step(config, model, [], step=0)
+    result = simulate_training_step(config, model, [], step=0)
     assert not result.has_nan
     assert result.loss == 0.0
 
@@ -174,5 +174,5 @@ def test_all_zero_reward_group_gets_banked():
     model = AlwaysWrongModel()
     samples = _make_samples(2)
 
-    result = run_training_step(config, model, samples, step=0)
+    result = simulate_training_step(config, model, samples, step=0)
     assert result.banked_count == 2

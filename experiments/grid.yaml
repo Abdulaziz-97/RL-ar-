@@ -1,0 +1,298 @@
+# Experiment Grid — Arabic Reasoning RLVR (team_pack)
+# 41 experiments, 10 phases. Each phase picks a winner carried forward.
+#
+# How to run: see HOW_TO_RUN_EXPERIMENTS.md in this folder.
+#   cd team_pack
+#   set PYTHONPATH=src;.
+#   python -m experiments list
+#   python -m experiments run --module rlvr_pipeline --sft-checkpoint ./runs/sft --only B1
+
+sft:
+  C2:
+    coldstart: data/arabic_reasoning_coldstart_train.jsonl
+    output: ./runs/sft
+    learning_rate: 1e-5
+
+phases:
+  # ── Phase 1: Baselines (no SFT) ──
+  "1_baselines":
+    B1:
+      loss_type: grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      sft_checkpoint_path: ""
+      comment: "Vanilla GRPO — lower bound"
+
+    B2:
+      loss_type: dr_grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      sft_checkpoint_path: ""
+      comment: "Dr. GRPO only — second lower bound"
+
+  # ── Phase 2: Cold-start Ablation ──
+  "2_coldstart":
+    C1:
+      loss_type: dr_grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "SFT → Dr. GRPO"
+
+  # ── Phase 3: GRPO vs GSPO vs GSPO-Token ──
+  "3_is_level":
+    G1:
+      loss_type: dr_grpo
+      importance_sampling_level: token
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "GRPO per-token IS"
+
+    G2:
+      loss_type: dr_grpo
+      importance_sampling_level: sequence
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "GSPO per-sequence IS"
+
+    G3:
+      loss_type: dr_grpo
+      importance_sampling_level: sequence_token
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "GSPO-token both"
+
+  # ── Phase 4: Reward Scale Strategy ──
+  "4_reward_scale":
+    S1:
+      loss_type: dr_grpo
+      scale_rewards: group
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "Group-scale advantages"
+
+    S2:
+      loss_type: dr_grpo
+      scale_rewards: batch
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "Batch-scale advantages"
+
+    S3:
+      loss_type: dr_grpo
+      scale_rewards: "off"
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "No advantage scaling"
+
+  # ── Phase 5: Loss Variants ──
+  "5_loss":
+    D1:
+      loss_type: grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "GRPO loss"
+
+    D2:
+      loss_type: dapo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "DAPO loss — asymmetric clipping"
+
+    D3:
+      loss_type: dr_grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "Dr. GRPO — length-normalized"
+
+    D4:
+      loss_type: sapo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "SAPO loss"
+
+    D5:
+      loss_type: bnpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "BNPO loss — batch-normalized"
+
+  # ── Phase 6: Curriculum ──
+  "6_curriculum":
+    L1:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "E2H Gaussian schedule"
+
+    L2:
+      loss_type: dr_grpo
+      curriculum_schedule_type: fixed_switch
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "Fixed switch (hard curriculum boundaries)"
+
+    L3:
+      loss_type: dr_grpo
+      curriculum_schedule_type: random_mix
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "Random mix (no ordering)"
+
+    L4:
+      loss_type: dr_grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "No curriculum baseline"
+
+  # ── Phase 7: Failure Mining ──
+  "7_failure_mining":
+    F1:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: false
+      comment: "RL-ZVP direct confidence-scaled scoring"
+
+    F2:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: replay_buffer
+      enable_crps: false
+      comment: "POPO replay buffer"
+
+    F3:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: discard
+      enable_crps: false
+      comment: "Discard baseline"
+
+  # ── Phase 8: CRPS ──
+  "8_crps":
+    P1:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: true
+      comment: "CRPS + curriculum + RL-ZVP"
+
+    P2:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: false
+      comment: "No CRPS baseline"
+
+  # ── Phase 9: Full Stack ──
+  "9_full_stack":
+    A1:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: true
+      comment: "Kitchen sink"
+
+    A2:
+      loss_type: dr_grpo
+      importance_sampling_level: sequence
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: true
+      comment: "Kitchen sink + GSPO"
+
+    A3:
+      loss_type: dr_grpo
+      importance_sampling_level: sequence_token
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: true
+      comment: "Kitchen sink + GSPO-token"
+
+    A4:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: discard
+      enable_crps: true
+      comment: "No RL-ZVP"
+
+    A5:
+      loss_type: dr_grpo
+      curriculum_schedule_type: gaussian
+      zero_variance_strategy: direct_scoring
+      enable_crps: false
+      comment: "No CRPS"
+
+    A6:
+      loss_type: dr_grpo
+      curriculum_schedule_type: none
+      zero_variance_strategy: direct_scoring
+      enable_crps: true
+      comment: "No curriculum"
+
+  # ── Phase 10: HP Sweep on Best Config ──
+  "10_hp_sweep":
+    H1_G4:
+      num_generations: 4
+      comment: "G sweep: 4"
+
+    H1_G12:
+      num_generations: 12
+      comment: "G sweep: 12"
+
+    H2_T06:
+      temperature: 0.6
+      comment: "Temp sweep: 0.6"
+
+    H2_T12:
+      temperature: 1.2
+      comment: "Temp sweep: 1.2"
+
+    H3_S01:
+      sigma_fraction: 0.1
+      comment: "Sigma sweep: 0.1"
+
+    H3_S03:
+      sigma_fraction: 0.3
+      comment: "Sigma sweep: 0.3"
+
+    H4_B001:
+      beta: 0.01
+      comment: "Beta sweep: 0.01"
+
+    H4_B01:
+      beta: 0.1
+      comment: "Beta sweep: 0.1"
+
+    H5_E01:
+      epsilon: 0.1
+      epsilon_high: 0.2
+      comment: "Epsilon sweep: 0.1/0.2"
+
+    H5_E03:
+      epsilon: 0.3
+      epsilon_high: 0.4
+      comment: "Epsilon sweep: 0.3/0.4"
+
+    H6_LR5e6:
+      learning_rate: 5.0e-6
+      comment: "LR sweep: 5e-6"
+
+    H6_LR2e5:
+      learning_rate: 2.0e-5
+      comment: "LR sweep: 2e-5"

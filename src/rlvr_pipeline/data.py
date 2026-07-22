@@ -58,7 +58,12 @@ def _read_jsonl(path: str | Path) -> list[dict[str, Any]]:
 
 
 def _derive_difficulty(metadata: dict[str, Any]) -> str:
+    explicit = metadata.get("difficulty_tag")
+    if explicit in {"trivial", "easy", "medium", "hard"}:
+        return explicit
     emp = metadata.get("empirical_difficulty") or metadata.get("difficulty_band")
+    if isinstance(emp, dict):
+        emp = emp.get("band")
     if isinstance(emp, str) and emp:
         return emp
     num_steps = metadata.get("num_steps")
@@ -111,6 +116,7 @@ def load_production_dataset(
     *,
     require_answer_spec: bool = True,
     allow_legacy_fallback: bool = False,
+    allowed_partitions: set[str] | None = None,
 ) -> Dataset:
     """Load production Problem / RLVR Prompt records with answer_spec."""
     records = _read_jsonl(path)
@@ -127,6 +133,9 @@ def load_production_dataset(
 
     for raw in records:
         metadata = raw.get("metadata") or {}
+        partition = str(raw.get("partition") or metadata.get("partition") or "")
+        if allowed_partitions is not None and partition not in allowed_partitions:
+            continue
         raw_domain = raw.get("domain", "math")
         if raw_domain == "mmlu":
             continue
@@ -171,10 +180,11 @@ def load_production_dataset(
         ground_truths.append(_serialize_ground_truth(gt))
         domains.append(reward_domain)
         puzzle_types.append(raw_domain if reward_domain == "logic" else None)
-        difficulties.append(_derive_difficulty(metadata if metadata else raw))
+        difficulty_fields = {**raw, **metadata}
+        difficulties.append(_derive_difficulty(difficulty_fields))
         sample_ids.append(str(raw.get("problem_id") or raw.get("id") or ""))
         family_ids.append(str(raw.get("family_id") or metadata.get("family_id") or ""))
-        partitions.append(str(raw.get("partition") or metadata.get("partition") or ""))
+        partitions.append(partition)
         answer_specs.append(json.dumps(spec, ensure_ascii=False) if spec else "")
         verifier_versions.append(
             str(
@@ -212,7 +222,6 @@ def load_rlvr_dataset_legacy_v2(
     Prefer :func:`load_production_dataset` for new corpora. This adapter keeps
     older GSM/logic JSONL trainable while production packs migrate to answer_spec.
     """
-    _ = (domain, validate)
     records = _read_jsonl(path)
 
     prompts = []
@@ -227,13 +236,27 @@ def load_rlvr_dataset_legacy_v2(
         metadata = raw.get("metadata", {})
         gt = metadata.get("ground_truth_answer")
         raw_domain = raw.get("domain", "math")
+        if validate and raw_domain not in DOMAIN_MAP and raw_domain != "mmlu":
+            raise ValueError(
+                f"legacy record {raw.get('id', '')!r} has unsupported domain {raw_domain!r}"
+            )
+        reward_domain = DOMAIN_MAP.get(raw_domain, "math")
 
         if gt is None or gt == "":
+            if validate:
+                raise ValueError(
+                    f"legacy record {raw.get('id', '')!r} has no ground_truth_answer"
+                )
             continue
         if raw_domain == "mmlu":
             continue
+        if domain is not None and reward_domain != domain:
+            continue
+        if not isinstance(raw.get("prompt"), str) or not raw["prompt"].strip():
+            if validate:
+                raise ValueError(f"legacy record {raw.get('id', '')!r} has no prompt")
+            continue
 
-        reward_domain = DOMAIN_MAP.get(raw_domain, "math")
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -281,6 +304,7 @@ def load_rlvr_dataset(
     validate: bool = False,
     *,
     production: bool | None = None,
+    allowed_partitions: set[str] | None = None,
 ) -> Dataset:
     """Load RLVR data.
 
@@ -301,19 +325,24 @@ def load_rlvr_dataset(
             }
         )
     if production is True:
-        return load_production_dataset(path, system_prompt=system_prompt)
+        return load_production_dataset(
+            path,
+            system_prompt=system_prompt,
+            allowed_partitions=allowed_partitions,
+        )
     if production is False:
         return load_rlvr_dataset_legacy_v2(
             path, domain=domain, system_prompt=system_prompt, validate=validate
         )
     # Auto: if a majority of rows have answer_spec, treat as production.
     prod_hits = sum(1 for r in records if _is_production_record(r))
-    if prod_hits >= max(1, len(records) // 2):
+    if prod_hits > len(records) / 2:
         return load_production_dataset(
             path,
             system_prompt=system_prompt,
             require_answer_spec=True,
             allow_legacy_fallback=True,
+            allowed_partitions=allowed_partitions,
         )
     return load_rlvr_dataset_legacy_v2(
         path, domain=domain, system_prompt=system_prompt, validate=validate
@@ -340,10 +369,13 @@ def load_cold_start_sft_dataset(
                 f"SFT ingest rejected {raw.get('problem_id') or raw.get('id')}: {exc}"
             ) from exc
         response = _transform_coldstart_response(response)
+        prompt = raw.get("prompt") or raw.get("problem_text") or ""
+        if not isinstance(prompt, str) or not prompt.strip():
+            continue
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": raw["prompt"]})
+        messages.append({"role": "user", "content": prompt})
         messages.append({"role": "assistant", "content": response})
         all_messages.append(messages)
 

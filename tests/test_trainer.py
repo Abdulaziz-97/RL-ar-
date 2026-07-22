@@ -18,6 +18,7 @@ def _tiny_config(tmp_path, **overrides):
         model_name="tiny-test",
         load_in_4bit=False,
         bf16=False,
+        fp16=False,
         gradient_checkpointing=False,
         use_transformers_continuous_batching=False,
         num_generations=2,
@@ -184,10 +185,16 @@ def test_trainer_failure_mining_direct_scoring(tiny_model, tiny_tokenizer, math_
     assert result.global_step > 0
 
 
-def test_trainer_failure_mining_replay_buffer(tiny_model, tiny_tokenizer, math_jsonl, tmp_path):
-    config = _tiny_config(tmp_path, zero_variance_strategy="replay_buffer", enable_crps=False)
+def test_trainer_curriculum_preserves_grpo_groups(
+    tiny_model, tiny_tokenizer, math_jsonl, tmp_path
+):
+    config = _tiny_config(
+        tmp_path,
+        zero_variance_strategy="direct_scoring",
+        curriculum_schedule_type="gaussian",
+        max_steps=1,
+    )
     train_ds = load_rlvr_dataset(math_jsonl)
-
     trainer = build_trainer(
         config=config,
         train_dataset=train_ds,
@@ -195,7 +202,20 @@ def test_trainer_failure_mining_replay_buffer(tiny_model, tiny_tokenizer, math_j
         processing_class=tiny_tokenizer,
     )
     result = trainer.train()
-    assert result.global_step > 0
+    assert result.global_step == 1
+
+
+def test_trainer_rejects_unimplemented_replay_buffer(tiny_model, tiny_tokenizer, math_jsonl, tmp_path):
+    config = _tiny_config(tmp_path, zero_variance_strategy="replay_buffer", enable_crps=False)
+    train_ds = load_rlvr_dataset(math_jsonl)
+
+    with pytest.raises(ValueError, match="not implemented safely"):
+        build_trainer(
+            config=config,
+            train_dataset=train_ds,
+            model=tiny_model,
+            processing_class=tiny_tokenizer,
+        )
 
 
 def test_trainer_failure_mining_crps_enabled(tiny_model, tiny_tokenizer, math_jsonl, tmp_path):
@@ -228,5 +248,6 @@ def test_trainer_with_curriculum(tiny_model, tiny_tokenizer, math_jsonl, tmp_pat
         model=tiny_model,
         processing_class=tiny_tokenizer,
     )
+    assert trainer._curriculum_sampler is not None
     result = trainer.train()
     assert result.global_step > 0
