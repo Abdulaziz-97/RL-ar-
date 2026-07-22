@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "C:\\Python313\\python.exe",
+    "-m",
+    "rlvr_pipeline",
+    "train",
+    "--config",
+    "C:\\Users\\Azooo\\arabic-reasoning-rlvr-sota\\team_pack\\configs\\qwen_4b_qlora.yaml",
+    "--output",
+    "C:\\Users\\Azooo\\arabic-reasoning-rlvr-sota\\team_pack\\runs\\experiments_test_dry\\B1",
+    "--max-steps",
+    "1",
+    "--loss-type",
+    "grpo",
+    "--curriculum",
+    "none",
+    "--zero-variance",
+    "discard",
+    "--disable-crps"
+  ],
+  "joined": "C:\\Python313\\python.exe -m rlvr_pipeline train --config C:\\Users\\Azooo\\arabic-reasoning-rlvr-sota\\team_pack\\configs\\qwen_4b_qlora.yaml --output C:\\Users\\Azooo\\arabic-reasoning-rlvr-sota\\team_pack\\runs\\experiments_test_dry\\B1 --max-steps 1 --loss-type grpo --curriculum none --zero-variance discard --disable-crps"
+}
