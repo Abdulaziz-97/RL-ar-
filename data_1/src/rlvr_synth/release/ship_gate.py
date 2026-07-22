@@ -3,12 +3,14 @@ import json
 import re
 from collections import Counter
 from dataclasses import asdict, dataclass, field
+from itertools import combinations
 from pathlib import Path
 from typing import Any, Iterable
 from rlvr_contracts.answer_spec import AnswerSpecError, parse_answer_spec, reject_symbolic
 from rlvr_contracts.response import parse_response
 from rlvr_contracts.schema_validate import validate_record
 from rlvr_contracts.verifiers import VERIFIER_REGISTRY_VERSION, verify_answer
+from rlvr_synth.qa.arabic_metrics import score_arabic_text
 from rlvr_synth.release.manifest import ReleaseManifest, detect_stale_artifacts, sha256_file
 _ARABIC_RE = re.compile('[\\u0600-\\u06FF]')
 
@@ -63,7 +65,7 @@ def audit_family_splits(corpora: dict[str, list[dict[str, Any]]]) -> list[GateRe
     results: list[GateResult] = []
     family_sets = {name: {str(r.get('family_id', '')) for r in rows if r.get('family_id')} for name, rows in corpora.items()}
     prompt_sets = {name: {str(r.get('prompt', '')).strip() for r in rows if r.get('prompt')} for name, rows in corpora.items()}
-    pairs = [('sft_train', 'rlvr_train'), ('sft_train', 'rlvr_eval'), ('sft_train', 'private_eval'), ('rlvr_train', 'rlvr_eval'), ('rlvr_train', 'private_eval'), ('sft_eval', 'rlvr_train'), ('sft_eval', 'private_eval')]
+    pairs = list(combinations(sorted(corpora), 2))
     for a, b in pairs:
         if a not in family_sets or b not in family_sets:
             continue
@@ -93,7 +95,7 @@ def run_ship_gate(*, corpora: dict[str, Path], manifest: ReleaseManifest | None=
         token_lens: list[int] = []
         templates: Counter[str] = Counter()
         for row in rows:
-            kind = schema_map.get(name) or _infer_schema_kind(row, 'problem')
+            kind = schema_map.get(name) or _infer_schema_kind(row, "")
             verrs = validate_record(kind, row)
             if verrs:
                 schema_errors += 1
@@ -115,20 +117,26 @@ def run_ship_gate(*, corpora: dict[str, Path], manifest: ReleaseManifest | None=
                 if not parsed.format_ok:
                     format_errors += 1
                 token_lens.append(len((parsed.think or '').split()))
-                arabic_scores.append(_arabic_ratio(parsed.think or response))
+                arabic_scores.append(
+                    float(score_arabic_text(parsed.think or response)["arabic_ratio"])
+                )
                 if spec is not None:
                     if not verify_answer(response, spec, from_completion=True).ok:
                         verifier_errors += 1
             else:
-                arabic_scores.append(_arabic_ratio(str(row.get('prompt', ''))))
+                arabic_scores.append(
+                    float(
+                        score_arabic_text(str(row.get("prompt", "")))["arabic_ratio"]
+                    )
+                )
             templates[str(row.get('prompt', ''))[:80]] += 1
         n = max(1, len(rows))
-        gates.append(GateResult('schema_validity', schema_errors == 0, True, f'errors={schema_errors}', schema_errors))
-        gates.append(GateResult('answer_spec_validity', answer_errors == 0, True, f'errors={answer_errors}', answer_errors))
-        gates.append(GateResult('symbolic_rejected', symbolic_errors == 0, True, f'errors={symbolic_errors}', symbolic_errors))
-        gates.append(GateResult('format_validity', format_errors == 0, True, f'errors={format_errors}', format_errors))
-        gates.append(GateResult('verifier_validity', verifier_errors == 0, True, f'errors={verifier_errors}', verifier_errors))
-        gates.append(GateResult('metadata_complete', meta_errors == 0, True, f'errors={meta_errors}', meta_errors))
+        gates.append(GateResult(f'schema_validity:{name}', schema_errors == 0, True, f'errors={schema_errors}', schema_errors))
+        gates.append(GateResult(f'answer_spec_validity:{name}', answer_errors == 0, True, f'errors={answer_errors}', answer_errors))
+        gates.append(GateResult(f'symbolic_rejected:{name}', symbolic_errors == 0, True, f'errors={symbolic_errors}', symbolic_errors))
+        gates.append(GateResult(f'format_validity:{name}', format_errors == 0, True, f'errors={format_errors}', format_errors))
+        gates.append(GateResult(f'verifier_validity:{name}', verifier_errors == 0, True, f'errors={verifier_errors}', verifier_errors))
+        gates.append(GateResult(f'metadata_complete:{name}', meta_errors == 0, True, f'errors={meta_errors}', meta_errors))
         if arabic_scores:
             scores = sorted(arabic_scores)
             median = scores[len(scores) // 2]
@@ -141,11 +149,32 @@ def run_ship_gate(*, corpora: dict[str, Path], manifest: ReleaseManifest | None=
         if templates and len(rows) >= 5:
             top_share = templates.most_common(1)[0][1] / n
             gates.append(GateResult(f'template_concentration:{name}', top_share <= max_template_share, True, f'top_share={top_share:.4f}', top_share))
-        unresolved = sum((1 for r in rows if (r.get('decontam') or {}).get('status') == 'unresolved' or (r.get('metadata') or {}).get('contamination_unresolved')))
+        unresolved = sum(
+            1
+            for r in rows
+            if (r.get("decontam") or {}).get("status")
+            in {"review", "unresolved"}
+            or ((r.get("metadata") or {}).get("decontam") or {}).get("status")
+            in {"review", "unresolved"}
+            or (r.get("metadata") or {}).get("contamination_unresolved")
+        )
         gates.append(GateResult(f'no_unresolved_contamination:{name}', unresolved == 0, True, f'unresolved={unresolved}', unresolved))
     gates.extend(audit_family_splits(loaded))
     if manifest is not None:
-        gates.append(GateResult('verifier_registry_match', manifest.verifier_registry_version == VERIFIER_REGISTRY_VERSION or bool(manifest.verifier_registry_version), True, f'manifest={manifest.verifier_registry_version}, runtime={VERIFIER_REGISTRY_VERSION}'))
+        registry_matches = (
+            manifest.verifier_registry_version == VERIFIER_REGISTRY_VERSION
+        )
+        gates.append(
+            GateResult(
+                "verifier_registry_match",
+                registry_matches,
+                True,
+                (
+                    f"manifest={manifest.verifier_registry_version}, "
+                    f"runtime={VERIFIER_REGISTRY_VERSION}"
+                ),
+            )
+        )
         if root is not None:
             stale = detect_stale_artifacts(manifest, root)
             gates.append(GateResult('stale_artifacts', len(stale) == 0, True, f'stale={stale}', len(stale)))

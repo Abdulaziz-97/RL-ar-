@@ -9,6 +9,10 @@ from typing import Optional
 # Primary grammar (preferred): think block then answer block.
 _THINK_RE = re.compile(r"<think>\s*(.*?)\s*</think>", re.DOTALL | re.IGNORECASE)
 _ANSWER_RE = re.compile(r"<answer>\s*(.*?)\s*</answer>", re.DOTALL | re.IGNORECASE)
+_RESPONSE_RE = re.compile(
+    r"^\s*<think>\s*(.*?)\s*</think>\s*<answer>\s*(.*?)\s*</answer>\s*$",
+    re.DOTALL | re.IGNORECASE,
+)
 _DIGIT_TOKEN_RE = re.compile(r"^[\d\u0660-\u0669.\-+*/=<>()\[\]{},:]+$")
 
 
@@ -33,11 +37,14 @@ def parse_response(completion: str) -> ParsedResponse:
 
     think_m = _THINK_RE.search(text)
     answer_m = _ANSWER_RE.search(text)
+    full_m = _RESPONSE_RE.fullmatch(text)
 
     if think_m is None:
         errors.append("missing_think_block")
     if answer_m is None:
         errors.append("missing_answer_block")
+    if think_m is not None and answer_m is not None and full_m is None:
+        errors.append("invalid_block_order_or_extra_text")
 
     think = think_m.group(1) if think_m else None
     answer = answer_m.group(1).strip() if answer_m else None
@@ -67,11 +74,9 @@ def parse_response(completion: str) -> ParsedResponse:
                 if unique_ratio < 0.6:
                     format_score -= 0.2
                 format_score = max(0.0, min(1.0, format_score))
-                format_ok = format_score > 0.0
-                # Prefer think-before-answer ordering but do not hard-fail if both present.
-                if think_m and answer_m and think_m.start() > answer_m.start():
-                    errors.append("answer_before_think")
-                    format_score = max(0.0, format_score - 0.2)
+                format_ok = format_score > 0.0 and full_m is not None
+                if full_m is None:
+                    format_score = 0.0
 
     return ParsedResponse(
         think=think,

@@ -288,6 +288,10 @@ Export `release_corpora/sft_train.jsonl`, filter to 4,000 with domain balance, w
 3. Assign bands; fill 30/50/18/2; write deferred/mastered aside.
 4. Enforce decontam vs cold-start and vs eval.
 
+For separate jobs, set `decontam_reference_paths` in the later job's YAML to
+the earlier release JSONL files. The gates load both prompts and responses and
+fail if a configured reference is missing.
+
 Pilot reference implementation: `scripts/build_data_team_samples_400.py` in the
 parent repo (hybrid band fallback when Flash collapses). Extend `--target 4000`
 and family counts; do **not** treat Flash bands as final.

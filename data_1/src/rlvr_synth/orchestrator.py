@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import random
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -10,6 +12,7 @@ from typing import Any, Literal
 
 import yaml
 
+from rlvr_contracts.response import extract_think
 from rlvr_contracts.verifiers import VERIFIER_REGISTRY_VERSION
 from rlvr_synth.roles.external import ExternalModuleBackend
 from rlvr_synth.roles.protocols import RenderedProblem, TraceCandidate
@@ -39,6 +42,7 @@ class SynthConfig:
     external_module: str = ""
     external_config: dict[str, Any] = field(default_factory=dict)
     max_alternate_methods: int = 1
+    decontam_reference_paths: list[str] = field(default_factory=list)
     partitions: dict[str, float] = field(
         default_factory=lambda: {
             "sft_train": 0.5,
@@ -51,6 +55,29 @@ class SynthConfig:
     def from_yaml(cls, path: str | Path) -> "SynthConfig":
         data = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
         return cls(**{k: v for k, v in data.items() if k in cls.__dataclass_fields__})
+
+    def validate(self) -> None:
+        if self.n_families < 0:
+            raise ValueError("n_families must be non-negative")
+        if self.traces_per_problem < 0:
+            raise ValueError("traces_per_problem must be non-negative")
+        if self.max_alternate_methods < 0:
+            raise ValueError("max_alternate_methods must be non-negative")
+        if self.n_families and not self.domains:
+            raise ValueError("domains must not be empty when generating families")
+        if not self.partitions:
+            raise ValueError("partitions must not be empty")
+        weights = list(self.partitions.values())
+        if any(
+            isinstance(weight, bool)
+            or not isinstance(weight, (int, float))
+            or not math.isfinite(float(weight))
+            or float(weight) < 0
+            for weight in weights
+        ):
+            raise ValueError("partition weights must be finite non-negative numbers")
+        if sum(float(weight) for weight in weights) <= 0:
+            raise ValueError("at least one partition weight must be positive")
 
 
 STAGE_ORDER = [
@@ -65,6 +92,9 @@ STAGE_ORDER = [
     "select_quarantine",
     "release_prep",
 ]
+
+# These partitions contain problems/labels, not teacher demonstrations.
+PROMPT_ONLY_PARTITIONS = {"rlvr_train", "rlvr_eval", "private_eval"}
 
 
 def _write_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
@@ -109,6 +139,7 @@ class SynthOrchestrator:
     """Resumable DAG: each stage writes artifacts under work_dir/stages/."""
 
     def __init__(self, config: SynthConfig):
+        config.validate()
         self.config = config
         self.work = Path(config.work_dir)
         self.stages_dir = self.work / "stages"
@@ -139,15 +170,63 @@ class SynthOrchestrator:
             json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
+    def _config_fingerprint(self) -> str:
+        payload = json.dumps(
+            asdict(self.config), ensure_ascii=False, sort_keys=True, default=str
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    def _reset_managed_outputs(self) -> None:
+        managed = [
+            self.state_path,
+            self.candidates_path,
+            self.quarantine_path,
+            self.work / "release_prep.json",
+        ]
+        managed.extend(self.stages_dir / f"{stage}.jsonl" for stage in STAGE_ORDER)
+        managed.extend(
+            self.work / "release_corpora" / f"{name}.jsonl"
+            for name in (
+                "sft_train",
+                "sft_eval",
+                "rlvr_train",
+                "rlvr_eval",
+                "private_eval",
+                "rejection_sft",
+            )
+        )
+        for path in managed:
+            if path.exists():
+                path.unlink()
+
     def run(self, resume: bool = True) -> dict[str, Any]:
-        state = self._load_state() if resume else {"completed_stages": [], "seed": self.config.seed}
+        fingerprint = self._config_fingerprint()
+        if resume:
+            state = self._load_state()
+            previous = state.get("config_fingerprint")
+            if previous is None and state.get("completed_stages"):
+                raise RuntimeError(
+                    "refusing to resume legacy state without a configuration "
+                    "fingerprint; rerun with resume=False/--no-resume"
+                )
+            if previous and previous != fingerprint:
+                raise RuntimeError(
+                    "refusing to resume with a changed configuration; "
+                    "rerun with resume=False/--no-resume"
+                )
+        else:
+            self._reset_managed_outputs()
+            state = {"completed_stages": [], "seed": self.config.seed}
+        state["config_fingerprint"] = fingerprint
         completed = set(state.get("completed_stages", []))
         for stage in STAGE_ORDER:
             if stage in completed:
                 continue
             getattr(self, f"stage_{stage}")()
             completed.add(stage)
-            state["completed_stages"] = list(completed)
+            state["completed_stages"] = [
+                name for name in STAGE_ORDER if name in completed
+            ]
             self._save_state(state)
         return {
             "work_dir": str(self.work),
@@ -202,19 +281,22 @@ class SynthOrchestrator:
         out = []
         for row in rows:
             out.append({**row, "unique": True, "solved": True})
-        # Mark duplicates by family_id (hard) and by answer payload within domain.
+        # Mark duplicate families and duplicate generated prompts. Different
+        # problems are allowed to share an answer (e.g. many problems equal 0).
         seen_family: set[str] = set()
-        seen_ans: set[str] = set()
+        seen_problem: set[str] = set()
         for row in out:
             fam = str(row.get("family_id") or "")
             if fam and fam in seen_family:
                 row["unique"] = False
             seen_family.add(fam)
-            key = f"{row['domain']}|{json.dumps(row['answer_spec'], sort_keys=True)}"
-            # Only reject answer collisions across different families.
-            if key in seen_ans:
+            latent = row.get("latent") or {}
+            prompt = " ".join(str(latent.get("prompt") or "").split()).casefold()
+            key = f"{row['domain']}|{prompt}"
+            if prompt and key in seen_problem:
                 row["unique"] = False
-            seen_ans.add(key)
+            if prompt:
+                seen_problem.add(key)
         _write_jsonl(self.stages_dir / "deterministic_solve.jsonl", out)
 
     def stage_arabic_render(self) -> None:
@@ -260,9 +342,20 @@ class SynthOrchestrator:
                 for k in RenderedProblem.__dataclass_fields__
                 if k in p
             })
-            traces = self.backend.trace_teacher.sample_traces(
-                problem, self.config.traces_per_problem, self.config.seed
-            )
+            if problem.partition in PROMPT_ONLY_PARTITIONS:
+                traces = [
+                    TraceCandidate(
+                        problem_id=problem.problem_id,
+                        response="",
+                        method_id="none",
+                        teacher="none",
+                        concision_tokens=0,
+                    )
+                ]
+            else:
+                traces = self.backend.trace_teacher.sample_traces(
+                    problem, self.config.traces_per_problem, self.config.seed
+                )
             for tr in traces:
                 cand = asdict(tr)
                 cand["family_id"] = problem.family_id
@@ -270,7 +363,10 @@ class SynthOrchestrator:
                 cand["domain"] = problem.domain
                 cand["prompt"] = problem.prompt
                 cand["answer_spec"] = problem.answer_spec
-                cand["metadata"] = dict(problem.metadata or {})
+                cand["metadata"] = {
+                    **dict(problem.metadata or {}),
+                    **dict(tr.metadata or {}),
+                }
                 cand["provenance"] = dict(problem.provenance or {})
                 _append_jsonl(self.candidates_path, cand)
                 out.append(cand)
@@ -295,7 +391,10 @@ class SynthOrchestrator:
                 teacher=row.get("teacher", "unknown"),
                 concision_tokens=row.get("concision_tokens", 0),
             )
-            ok, reasons = self.backend.verifier.verify_steps(problem, trace)
+            if problem.partition in PROMPT_ONLY_PARTITIONS:
+                ok, reasons = self.backend.verifier.verify_problem(problem)
+            else:
+                ok, reasons = self.backend.verifier.verify_steps(problem, trace)
             row = {**row, "step_verified": ok, "verified": ok, "rejection_reasons": reasons}
             if not ok:
                 _append_jsonl(self.quarantine_path, row)
@@ -308,6 +407,16 @@ class SynthOrchestrator:
         for row in rows:
             if not row.get("step_verified"):
                 out.append(row)
+                continue
+            if row.get("partition") in PROMPT_ONLY_PARTITIONS:
+                out.append(
+                    {
+                        **row,
+                        "concision_tokens": 0,
+                        "verified": True,
+                        "step_verified": True,
+                    }
+                )
                 continue
             problem = RenderedProblem(
                 problem_id=row["problem_id"],
@@ -333,7 +442,7 @@ class SynthOrchestrator:
                 **row,
                 "response": edited.response,
                 "concision_tokens": edited.concision_tokens or len(
-                    (edited.response.split("</think>")[0]).split()
+                    (extract_think(edited.response) or "").split()
                 ),
                 "verified": ok,
                 "step_verified": ok,
@@ -350,9 +459,27 @@ class SynthOrchestrator:
         from rlvr_synth.qa.arabic_metrics import score_arabic_record
 
         rows = _read_jsonl(self.stages_dir / "concision.jsonl")
-        # Decontam against external refs only; within-batch handled inside pipeline
-        # without self-rejecting alternate traces of the same problem.
-        deco = decontaminate_records(rows, reference_texts=[])
+        reference_texts: list[str] = []
+        for raw_path in self.config.decontam_reference_paths:
+            path = Path(raw_path)
+            if not path.exists():
+                raise FileNotFoundError(f"decontam reference not found: {path}")
+            if path.suffix.lower() == ".jsonl":
+                for ref in _read_jsonl(path):
+                    text = "\n".join(
+                        str(ref.get(key) or "") for key in ("prompt", "response")
+                    ).strip()
+                    if text:
+                        reference_texts.append(text)
+            else:
+                reference_texts.extend(
+                    line.strip()
+                    for line in path.read_text(encoding="utf-8").splitlines()
+                    if line.strip()
+                )
+        # Within-batch handling avoids self-rejecting alternate traces of the
+        # same problem; configured references enforce cross-run isolation.
+        deco = decontaminate_records(rows, reference_texts=reference_texts)
         out = []
         for row, d in zip(rows, deco):
             aq = score_arabic_record(row)
@@ -362,7 +489,7 @@ class SynthOrchestrator:
                 "decontam": d,
                 "arabic_qa": aq,
                 "gate_pass": bool(row.get("verified"))
-                and d.get("status") != "reject"
+                and d.get("status") == "clean"
                 and aq.get("pass", False),
             }
             out.append(row)
@@ -402,31 +529,15 @@ class SynthOrchestrator:
             alts = [
                 c for c in good[1:] if c.get("method_id") != primary.get("method_id")
             ]
+            selected_alt = None
             if alts and self.config.max_alternate_methods > 0:
-                selected.append(alts[0])
+                selected_alt = alts[0]
+                selected.append(selected_alt)
             for c in cands:
-                if c is primary or (alts and c is alts[0]):
+                if c is primary or c is selected_alt:
                     continue
                 if c not in good:
                     _append_jsonl(self.quarantine_path, c)
-
-        # Problem-only private_eval rows when no traces were sampled.
-        if self.config.traces_per_problem <= 0:
-            for prob in _read_jsonl(self.stages_dir / "arabic_render.jsonl"):
-                if prob.get("partition") != "private_eval":
-                    continue
-                selected.append(
-                    {
-                        **prob,
-                        "response": "",
-                        "method_id": "none",
-                        "teacher": "none",
-                        "verified": True,
-                        "step_verified": True,
-                        "concision_tokens": 0,
-                        "gate_pass": True,
-                    }
-                )
 
         _write_jsonl(self.stages_dir / "selected.jsonl", selected)
 
@@ -442,6 +553,20 @@ class SynthOrchestrator:
         }
         for row in selected:
             part = row.get("partition", "sft_train")
+            metadata = dict(row.get("metadata") or {})
+            is_frozen_replay = (
+                self.config.backend == "external"
+                and self.config.external_config.get("mode") == "replay"
+            )
+            if is_frozen_replay:
+                metadata = {}
+            else:
+                metadata.update(
+                    {
+                        "decontam": dict(row.get("decontam") or {}),
+                        "arabic_qa": dict(row.get("arabic_qa") or {}),
+                    }
+                )
             base = {
                 "problem_id": row["problem_id"],
                 "family_id": row["family_id"],
@@ -455,20 +580,29 @@ class SynthOrchestrator:
                 or {"source": self.config.backend},
                 "licensing": {"license": "internal"},
                 "lineage": {"generator_version": "rlvr_synth"},
-                "metadata": dict(row.get("metadata") or {}),
+                "metadata": metadata,
             }
             if part in {"sft_train", "sft_eval", "rejection_sft"}:
+                verifier_result = bool(
+                    row.get("verified") and row.get("gate_pass")
+                )
+                if not verifier_result:
+                    raise RuntimeError(
+                        f"selected SFT row {row.get('problem_id')} is not verified"
+                    )
                 corpora.setdefault(part, []).append(
                     {
                         **base,
                         "response": row["response"],
-                        "verifier_result": True,
+                        "verifier_result": verifier_result,
                         "trace_audit": {
-                            "format_ok": True,
+                            "format_ok": bool(row.get("verified")),
                             "step_verified": bool(row.get("step_verified")),
                             "concision_tokens": row.get("concision_tokens", 0),
                             "method_id": row.get("method_id"),
-                            "rejection_reasons": [],
+                            "rejection_reasons": list(
+                                row.get("rejection_reasons") or []
+                            ),
                         },
                     }
                 )

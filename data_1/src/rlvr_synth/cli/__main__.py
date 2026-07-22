@@ -7,6 +7,9 @@ from rlvr_synth.orchestrator import SynthConfig, SynthOrchestrator
 from rlvr_synth.release.manifest import build_manifest, write_manifest
 from rlvr_synth.release.ship_gate import run_ship_gate, write_ship_report
 
+PACK_ROOT = Path(__file__).resolve().parents[3]
+
+
 def cmd_run(args: argparse.Namespace) -> int:
     cfg = SynthConfig.from_yaml(args.config) if args.config else SynthConfig()
     if args.work_dir:
@@ -20,6 +23,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     if args.external_module:
         cfg.external_module = args.external_module
         cfg.backend = 'external'
+    if cfg.external_module and not Path(cfg.external_module).is_absolute():
+        cfg.external_module = str((PACK_ROOT / cfg.external_module).resolve())
     orch = SynthOrchestrator(cfg)
     result = orch.run(resume=not args.no_resume)
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -39,9 +44,12 @@ def cmd_ship(args: argparse.Namespace) -> int:
         artifacts.append((name, f'release_corpora/{name}.jsonl', path))
     release_id = args.release_id or f'stub_{work.name}'
     manifest = build_manifest(release_id, corpus_version=args.corpus_version or release_id, verifier_registry_version=VERIFIER_REGISTRY_VERSION, artifacts=artifacts, notes={'backend': 'stub_or_external', 'credential_free': True})
-    man_path = write_manifest(manifest, work / 'release')
+    # Immutable releases need distinct directories; otherwise a second
+    # release_id can never be written despite the error suggesting it.
+    release_dir = work / 'release' / release_id
+    man_path = write_manifest(manifest, release_dir)
     report = run_ship_gate(corpora=corpora, manifest=manifest, root=work, schema_kind_by_corpus=schema_kinds)
-    write_ship_report(report, work / 'release' / 'ship_gate_report.json')
+    write_ship_report(report, release_dir / 'ship_gate_report.json')
     print(json.dumps({'manifest': str(man_path), 'passed': report.passed, 'errors': report.errors}, ensure_ascii=False, indent=2))
     return 0 if report.passed else 1
 

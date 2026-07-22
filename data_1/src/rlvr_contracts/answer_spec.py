@@ -10,6 +10,7 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from fractions import Fraction
 from typing import Any, Mapping, Optional
 
@@ -122,7 +123,10 @@ def canonicalize_decimal_exact(value: Any) -> str:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if isinstance(value, float) and not math.isfinite(value):
             raise AnswerSpecError(f"non-finite decimal: {value}")
-        text = format(value, "f") if isinstance(value, float) else str(value)
+        # `format(float, "f")` defaults to six decimals and silently turns
+        # values such as 1e-7 into zero. Decimal(str(...)) preserves the
+        # user-visible float value while rendering without exponent notation.
+        text = format(Decimal(str(value)), "f")
     else:
         text = _normalize_numeric_text(str(value))
         if not _DECIMAL_RE.match(text) and not _INT_RE.match(text):
@@ -202,9 +206,19 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     tolerance = raw.get("tolerance")
     if key == "decimal_approx" and tolerance is None:
         tolerance = 1e-6
-    if key != "decimal_approx" and tolerance is not None and key not in {"decimal_exact"}:
-        # Allow unused tolerance fields only for approx; ignore elsewhere.
-        pass
+    if tolerance is not None:
+        try:
+            tolerance = float(tolerance)
+        except (TypeError, ValueError) as exc:
+            raise AnswerSpecError("answer_spec.tolerance must be numeric") from exc
+        if not math.isfinite(tolerance) or tolerance < 0:
+            raise AnswerSpecError(
+                "answer_spec.tolerance must be finite and non-negative"
+            )
+        if key != "decimal_approx":
+            raise AnswerSpecError(
+                "answer_spec.tolerance is only valid for decimal_approx"
+            )
 
     canonical_in = raw.get("canonical", raw.get("value", raw.get("ground_truth")))
     if canonical_in is None and "ground_truth_structured" in raw:

@@ -10,6 +10,7 @@
     "partition",
     "prompt",
     "answer_spec",
+    "verifier_type",
     "verifier_version",
     "access_control"
   ],
@@ -37,6 +38,7 @@
       },
       "additionalProperties": true
     },
+    "verifier_type": { "type": "string", "enum": ["python", "z3", "hybrid"] },
     "verifier_version": { "type": "string", "minLength": 1 },
     "access_control": {
       "type": "object",

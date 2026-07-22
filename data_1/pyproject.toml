@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "arabic-reasoning-rlvr-pipeline"
+version = "0.1.0"
+description = "Arabic cold-start and RLVR synthetic-data pipeline"
+requires-python = ">=3.10"
+dependencies = [
+  "dspy>=3.1",
+  "openai>=1.40",
+  "python-dotenv>=1.0",
+  "PyYAML>=6.0",
+  "pydantic>=2.0",
+  "jsonschema>=4.20",
+]
+
+[project.scripts]
+rlvr-synth = "rlvr_synth.cli.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rlvr_contracts = ["schemas/*.json", "fixtures/*.json"]

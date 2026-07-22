@@ -13,6 +13,7 @@
     "answer_spec",
     "trace_audit",
     "verifier_result",
+    "verifier_type",
     "verifier_version"
   ],
   "properties": {
@@ -41,6 +42,7 @@
       "additionalProperties": true
     },
     "verifier_result": { "type": "boolean", "const": true },
+    "verifier_type": { "type": "string", "enum": ["python", "z3", "hybrid"] },
     "verifier_version": { "type": "string", "minLength": 1 },
     "trace_audit": {
       "type": "object",

@@ -14,6 +14,16 @@ def normalize_text(text: str) -> str:
 def exact_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode('utf-8')).hexdigest()
 
+def _record_text(record: dict[str, Any]) -> str:
+    return "\n".join(
+        value
+        for value in (
+            str(record.get("prompt") or "").strip(),
+            str(record.get("response") or "").strip(),
+        )
+        if value
+    )
+
 def char_ngrams(text: str, n: int=5) -> set[str]:
     t = normalize_text(text)
     if len(t) < n:
@@ -118,7 +128,7 @@ def decontaminate_records(records: list[dict[str, Any]], *, reference_texts: lis
     seen_hashes: dict[str, str] = {}
     results: list[dict[str, Any]] = []
     for idx, rec in enumerate(records):
-        text = str(rec.get('prompt') or rec.get('response') or '')
+        text = _record_text(rec)
         h = exact_hash(text)
         reasons: list[str] = []
         status = 'clean'
@@ -144,16 +154,23 @@ def decontaminate_records(records: list[dict[str, Any]], *, reference_texts: lis
             status = 'review'
             reasons.append(f'jaccard>={jaccard_review}')
         sk = mh.sketch(text)
+        reference_minhash_hit = False
         for other in lsh.query(sk):
             if other.startswith('ref:'):
                 ri = int(other.split(':')[1])
-                max_mh = max(max_mh, mh.estimate_jaccard(sk, ref_sketches[ri]))
+                similarity = mh.estimate_jaccard(sk, ref_sketches[ri])
+                max_mh = max(max_mh, similarity)
+                if similarity >= minhash_reject:
+                    reference_minhash_hit = True
         for key, prev in list(lsh.sketches.items()):
             if key.startswith('batch:'):
                 max_mh = max(max_mh, mh.estimate_jaccard(sk, prev))
         lsh.add(f'batch:{idx}', sk)
-        if max_mh >= minhash_reject and 'exact_hash_duplicate' not in reasons:
-            if rec.get('family_id') and any((True for j, other in enumerate(records[:idx]) if other.get('family_id') != rec.get('family_id') and mh.estimate_jaccard(sk, mh.sketch(str(other.get('prompt') or ''))) >= minhash_reject)):
+        if reference_minhash_hit and 'exact_hash_duplicate' not in reasons:
+            status = 'reject'
+            reasons.append('minhash_reference')
+        elif max_mh >= minhash_reject and 'exact_hash_duplicate' not in reasons:
+            if rec.get('family_id') and any((True for j, other in enumerate(records[:idx]) if other.get('family_id') != rec.get('family_id') and mh.estimate_jaccard(sk, mh.sketch(_record_text(other))) >= minhash_reject)):
                 status = 'reject' if status != 'reject' else status
                 reasons.append('minhash_cross_family')
         bench = check_benchmark_registry(text, benchmark_registry)

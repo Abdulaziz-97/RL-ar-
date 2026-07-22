@@ -15,7 +15,8 @@ class StubProblemGenerator:
     DOMAINS = ('gsm8k', 'math', 'math_comp', 'logic')
 
     def generate_family(self, domain: str, seed: int) -> LatentProblem:
-        domain = domain if domain in self.DOMAINS else 'math'
+        if domain not in self.DOMAINS:
+            raise ValueError(f'unsupported stub generation domain: {domain!r}')
         a = 11 + seed * 17 % 887
         b = 13 + seed * 29 % 907
         if domain == 'logic':
@@ -29,7 +30,12 @@ class StubProblemGenerator:
 
     def render_arabic(self, latent: LatentProblem, seed: int) -> RenderedProblem:
         if latent.latent.get('kind') == 'logic_attr':
-            prompt = f"مسألة رقم {seed}: صنف العنصر: اللون أحمر والحجم {latent.latent['a'] % 3}. أعد كائن JSON بالحقلين color و size."
+            expected = parse_answer_spec(latent.answer_spec).ground_truth_structured
+            example = json.dumps(expected, ensure_ascii=False, sort_keys=True)
+            prompt = (
+                f"مسألة رقم {seed}: صنف العنصر وفق البيانات الآتية: {example}. "
+                "أعد كائن JSON مطابقًا بهذه الحقول والقيم."
+            )
         else:
             a, b = (latent.latent['a'], latent.latent['b'])
             prompt = f'مسألة رقم {seed}: ما مجموع العددین {a} و {b}؟'

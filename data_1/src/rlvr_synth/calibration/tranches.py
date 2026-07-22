@@ -39,11 +39,18 @@ def merge_tranches(sources: list[Path], out_path: Path, *, cache_dir: Path | Non
     cache_dir = cache_dir or out_path.parent / '.tranche_cache'
     cache_dir.mkdir(parents=True, exist_ok=True)
     source_hashes = {str(p): _sha256_file(p) for p in sources}
-    cache_key = hashlib.sha256(json.dumps(source_hashes, sort_keys=True).encode('utf-8')).hexdigest()
+    # Merge output depends on source order and dedupe key, so both belong in
+    # the cache identity (a sorted dict alone loses source ordering).
+    cache_identity = {
+        "sources": [(str(path), source_hashes[str(path)]) for path in sources],
+        "dedupe_on": dedupe_on,
+    }
+    cache_key = hashlib.sha256(
+        json.dumps(cache_identity, sort_keys=True).encode("utf-8")
+    ).hexdigest()
     cache_meta = cache_dir / f'{cache_key}.json'
     cache_data = cache_dir / f'{cache_key}.jsonl'
     if cache_meta.exists() and cache_data.exists():
-        cache_data.replace(out_path) if False else None
         rows = _read_jsonl(cache_data)
         _write_jsonl(out_path, rows)
         return TrancheMergeResult(out_path=str(out_path), n_rows=len(rows), source_hashes=source_hashes, cache_hit=True)

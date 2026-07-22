@@ -33,6 +33,8 @@ class PassAtNResult:
 
 def assign_band(pass_fraction: float) -> str:
     """easy / medium / hard / deferred / mastered bands from pass@8 fraction."""
+    if not 0.0 <= pass_fraction <= 1.0:
+        raise ValueError(f"pass_fraction must be in [0, 1], got {pass_fraction!r}")
     if pass_fraction >= 0.999:
         return "mastered"
     if pass_fraction >= 0.75:
@@ -60,6 +62,8 @@ def calibrate_pass_at_n(
     system_prompt: str = "",
 ) -> list[PassAtNResult]:
     """Record raw pass fraction for each problem under fixed seeds/protocol."""
+    if n <= 0:
+        raise ValueError(f"n must be positive, got {n}")
     results: list[PassAtNResult] = []
     sys_hash = _hash_text(system_prompt) if system_prompt else ""
     for i, prob in enumerate(problems):

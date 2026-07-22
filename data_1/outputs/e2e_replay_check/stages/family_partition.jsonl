@@ -1,0 +1,4 @@
+{"family_id": "fam_gsm8k_00000_s4242", "domain": "gsm8k", "partition": "sft_train", "seed": 4242}
+{"family_id": "fam_math_00001_s4242", "domain": "math", "partition": "sft_train", "seed": 4243}
+{"family_id": "fam_math_comp_00002_s4242", "domain": "math_comp", "partition": "sft_train", "seed": 4244}
+{"family_id": "fam_logic_00003_s4242", "domain": "logic", "partition": "sft_train", "seed": 4245}
