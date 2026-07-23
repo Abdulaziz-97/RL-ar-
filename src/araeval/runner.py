@@ -11,7 +11,7 @@ from typing import Any, Optional
 
 import torch
 from peft import LoraConfig, get_peft_model
-from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, StoppingCriteria, StoppingCriteriaList
 
 from araeval.config import AraEvalConfig
 from araeval.evaluators import EvalResult, evaluate_ifeval, evaluate_mcq
@@ -97,6 +97,26 @@ class AraEvalRunner:
         inputs = self.tokenizer(formatted_list, return_tensors="pt", padding=True).to(self.model.device)
         input_len = inputs["input_ids"].shape[1]
 
+        # Stop criteria for early termination when </answer> is generated
+        stop_criteria = None
+        if hasattr(self.tokenizer, "decode"):
+            stop_str_ids = self.tokenizer.encode("</answer>", add_special_tokens=False)
+            if stop_str_ids:
+                class AnswerStopCriteria(StoppingCriteria):
+                    def __init__(self, tok, target_ids):
+                        super().__init__()
+                        self.tok = tok
+                        self.target_ids = target_ids
+
+                    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+                        for seq in input_ids:
+                            seq_tail = seq[-20:].tolist()
+                            if any(seq_tail[i : i + len(self.target_ids)] == self.target_ids for i in range(len(seq_tail) - len(self.target_ids) + 1)):
+                                return True
+                        return False
+
+                stop_criteria = StoppingCriteriaList([AnswerStopCriteria(self.tokenizer, stop_str_ids)])
+
         with torch.no_grad():
             out = self.model.generate(
                 **inputs,
@@ -105,6 +125,8 @@ class AraEvalRunner:
                 temperature=self.config.temperature if self.config.temperature > 0 else 1.0,
                 top_p=self.config.top_p,
                 pad_token_id=self.tokenizer.pad_token_id,
+                use_cache=True,
+                stopping_criteria=stop_criteria,
             )
 
         results = []
