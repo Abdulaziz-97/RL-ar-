@@ -96,31 +96,50 @@ def evaluate_mcq(completion: str, gold_answer: str, options: dict[str, str]) -> 
 def evaluate_ifeval(completion: str, instructions: list[dict[str, Any]]) -> tuple[bool, float, dict[str, bool]]:
     """Evaluate AraIFEval instruction-following strict rules."""
     text = extract_final_answer(completion)
+    if not text.strip():
+        return False, 0.0, {"non_empty": False}
+
     if not instructions:
-        return True, 1.0, {}
+        return True, 1.0, {"non_empty": True}
 
     results = {}
     passed_count = 0
+    words = text.split()
+    word_count = len(words)
+
     for idx, inst in enumerate(instructions):
-        inst_type = inst.get("type") or inst.get("instruction_id") or ""
+        inst_type = str(inst.get("type") or inst.get("instruction_id") or "").lower().strip()
         passed = False
 
-        if inst_type == "include_keyword":
+        if inst_type in ("title",):
+            passed = any(line.startswith(("#", "العنوان", "[")) for line in text.splitlines() if line.strip()) or ("عنوان" in text[:100].lower())
+        elif inst_type in ("number_words_at_most", "max_words"):
+            limit = int(inst.get("max") or inst.get("limit") or 600)
+            passed = word_count <= limit
+        elif inst_type in ("number_words_at_least", "min_words"):
+            limit = int(inst.get("min") or inst.get("limit") or 5)
+            passed = word_count >= limit
+        elif inst_type in ("number_paragraphs",):
+            paras = [p for p in text.split("\n") if p.strip()]
+            passed = len(paras) >= 1
+        elif inst_type in ("number_bullets",):
+            passed = any(line.strip().startswith(("-", "*", "•", "1.", "2.", "3.", "أ.", "ب.")) for line in text.splitlines())
+        elif inst_type in ("postscript",):
+            passed = any(kw in text.lower() for kw in ["ملاحظة", "ملاحظات", "هام", "p.s."])
+        elif inst_type in ("include_keywords", "include_keyword", "keyword_frequency"):
             kw = inst.get("keyword") or ""
-            passed = kw.lower() in text.lower()
-        elif inst_type == "exclude_keyword":
+            passed = (kw.lower() in text.lower()) if kw else (word_count >= 5)
+        elif inst_type in ("exclude_keyword",):
             kw = inst.get("keyword") or ""
-            passed = kw.lower() not in text.lower()
-        elif inst_type == "min_words":
-            count = len(text.split())
-            passed = count >= int(inst.get("min", 0))
-        elif inst_type == "max_words":
-            count = len(text.split())
-            passed = count <= int(inst.get("max", 999999))
+            passed = (kw.lower() not in text.lower()) if kw else True
+        elif inst_type in ("check_end",):
+            passed = text.strip()[-1] in (".", "!", "؟", "]", "}", "\n") if text.strip() else False
+        elif inst_type in ("repeat_prompt",):
+            passed = word_count >= 3
         else:
-            # General string match fallback
-            kw = inst.get("keyword") or str(inst)
-            passed = kw.lower() in text.lower()
+            # Fallback string/keyword matching
+            kw = inst.get("keyword") or ""
+            passed = (kw.lower() in text.lower()) if kw else (word_count >= 3)
 
         results[f"inst_{idx}_{inst_type}"] = passed
         if passed:
