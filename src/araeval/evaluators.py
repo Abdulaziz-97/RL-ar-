@@ -46,19 +46,23 @@ def parse_mcq_choice(text: str, options: dict[str, str]) -> str:
     if not clean:
         return ""
 
-    # Direct match if completion is a single option letter
-    first_char = clean[0].upper()
-    if first_char in options:
-        return first_char
+    # Direct match if completion is a single letter or "A)" / "A."
+    if len(clean) <= 2 and clean[0].upper() in options:
+        if len(clean) == 1 or clean[1] in (")", ".", ":"):
+            return clean[0].upper()
 
-    # Regex for "الإجابة هي (A)" or "Option A" or "الخيار: B"
-    match = re.search(r"(?:الإجابة|الخيار|Option|Answer)?\s*[:\(-]?\s*([A-F])[\)\.\s:]", clean, re.IGNORECASE)
+    # Regex for "الإجابة هي (A)" or "Option A" or "Answer: B" or "الخيار: C"
+    match = re.search(
+        r"(?:الإجابة|الخيار|الإجابة الصحيحة|الخيار الصحيح|Option|Answer)\s*[:\(-]?\s*([A-F])(?:[\)\.\s:]|$)",
+        clean,
+        re.IGNORECASE,
+    )
     if match:
         letter = match.group(1).upper()
         if letter in options:
             return letter
 
-    # Search for option letter alone
+    # Search for standalone option letter
     match_standalone = re.search(r"\b([A-F])\b", clean, re.IGNORECASE)
     if match_standalone:
         letter = match_standalone.group(1).upper()
@@ -70,7 +74,8 @@ def parse_mcq_choice(text: str, options: dict[str, str]) -> str:
         if opt_text and opt_text.strip().lower() in clean.lower():
             return opt_letter
 
-    return first_char if first_char in ("A", "B", "C", "D") else clean
+    first_char = clean[0].upper()
+    return first_char if first_char in options else clean
 
 
 def evaluate_mcq(completion: str, gold_answer: str, options: dict[str, str]) -> tuple[bool, str]:
