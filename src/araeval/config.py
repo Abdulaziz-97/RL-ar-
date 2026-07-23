@@ -11,6 +11,8 @@ from typing import Literal, Optional
 
 ARAEVAL_DATASETS: dict[str, str] = {
     "ara_ifeval": "humain-ai/AraIFEval",
+    "ara_pro": "humain-ai/AraPro",
+    "ara_trust": "humain-ai/AraTruthfulQA",
     "ara_truthfulqa": "humain-ai/AraTruthfulQA",
     "ara_math": "humain-ai/AraMath",
     "ien_mcq": "humain-ai/IEN_MCQ",
@@ -18,6 +20,13 @@ ARAEVAL_DATASETS: dict[str, str] = {
     "etec": "humain-ai/Etec",
     "lc_eval": "humain-ai/LC-Eval",
 }
+
+CORE_FOUR_DATASETS: list[str] = [
+    "ara_ifeval",
+    "ara_pro",
+    "ara_trust",
+    "ara_math",
+]
 
 
 @dataclass
@@ -38,6 +47,8 @@ class AraEvalConfig:
     device: str = "cuda"
 
     def get_task_list(self) -> list[str]:
+        if "four" in self.tasks or "core4" in self.tasks or "4" in self.tasks:
+            return CORE_FOUR_DATASETS
         if "all" in self.tasks or not self.tasks:
             return list(ARAEVAL_DATASETS.keys())
         resolved = []

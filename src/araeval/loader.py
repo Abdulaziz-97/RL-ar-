@@ -99,9 +99,15 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
         elif isinstance(raw_options, list):
             labels_alpha = ["A", "B", "C", "D", "E", "F"]
             options = {labels_alpha[i]: str(opt) for i, opt in enumerate(raw_options) if i < len(labels_alpha)}
-        elif any(k in raw for k in ["option_a", "A", "option_A"]):
-            for lbl in ["A", "B", "C", "D"]:
-                val = raw.get(lbl) or raw.get(f"option_{lbl.lower()}") or raw.get(f"option_{lbl}")
+        elif any(k in raw for k in ["option_a", "A", "option_A", "choice1", "choice_1"]):
+            for i, lbl in enumerate(["A", "B", "C", "D"]):
+                val = (
+                    raw.get(lbl)
+                    or raw.get(f"option_{lbl.lower()}")
+                    or raw.get(f"option_{lbl}")
+                    or raw.get(f"choice{i + 1}")
+                    or raw.get(f"choice_{i + 1}")
+                )
                 if val:
                     options[lbl] = str(val)
 
