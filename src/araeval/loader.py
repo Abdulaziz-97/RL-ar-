@@ -82,15 +82,28 @@ def load_araeval_task(task_name: str, limit: Optional[int] = None) -> list[AraEv
         try:
             from datasets import load_dataset
 
-            ds = load_dataset(hf_path, split="test")
+            ds = None
+            for split_name in ["test", "train", "validation"]:
+                try:
+                    ds = load_dataset(hf_path, split=split_name)
+                    break
+                except Exception:
+                    continue
+
+            if ds is None:
+                ds = load_dataset(hf_path)
+                if hasattr(ds, "keys"):
+                    first_key = list(ds.keys())[0]
+                    ds = ds[first_key]
+
             records = list(ds)
             if limit:
                 records = records[:limit]
             for idx, raw in enumerate(records):
                 samples.append(normalize_sample(raw, task_name, idx))
             return samples
-        except Exception:
-            # Fall back to synthetic samples if network/dataset unavailable
+        except Exception as err:
+            logger.warning(f"Could not load HF dataset {hf_path}: {err}. Using mock fallback.")
             pass
 
     # Mock samples for fallback / offline testing
