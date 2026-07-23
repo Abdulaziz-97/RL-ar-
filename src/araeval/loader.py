@@ -75,7 +75,22 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
                     gold = labels_alpha[i]
                     break
     else:
-        raw_options = raw.get("options") or raw.get("choices")
+        raw_options = (
+            raw.get("options")
+            or raw.get("Options")
+            or raw.get("choices")
+            or raw.get("Choices")
+        )
+        if isinstance(raw_options, str):
+            try:
+                raw_options = json.loads(raw_options)
+            except Exception:
+                try:
+                    import ast
+                    raw_options = ast.literal_eval(raw_options)
+                except Exception:
+                    pass
+
         if isinstance(raw_options, dict):
             options = {str(k).upper(): str(v) for k, v in raw_options.items()}
         elif isinstance(raw_options, list):
