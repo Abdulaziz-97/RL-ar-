@@ -41,15 +41,18 @@ class AraEvalConfig:
         if "all" in self.tasks or not self.tasks:
             return list(ARAEVAL_DATASETS.keys())
         resolved = []
+        raw_items = []
         for t in self.tasks:
-            key = t.strip().lower()
-            if key in ARAEVAL_DATASETS:
-                resolved.append(key)
-            elif f"ara_{key}" in ARAEVAL_DATASETS:
-                resolved.append(f"ara_{key}")
+            raw_items.extend([item.strip() for item in t.split(",") if item.strip()])
+
+        for key in raw_items:
+            key_clean = key.lower()
+            if key_clean in ARAEVAL_DATASETS:
+                resolved.append(key_clean)
+            elif f"ara_{key_clean}" in ARAEVAL_DATASETS:
+                resolved.append(f"ara_{key_clean}")
             else:
-                # Fallback matching
-                match = next((k for k in ARAEVAL_DATASETS if key in k), None)
+                match = next((k for k in ARAEVAL_DATASETS if key_clean in k), None)
                 if match:
                     resolved.append(match)
         return resolved or list(ARAEVAL_DATASETS.keys())

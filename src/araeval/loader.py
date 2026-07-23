@@ -60,7 +60,7 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
 
     # Handle options and gold answer
     options: dict[str, str] = {}
-    gold = str(raw.get("answer") or raw.get("label") or raw.get("target") or raw.get("gold") or "").strip()
+    gold = str(raw.get("answer") if raw.get("answer") is not None else (raw.get("label") if raw.get("label") is not None else (raw.get("target") or raw.get("gold") or ""))).strip()
 
     # Handle AraTruthfulQA mc1_targets schema
     if "mc1_targets" in raw and isinstance(raw["mc1_targets"], dict):
@@ -86,6 +86,13 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
                 val = raw.get(lbl) or raw.get(f"option_{lbl.lower()}") or raw.get(f"option_{lbl}")
                 if val:
                     options[lbl] = str(val)
+
+    # Convert numeric index gold answer ("0", "1", "2") to letter ("A", "B", "C")
+    if gold.isdigit() and options:
+        idx_int = int(gold)
+        labels_alpha = list(options.keys())
+        if 0 <= idx_int < len(labels_alpha):
+            gold = labels_alpha[idx_int]
 
     if options and not question.startswith("السؤال:"):
         prompt = format_mcq_prompt(question, options)
