@@ -1,0 +1,126 @@
+"""
+Exact evaluation metrics and response parsing for AraEval benchmarks.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from typing import Any, Optional
+
+
+@dataclass
+class EvalResult:
+    sample_id: str
+    task_name: str
+    is_correct: bool
+    gold_answer: str
+    predicted_answer: str
+    raw_completion: str
+    score: float
+    metadata: dict[str, Any]
+
+
+def extract_final_answer(completion: str) -> str:
+    """Strip reasoning tags (<think>...</think>) and extract response / answer block."""
+    text = completion if isinstance(completion, str) else str(completion)
+    # Remove special chat template tokens
+    text = re.sub(r"<\|im_end\|>|<\|endoftext\|>|<\|im_start\|>", "", text).strip()
+
+    # Extract <answer>...</answer> block if present
+    ans_match = re.search(r"<answer>\s*(.*?)\s*</answer>", text, re.DOTALL | re.IGNORECASE)
+    if ans_match:
+        return ans_match.group(1).strip()
+
+    # Strip <think>...</think> block if present
+    text_no_think = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE).strip()
+    if text_no_think:
+        return text_no_think
+
+    return text.strip()
+
+
+def parse_mcq_choice(text: str, options: dict[str, str]) -> str:
+    """Extract candidate MCQ option letter (A, B, C, D) from text."""
+    clean = text.strip()
+    if not clean:
+        return ""
+
+    # Direct match if completion is a single option letter
+    first_char = clean[0].upper()
+    if first_char in options:
+        return first_char
+
+    # Regex for "الإجابة هي (A)" or "Option A" or "الخيار: B"
+    match = re.search(r"(?:الإجابة|الخيار|Option|Answer)?\s*[:\(-]?\s*([A-F])[\)\.\s:]", clean, re.IGNORECASE)
+    if match:
+        letter = match.group(1).upper()
+        if letter in options:
+            return letter
+
+    # Search for option letter alone
+    match_standalone = re.search(r"\b([A-F])\b", clean, re.IGNORECASE)
+    if match_standalone:
+        letter = match_standalone.group(1).upper()
+        if letter in options:
+            return letter
+
+    # Fallback: check if text contains option text value
+    for opt_letter, opt_text in options.items():
+        if opt_text and opt_text.strip().lower() in clean.lower():
+            return opt_letter
+
+    return first_char if first_char in ("A", "B", "C", "D") else clean
+
+
+def evaluate_mcq(completion: str, gold_answer: str, options: dict[str, str]) -> tuple[bool, str]:
+    """Evaluate MCQ prediction against gold answer."""
+    extracted = extract_final_answer(completion)
+    pred_letter = parse_mcq_choice(extracted, options)
+    gold_clean = gold_answer.strip().upper()
+
+    is_correct = False
+    if pred_letter and gold_clean:
+        if pred_letter == gold_clean:
+            is_correct = True
+        elif options.get(gold_clean, "").strip().lower() in extracted.lower():
+            is_correct = True
+    return is_correct, pred_letter
+
+
+def evaluate_ifeval(completion: str, instructions: list[dict[str, Any]]) -> tuple[bool, float, dict[str, bool]]:
+    """Evaluate AraIFEval instruction-following strict rules."""
+    text = extract_final_answer(completion)
+    if not instructions:
+        return True, 1.0, {}
+
+    results = {}
+    passed_count = 0
+    for idx, inst in enumerate(instructions):
+        inst_type = inst.get("type") or inst.get("instruction_id") or ""
+        passed = False
+
+        if inst_type == "include_keyword":
+            kw = inst.get("keyword") or ""
+            passed = kw.lower() in text.lower()
+        elif inst_type == "exclude_keyword":
+            kw = inst.get("keyword") or ""
+            passed = kw.lower() not in text.lower()
+        elif inst_type == "min_words":
+            count = len(text.split())
+            passed = count >= int(inst.get("min", 0))
+        elif inst_type == "max_words":
+            count = len(text.split())
+            passed = count <= int(inst.get("max", 999999))
+        else:
+            # General string match fallback
+            kw = inst.get("keyword") or str(inst)
+            passed = kw.lower() in text.lower()
+
+        results[f"inst_{idx}_{inst_type}"] = passed
+        if passed:
+            passed_count += 1
+
+    ratio = passed_count / len(instructions)
+    strict_pass = passed_count == len(instructions)
+    return strict_pass, ratio, results
