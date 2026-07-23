@@ -60,15 +60,15 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
 
     # Handle options and gold answer
     options: dict[str, str] = {}
-    gold = str(raw.get("answer") if raw.get("answer") is not None else (raw.get("label") if raw.get("label") is not None else (raw.get("target") or raw.get("gold") or ""))).strip()
 
-    # Handle AraTruthfulQA mc1_targets schema
+    # Handle AraTruthfulQA mc1_targets schema if present
     if "mc1_targets" in raw and isinstance(raw["mc1_targets"], dict):
         mc1 = raw["mc1_targets"]
         choices = mc1.get("choices") or []
         labels = mc1.get("labels") or []
         labels_alpha = ["A", "B", "C", "D", "E", "F", "G", "H"]
         options = {labels_alpha[i]: str(c) for i, c in enumerate(choices) if i < len(labels_alpha)}
+        gold = "A"
         if isinstance(labels, list):
             for i, l in enumerate(labels):
                 if l == 1 and i < len(labels_alpha):
@@ -87,12 +87,35 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
                 if val:
                     options[lbl] = str(val)
 
-    # Convert numeric index gold answer ("0", "1", "2") to letter ("A", "B", "C")
-    if gold.isdigit() and options:
-        idx_int = int(gold)
-        labels_alpha = list(options.keys())
-        if 0 <= idx_int < len(labels_alpha):
-            gold = labels_alpha[idx_int]
+        # Canonical Gold Answer Resolution (fair & exact)
+        raw_label = raw.get("label")
+        raw_answer = raw.get("answer") if raw.get("answer") is not None else (raw.get("target") if raw.get("target") is not None else raw.get("gold"))
+
+        gold = ""
+        if raw_label is not None:
+            lbl_str = str(raw_label).strip().upper()
+            if lbl_str in options:
+                gold = lbl_str
+            elif lbl_str.isdigit() and options:
+                idx_int = int(lbl_str)
+                keys = list(options.keys())
+                if 0 <= idx_int < len(keys):
+                    gold = keys[idx_int]
+
+        if not gold and raw_answer is not None:
+            ans_str = str(raw_answer).strip().upper()
+            if ans_str in options:
+                gold = ans_str
+            elif ans_str.isdigit() and options:
+                idx_int = int(ans_str)
+                keys = list(options.keys())
+                if 0 <= idx_int < len(keys):
+                    gold = keys[idx_int]
+            else:
+                for opt_key, opt_text in options.items():
+                    if opt_text and opt_text.strip().lower() == str(raw_answer).strip().lower():
+                        gold = opt_key
+                        break
 
     if options and not question.startswith("السؤال:"):
         prompt = format_mcq_prompt(question, options)
