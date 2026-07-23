@@ -33,7 +33,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default="generation",
         help="Evaluation mode (generation or loglik)",
     )
-    parser.add_argument("--batch-size", type=int, default=4, help="Batch size")
+    parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     parser.add_argument("--max-new-tokens", type=int, default=512, help="Max generated tokens")
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
     parser.add_argument("--limit", type=int, help="Limit number of samples per task")

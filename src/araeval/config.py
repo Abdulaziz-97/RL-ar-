@@ -26,7 +26,7 @@ class AraEvalConfig:
     adapter_path: Optional[str] = None
     tasks: list[str] = field(default_factory=lambda: ["all"])
     eval_mode: Literal["generation", "loglik"] = "generation"
-    batch_size: int = 4
+    batch_size: int = 8
     max_new_tokens: int = 512
     temperature: float = 0.0
     top_p: float = 1.0
