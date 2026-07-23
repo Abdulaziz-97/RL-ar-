@@ -103,8 +103,24 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
                     options[lbl] = str(val)
 
         # Canonical Gold Answer Resolution (fair & exact)
-        raw_label = raw.get("label")
-        raw_answer = raw.get("answer") if raw.get("answer") is not None else (raw.get("target") if raw.get("target") is not None else raw.get("gold"))
+        raw_label = raw.get("label") if raw.get("label") is not None else raw.get("Label")
+        raw_answer = (
+            raw.get("answer")
+            if raw.get("answer") is not None
+            else (
+                raw.get("Answer")
+                if raw.get("Answer") is not None
+                else (
+                    raw.get("target")
+                    if raw.get("target") is not None
+                    else (
+                        raw.get("Target")
+                        if raw.get("Target") is not None
+                        else (raw.get("gold") if raw.get("gold") is not None else raw.get("Gold"))
+                    )
+                )
+            )
+        )
 
         gold = ""
         if raw_label is not None:
@@ -114,7 +130,9 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
             elif lbl_str.isdigit() and options:
                 idx_int = int(lbl_str)
                 keys = list(options.keys())
-                if 0 <= idx_int < len(keys):
+                if 1 <= idx_int <= len(keys):
+                    gold = keys[idx_int - 1]
+                elif 0 <= idx_int < len(keys):
                     gold = keys[idx_int]
 
         if not gold and raw_answer is not None:
@@ -124,7 +142,9 @@ def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSa
             elif ans_str.isdigit() and options:
                 idx_int = int(ans_str)
                 keys = list(options.keys())
-                if 0 <= idx_int < len(keys):
+                if 1 <= idx_int <= len(keys):
+                    gold = keys[idx_int - 1]
+                elif 0 <= idx_int < len(keys):
                     gold = keys[idx_int]
             else:
                 for opt_key, opt_text in options.items():
