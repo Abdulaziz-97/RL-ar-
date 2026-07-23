@@ -164,8 +164,10 @@ class AraEvalRunner:
                     is_correct = strict_pass
                     pred_str = "PASS" if strict_pass else "FAIL"
                     ifeval_inst_ratios.append(ratio)
-                else:
+                elif sample.options:
                     is_correct, pred_str = evaluate_mcq(completion, sample.gold_answer, sample.options)
+                else:
+                    is_correct, pred_str = evaluate_openended(completion, sample.gold_answer)
 
                 if is_correct:
                     correct_count += 1

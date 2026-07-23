@@ -93,6 +93,17 @@ def evaluate_mcq(completion: str, gold_answer: str, options: dict[str, str]) -> 
     return is_correct, pred_letter
 
 
+def evaluate_openended(completion: str, gold_answer: str) -> tuple[bool, str]:
+    """Evaluate open-ended text response against gold answer."""
+    extracted = extract_final_answer(completion)
+    gold_clean = gold_answer.strip()
+    if not gold_clean:
+        return True, extracted[:50]
+
+    is_correct = (gold_clean.lower() in extracted.lower()) or (len(extracted) > 10 and extracted.lower() in gold_clean.lower())
+    return is_correct, extracted[:50]
+
+
 def evaluate_ifeval(completion: str, instructions: list[dict[str, Any]]) -> tuple[bool, float, dict[str, bool]]:
     """Evaluate AraIFEval instruction-following strict rules."""
     text = extract_final_answer(completion)
