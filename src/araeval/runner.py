@@ -74,20 +74,29 @@ class AraEvalRunner:
 
         self.model.eval()
 
-    def generate_completion(self, prompt: str) -> str:
-        """Generate response for a single prompt at temperature=0.0."""
-        messages = [
-            {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ]
-        if hasattr(self.tokenizer, "apply_chat_template"):
-            formatted = self.tokenizer.apply_chat_template(
-                messages, tokenize=False, add_generation_prompt=True
-            )
-        else:
-            formatted = f"User: {prompt}\nAssistant:"
+    def generate_batch(self, prompts: list[str]) -> list[str]:
+        """Generate responses for a batch of prompts at temperature=0.0."""
+        formatted_list = []
+        for p in prompts:
+            messages = [
+                {"role": "system", "content": DEFAULT_SYSTEM_PROMPT},
+                {"role": "user", "content": p},
+            ]
+            if hasattr(self.tokenizer, "apply_chat_template"):
+                formatted = self.tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=True
+                )
+            else:
+                formatted = f"User: {p}\nAssistant:"
+            formatted_list.append(formatted)
 
-        inputs = self.tokenizer(formatted, return_tensors="pt").to(self.model.device)
+        self.tokenizer.padding_side = "left"
+        if self.tokenizer.pad_token_id is None:
+            self.tokenizer.pad_token_id = self.tokenizer.eos_token_id
+
+        inputs = self.tokenizer(formatted_list, return_tensors="pt", padding=True).to(self.model.device)
+        input_len = inputs["input_ids"].shape[1]
+
         with torch.no_grad():
             out = self.model.generate(
                 **inputs,
@@ -97,10 +106,18 @@ class AraEvalRunner:
                 top_p=self.config.top_p,
                 pad_token_id=self.tokenizer.pad_token_id,
             )
-        text = self.tokenizer.decode(
-            out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
-        )
-        return text
+
+        results = []
+        for i in range(len(prompts)):
+            text = self.tokenizer.decode(
+                out[i][input_len:], skip_special_tokens=True
+            )
+            results.append(text)
+        return results
+
+    def generate_completion(self, prompt: str) -> str:
+        """Generate response for a single prompt at temperature=0.0."""
+        return self.generate_batch([prompt])[0]
 
     def evaluate_task(self, task_name: str) -> dict[str, Any]:
         """Evaluate a single AraEval task."""
@@ -111,32 +128,42 @@ class AraEvalRunner:
         correct_count = 0
         ifeval_inst_ratios = []
 
-        for sample in samples:
-            completion = self.generate_completion(sample.prompt)
+        batch_size = max(1, self.config.batch_size)
+        total_samples = len(samples)
 
-            if task_name == "ara_ifeval":
-                strict_pass, ratio, inst_meta = evaluate_ifeval(completion, sample.instructions)
-                is_correct = strict_pass
-                pred_str = "PASS" if strict_pass else "FAIL"
-                ifeval_inst_ratios.append(ratio)
-            else:
-                is_correct, pred_str = evaluate_mcq(completion, sample.gold_answer, sample.options)
+        for i in range(0, total_samples, batch_size):
+            batch_samples = samples[i : i + batch_size]
+            batch_prompts = [s.prompt for s in batch_samples]
+            batch_completions = self.generate_batch(batch_prompts)
 
-            if is_correct:
-                correct_count += 1
+            for sample, completion in zip(batch_samples, batch_completions):
+                if task_name == "ara_ifeval":
+                    strict_pass, ratio, inst_meta = evaluate_ifeval(completion, sample.instructions)
+                    is_correct = strict_pass
+                    pred_str = "PASS" if strict_pass else "FAIL"
+                    ifeval_inst_ratios.append(ratio)
+                else:
+                    is_correct, pred_str = evaluate_mcq(completion, sample.gold_answer, sample.options)
 
-            results.append(
-                EvalResult(
-                    sample_id=sample.id,
-                    task_name=task_name,
-                    is_correct=is_correct,
-                    gold_answer=sample.gold_answer,
-                    predicted_answer=pred_str,
-                    raw_completion=completion,
-                    score=1.0 if is_correct else 0.0,
-                    metadata=sample.metadata,
+                if is_correct:
+                    correct_count += 1
+
+                results.append(
+                    EvalResult(
+                        sample_id=sample.id,
+                        task_name=task_name,
+                        is_correct=is_correct,
+                        gold_answer=sample.gold_answer,
+                        predicted_answer=pred_str,
+                        raw_completion=completion,
+                        score=1.0 if is_correct else 0.0,
+                        metadata=sample.metadata,
+                    )
                 )
-            )
+
+            processed = min(i + batch_size, total_samples)
+            if processed % (batch_size * 5) == 0 or processed == total_samples:
+                print(f"  [{task_name}] Processed {processed}/{total_samples} samples ({round(correct_count / processed * 100, 1)}% acc)...", flush=True)
 
         accuracy = (correct_count / len(samples)) if samples else 0.0
         task_report = {
