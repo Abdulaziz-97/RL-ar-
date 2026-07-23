@@ -34,32 +34,63 @@ def format_mcq_prompt(question: str, options: dict[str, str]) -> str:
 
 def normalize_sample(raw: dict[str, Any], task_name: str, idx: int) -> AraEvalSample:
     """Normalize raw dataset records from Hugging Face datasets into AraEvalSample."""
-    sample_id = str(raw.get("id") or raw.get("question_id") or raw.get("key") or f"{task_name}_{idx}")
-    question = str(raw.get("question") or raw.get("prompt") or raw.get("input") or "").strip()
-
-    options: dict[str, str] = {}
-    raw_options = raw.get("options") or raw.get("choices")
-    if isinstance(raw_options, dict):
-        options = {str(k).upper(): str(v) for k, v in raw_options.items()}
-    elif isinstance(raw_options, list):
-        labels = ["A", "B", "C", "D", "E", "F"]
-        options = {labels[i]: str(opt) for i, opt in enumerate(raw_options) if i < len(labels)}
-    elif "option_a" in raw or "A" in raw:
-        for lbl in ["A", "B", "C", "D"]:
-            val = raw.get(lbl) or raw.get(f"option_{lbl.lower()}")
-            if val:
-                options[lbl] = str(val)
-
-    gold = str(raw.get("answer") or raw.get("target") or raw.get("gold") or "").strip()
+    sample_id = str(raw.get("id") or raw.get("IF_id") or raw.get("question_id") or raw.get("key") or f"{task_name}_{idx}")
 
     instructions = []
-    if "instruction_list" in raw or "instructions" in raw:
+    # Handle AraIFEval schema
+    if "instruction_following_prompt" in raw and isinstance(raw["instruction_following_prompt"], dict):
+        ifp = raw["instruction_following_prompt"]
+        question = str(ifp.get("prompt") or ifp.get("question") or "").strip()
+        cats = ifp.get("categories") or []
+        instructions = [{"type": cat} for cat in cats] if isinstance(cats, list) else []
+    else:
+        question = str(
+            raw.get("question")
+            or raw.get("Question")
+            or raw.get("prompt")
+            or raw.get("input")
+            or ""
+        ).strip()
         instructions = raw.get("instruction_list") or raw.get("instructions") or []
+
+    # Handle LC-Eval context
+    context = str(raw.get("context") or "").strip()
+    if context:
+        question = f"السياق: {context}\n\nالسؤال: {question}"
+
+    # Handle options and gold answer
+    options: dict[str, str] = {}
+    gold = str(raw.get("answer") or raw.get("label") or raw.get("target") or raw.get("gold") or "").strip()
+
+    # Handle AraTruthfulQA mc1_targets schema
+    if "mc1_targets" in raw and isinstance(raw["mc1_targets"], dict):
+        mc1 = raw["mc1_targets"]
+        choices = mc1.get("choices") or []
+        labels = mc1.get("labels") or []
+        labels_alpha = ["A", "B", "C", "D", "E", "F", "G", "H"]
+        options = {labels_alpha[i]: str(c) for i, c in enumerate(choices) if i < len(labels_alpha)}
+        if isinstance(labels, list):
+            for i, l in enumerate(labels):
+                if l == 1 and i < len(labels_alpha):
+                    gold = labels_alpha[i]
+                    break
+    else:
+        raw_options = raw.get("options") or raw.get("choices")
+        if isinstance(raw_options, dict):
+            options = {str(k).upper(): str(v) for k, v in raw_options.items()}
+        elif isinstance(raw_options, list):
+            labels_alpha = ["A", "B", "C", "D", "E", "F"]
+            options = {labels_alpha[i]: str(opt) for i, opt in enumerate(raw_options) if i < len(labels_alpha)}
+        elif any(k in raw for k in ["option_a", "A", "option_A"]):
+            for lbl in ["A", "B", "C", "D"]:
+                val = raw.get(lbl) or raw.get(f"option_{lbl.lower()}") or raw.get(f"option_{lbl}")
+                if val:
+                    options[lbl] = str(val)
 
     if options and not question.startswith("السؤال:"):
         prompt = format_mcq_prompt(question, options)
     else:
-        prompt = question or str(raw)
+        prompt = question or f"السؤال: {task_name} sample {idx}"
 
     return AraEvalSample(
         id=sample_id,
