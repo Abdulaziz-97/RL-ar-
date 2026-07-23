@@ -5,10 +5,13 @@ Dataset loading and schema normalization for AraEval benchmarks.
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from araeval.config import ARAEVAL_DATASETS
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass

@@ -55,4 +55,5 @@ class AraEvalConfig:
                 match = next((k for k in ARAEVAL_DATASETS if key_clean in k), None)
                 if match:
                     resolved.append(match)
+        resolved = list(dict.fromkeys(resolved))
         return resolved or list(ARAEVAL_DATASETS.keys())

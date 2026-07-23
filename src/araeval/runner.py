@@ -14,7 +14,7 @@ from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig, StoppingCriteria, StoppingCriteriaList
 
 from araeval.config import AraEvalConfig
-from araeval.evaluators import EvalResult, evaluate_ifeval, evaluate_mcq
+from araeval.evaluators import EvalResult, evaluate_ifeval, evaluate_mcq, evaluate_openended
 from araeval.loader import AraEvalSample, load_araeval_task
 from rlvr_pipeline.config import DEFAULT_SYSTEM_PROMPT
 from rlvr_pipeline.trainer import fix_chat_template, load_sft_adapter_strict

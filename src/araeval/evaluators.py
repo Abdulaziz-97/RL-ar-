@@ -88,7 +88,7 @@ def evaluate_mcq(completion: str, gold_answer: str, options: dict[str, str]) -> 
     if pred_letter and gold_clean:
         if pred_letter == gold_clean:
             is_correct = True
-        elif options.get(gold_clean, "").strip().lower() in extracted.lower():
+        elif options.get(gold_clean, "").strip() and options.get(gold_clean, "").strip().lower() in extracted.lower():
             is_correct = True
     return is_correct, pred_letter
 
