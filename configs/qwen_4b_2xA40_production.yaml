@@ -2,10 +2,8 @@
 # Model: Qwen3.5-4B (1,707 SFT + 1,707 RLVR samples)
 
 model_name: "Qwen/Qwen3.5-4B"
-load_in_4bit: true
+load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
-bnb_4bit_quant_type: "nf4"
-bnb_4bit_use_double_quant: true
 
 # LoRA Configuration
 lora_r: 128
