@@ -23,8 +23,8 @@ top_k: 40
 stop_strings: ["</answer>"]
 
 # Distributed Training Hyperparameters (2x A40 GPUs)
-per_device_train_batch_size: 16  # Global batch = 16 prompts (256 rollouts total per step)
-gradient_accumulation_steps: 1  # 1 step accumulation
+per_device_train_batch_size: 4   # 4 prompts x 16 rollouts = 64 rollouts per batch (~25s per pass)
+gradient_accumulation_steps: 4   # 4 step accumulation = 16 prompts total (256 rollouts per update)
 learning_rate: 3.0e-6
 num_train_epochs: 2
 max_grad_norm: 1.0
