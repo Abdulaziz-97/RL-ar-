@@ -6,7 +6,7 @@
 #   pip install -r requirements.txt
 #   pip install -e .
 
-accelerate==1.3.0
+accelerate>=1.3.0
 bitsandbytes==0.49.2
 datasets==3.2.0
 huggingface_hub==0.28.0
@@ -15,7 +15,6 @@ numpy==2.2.0
 pandas==2.2.3
 peft==0.14.0
 pydantic==2.10.6
-mergekit==0.1.4
 protobuf==5.29.3
 PyYAML==6.0.2
 safetensors==0.5.2
