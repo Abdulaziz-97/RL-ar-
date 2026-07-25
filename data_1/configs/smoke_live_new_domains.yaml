@@ -1,0 +1,11 @@
+mode: pilot
+n_families: 6
+domains: [arapro_knowledge, ifeval_multiconstraint, aratrust_truth]
+traces_per_problem: 1
+seed: 777
+work_dir: outputs/smoke_live_api
+backend: external
+external_module: backends/dspy_backend.py
+max_alternate_methods: 0
+partitions:
+  sft_train: 1.0

@@ -271,6 +271,10 @@ def infer_answer_spec_from_legacy(ground_truth: Any, domain: str = "math") -> An
             {"type": "decimal_approx", "canonical": ground_truth, "tolerance": 1e-6}
         )
     text = str(ground_truth).strip()
+    # Strip optional variable assignment prefix e.g. "x = 26" -> "26"
+    eq_match = re.match(r"^[a-zA-Z\u0600-\u06ff\s]+=+\s*(-?\d+(?:\.\d+)?)$", text)
+    if eq_match:
+        text = eq_match.group(1).strip()
     if _FRAC_RE.match(text.translate(_ARABIC_DIGITS)):
         return parse_answer_spec({"type": "rational", "canonical": text})
     if _INT_RE.match(text.translate(_ARABIC_DIGITS).replace(",", "")):

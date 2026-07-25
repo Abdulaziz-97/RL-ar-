@@ -1,0 +1,12 @@
+mode: pilot
+n_families: 550
+domains: [arapro_knowledge, ifeval_multiconstraint, aratrust_truth, gsm8k, math_comp]
+traces_per_problem: 1
+seed: 2050
+work_dir: outputs/scale_topup_450
+backend: external
+external_module: backends/dspy_backend.py
+max_alternate_methods: 0
+partitions:
+  sft_train: 0.5
+  rlvr_train: 0.5

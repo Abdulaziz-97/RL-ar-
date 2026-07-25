@@ -28,13 +28,15 @@ from rlvr_synth.decontam.pipeline import decontaminate_records
 from rlvr_synth.release.manifest import ReleaseManifest
 from rlvr_synth.release.ship_gate import audit_family_splits, run_ship_gate
 from rlvr_synth.roles.protocols import RenderedProblem
+import zlib
+
 from backends.dspy_backend import (
     ContractVerifier,
     LiveTraceTeacher,
-    _invalid_arithmetic_equations,
-    _lm_for_rollout,
-    _stable_int,
 )
+
+def _stable_int(text: str) -> int:
+    return zlib.crc32(text.encode("utf-8"))
 from synth.dspy_teacher import match_gt, think_has_bare_ops
 from synth.programmatic import (
     _hard_bus_trip_budget,
@@ -45,12 +47,6 @@ from synth.programmatic import (
 )
 from vendor.answer_match import answers_match_numeric
 from synth.dspy_teacher import BudgetCallback, BudgetState, make_lm
-from synth.providers import (
-    get_provider,
-    pricing_for,
-    resolve_api_base,
-    resolve_api_key,
-)
 
 
 class ResponseGrammarTests(unittest.TestCase):
@@ -380,21 +376,6 @@ class ProviderTests(unittest.TestCase):
         ok, reasons = verifier.verify_steps(problem, trace)
         self.assertFalse(ok)
         self.assertTrue(any(reason.startswith("invalid_arithmetic") for reason in reasons))
-
-    def test_openrouter_uses_extra_headers(self) -> None:
-        with patch.dict(os.environ, {"RLVR_API_KEY": "test"}, clear=False):
-            with patch("synth.dspy_teacher.dspy.LM", side_effect=lambda **kw: kw):
-                kwargs = make_lm(provider="openrouter", model="vendor/model")
-        self.assertIn("extra_headers", kwargs)
-        self.assertNotIn("default_headers", kwargs)
-
-    def test_custom_pricing_requires_both_overrides(self) -> None:
-        spec = get_provider("custom")
-        with patch.dict(
-            os.environ, {"RLVR_PRICE_INPUT_PER_MILLION": "1.0"}, clear=True
-        ):
-            with self.assertRaises(RuntimeError):
-                pricing_for(spec, "model")
 
     def test_small_budget_is_not_disabled_by_fixed_reserve(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

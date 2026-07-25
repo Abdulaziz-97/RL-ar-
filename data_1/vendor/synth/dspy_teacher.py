@@ -1,4 +1,4 @@
-﻿"""DSPy multi-stage Formal Arabic teacher + GEPA-ready metric + budgeted DeepSeek LMs."""
+"""DSPy multi-stage Formal Arabic teacher + GEPA-ready metric + budgeted DeepSeek LMs."""
 from __future__ import annotations
 
 import json
@@ -383,6 +383,9 @@ def make_deepseek_lm(
         callbacks=callbacks,
         extra_body=EXTRA,
     )
+
+
+make_lm = make_deepseek_lm
 
 
 def configure_teacher_lm(

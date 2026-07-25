@@ -12,14 +12,22 @@ from typing import Literal
 
 import dspy
 
-Domain = Literal["gsm8k", "math", "math_comp", "logic"]
+Domain = Literal[
+    "gsm8k",
+    "math",
+    "math_comp",
+    "logic",
+    "arapro_knowledge",
+    "ifeval_multiconstraint",
+    "aratrust_truth",
+]
 CritiqueSeverity = Literal["ok", "fixable", "reject"]
 
 
 class PlanSolutionSteps(dspy.Signature):
     """Outline solution operations in Formal Arabic without stating the final answer."""
 
-    domain: Domain = dspy.InputField(desc="gsm8k | math | math_comp | logic")
+    domain: Domain = dspy.InputField(desc="gsm8k | math | math_comp | logic | arapro_knowledge | ifeval_multiconstraint | aratrust_truth")
     problem: str = dspy.InputField(desc="Arabic word problem or logic puzzle text")
     plan: str = dspy.OutputField(
         desc=(
