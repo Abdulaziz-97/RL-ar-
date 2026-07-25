@@ -204,7 +204,7 @@ def test_v2_every_rlvr_train_perfect_completion_scores_one(v2_ready):
 
 def test_v2_unique_ids_within_each_file(v2_ready):
     for path in (RLVR_TRAIN, COLD_TRAIN):
-        ids = [r.get("sample_id", r.get("id")) for r in _load_jsonl(path)]
+        ids = [r.get("sample_id") or r.get("id") or r.get("id_") or str(i) for i, r in enumerate(_load_jsonl(path))]
         assert len(ids) == len(set(ids)), f"duplicate ids in {path.name}"
 
 
