@@ -2,9 +2,8 @@
 # Model: Qwen3.5-4B (1,707 SFT + 1,707 RLVR samples)
 
 model_name: "Qwen/Qwen3.5-4B"
-load_in_4bit: true
+load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
-bnb_4bit_quant_type: "nf4"
 
 # LoRA Configuration
 lora_r: 128
@@ -63,7 +62,7 @@ logging_steps: 10
 save_steps: 200
 bf16: true
 fp16: false
-gradient_checkpointing: false   # Gradient checkpointing with 4-bit NF4 for 100% OOM safety (~14s per step)
+gradient_checkpointing: true   # Gradient checkpointing for full unquantized bfloat16 precision (~28GB VRAM peak)
 
 # Live Completion Printing & Telemetry
 log_completions: true
