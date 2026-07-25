@@ -135,7 +135,8 @@ class RLVRConfig:
     gradient_checkpointing: bool = True
     use_transformers_continuous_batching: bool = False
     use_vllm: bool = False
-    vllm_gpu_memory_utilization: float = 0.35
+    vllm_gpu_memory_utilization: float = 0.40
+    vllm_max_model_len: int = 4096
     report_to: str = "wandb"
     use_wandb: bool = False
     wandb_project: str = "arabic-reasoning-rlvr"
@@ -214,7 +215,8 @@ class RLVRConfig:
             log_completions=self.log_completions,
             num_completions_to_print=self.num_completions_to_print,
             use_vllm=getattr(self, "use_vllm", False),
-            vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.65),
+            vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.40),
+            vllm_max_model_len=getattr(self, "vllm_max_model_len", 4096),
         )
 
         if include_model_init:

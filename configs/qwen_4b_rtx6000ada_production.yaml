@@ -69,7 +69,8 @@ log_completions: false
 num_completions_to_print: 0
 use_transformers_continuous_batching: false
 use_vllm: true
-vllm_gpu_memory_utilization: 0.35
+vllm_gpu_memory_utilization: 0.40
+vllm_max_model_len: 4096
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
 
