@@ -213,6 +213,7 @@ class RLVRConfig:
             log_completions=self.log_completions,
             num_completions_to_print=self.num_completions_to_print,
             use_vllm=getattr(self, "use_vllm", False),
+            vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.65),
         )
 
         if include_model_init:
