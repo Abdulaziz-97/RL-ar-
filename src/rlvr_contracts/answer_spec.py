@@ -84,16 +84,22 @@ def canonicalize_integer(value: Any) -> str:
         return str(int(round(value)))
     text = _normalize_numeric_text(str(value))
     if "/" in text:
-        frac = Fraction(text)
-        if frac.denominator != 1:
-            raise AnswerSpecError(f"non-integer rational: {text}")
-        return str(frac.numerator)
+        try:
+            frac = Fraction(text)
+            if frac.denominator != 1:
+                raise AnswerSpecError(f"non-integer rational: {text}")
+            return str(frac.numerator)
+        except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
+            raise AnswerSpecError(f"invalid integer fraction: {text!r}") from exc
     if not _INT_RE.match(text):
         # Allow 3.0 → 3
         if _DECIMAL_RE.match(text):
-            f = float(text)
-            if abs(f - round(f)) <= 1e-9:
-                return str(int(round(f)))
+            try:
+                f = float(text)
+                if abs(f - round(f)) <= 1e-9:
+                    return str(int(round(f)))
+            except ValueError:
+                pass
         raise AnswerSpecError(f"invalid integer: {value!r}")
     return str(int(text))
 
@@ -104,10 +110,18 @@ def canonicalize_rational(value: Any) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         return f"{value}/1"
     if isinstance(value, float):
-        frac = Fraction(value).limit_denominator(10_000)
-        return f"{frac.numerator}/{frac.denominator}"
+        try:
+            frac = Fraction(value).limit_denominator(10_000)
+            return f"{frac.numerator}/{frac.denominator}"
+        except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
+            raise AnswerSpecError(f"invalid float for rational: {value!r}") from exc
     text = _normalize_numeric_text(str(value))
     if _FRAC_RE.match(text):
+        try:
+            frac = Fraction(text)
+            return f"{frac.numerator}/{frac.denominator}"
+        except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
+            raise AnswerSpecError(f"invalid rational string: {text!r}") from exc
         frac = Fraction(text)
         return f"{frac.numerator}/{frac.denominator}"
     if _INT_RE.match(text):
