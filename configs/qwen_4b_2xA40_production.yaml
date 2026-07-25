@@ -22,16 +22,18 @@ top_p: 0.95
 top_k: 40
 stop_strings: ["</answer>"]
 
+# Distributed Training Hyperparameters (2x A40 GPUs)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 4
-gradient_accumulation_steps: 4
+per_device_train_batch_size: 2   # 2 prompts x 16 rollouts = 32 rollouts per pass (Fast 10s per step!)
+gradient_accumulation_steps: 8   # 16 prompts total (256 rollouts per update)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
 optim: "adamw_torch"
 seed: 42
 
+# Loss & Stability Controls
 loss_type: "dr_grpo"
 scale_rewards: "batch"
 beta: 0.04
@@ -40,9 +42,10 @@ epsilon_high: 0.28
 importance_sampling_level: "token"
 mask_truncated_completions: true
 
-# Weights: [correctness, format, language, answer_leak, structural_leak, length]
+# Multi-Reward Weights: [correctness, format, language, answer_leak, structural_leak, length]
 reward_weights: [0.6, 0.2, 0.05, 0.5, 0.3, 0.15]
 
+# Adaptive Controls & Stability
 enable_stability_callback: true
 stability_consecutive: 2
 entropy_collapse_action: "warn"
@@ -62,7 +65,7 @@ logging_steps: 10
 save_steps: 500
 bf16: true
 fp16: false
-gradient_checkpointing: true
+gradient_checkpointing: false   # Disable gradient checkpointing to keep KV-caching enabled (10s steps!)
 use_transformers_continuous_batching: false
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
