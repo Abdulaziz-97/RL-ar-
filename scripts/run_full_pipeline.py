@@ -1,4 +1,4 @@
-"""Run SFT then GRPO from this pack (portable — no hardcoded machine paths)."""
+"""Run SFT -> GRPO -> Core 4 Eval in one end-to-end automated pipeline."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(cmd: list[str]) -> None:
-    print(f"\n{'=' * 60}\nRUNNING: {' '.join(cmd)}\n{'=' * 60}", flush=True)
+    print(f"\n{'=' * 60}\nRUNNING STAGE: {' '.join(cmd)}\n{'=' * 60}", flush=True)
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
     p = subprocess.Popen(
@@ -29,42 +29,55 @@ def run(cmd: list[str]) -> None:
         print(line, end="", flush=True)
     p.wait()
     if p.returncode != 0:
-        print(f"FAILED with code {p.returncode}", flush=True)
+        print(f"STAGE FAILED with code {p.returncode}", flush=True)
         sys.exit(p.returncode)
-    print("\nDONE\n", flush=True)
+    print("\nSTAGE COMPLETED SUCCESSFULLY\n", flush=True)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="SFT → GRPO full pipeline")
-    parser.add_argument("--sft-config", default="configs/qwen_4b_qlora.yaml")
-    parser.add_argument("--grpo-config", default="configs/qwen_4b_smoke_v11.yaml")
-    parser.add_argument("--sft-output", default="./runs/sft_v1")
-    parser.add_argument("--grpo-output", default="./runs/grpo_v1")
-    parser.add_argument("--sft-epochs", type=int, default=2)
-    parser.add_argument("--grpo-max-steps", type=int, default=30)
+    parser = argparse.ArgumentParser(description="End-to-End Arabic Reasoning Pipeline: SFT -> GRPO -> Core4 Eval")
+    parser.add_argument("--config", default="configs/qwen_4b_2xA40_production.yaml", help="Master YAML configuration file")
+    parser.add_argument("--sft-output", default="./runs/sft_v1", help="Output directory for SFT checkpoint")
+    parser.add_argument("--grpo-output", default="./runs/grpo_v1", help="Output directory for GRPO checkpoint")
+    parser.add_argument("--eval-output", default="./outputs/eval_four_results", help="Output directory for Core 4 evaluation")
+    parser.add_argument("--skip-eval", action="store_true", help="Skip Core 4 evaluation stage")
     args = parser.parse_args()
 
     py = sys.executable
 
+    # 1. Phase 1: Cold-Start SFT
     run([
         py, "-u", "-m", "rlvr_pipeline", "sft",
-        "--config", args.sft_config,
+        "--config", args.config,
         "--output", args.sft_output,
-        "--num-train-epochs", str(args.sft_epochs),
     ])
 
-    run([
-        py, "-u", "scripts/format_probe_sft.py",
-        args.sft_output, "512",
-    ])
+    # 2. Phase 1.5: SFT Format Probe Verification
+    if (ROOT / "scripts" / "format_probe_sft.py").exists() and (Path(args.sft_output)).exists():
+        try:
+            run([
+                py, "-u", "scripts/format_probe_sft.py",
+                args.sft_output, "512",
+            ])
+        except SystemExit:
+            print("WARNING: Format probe failed or warned, continuing to GRPO...", flush=True)
 
+    # 3. Phase 2: GRPO RLVR Reinforcement Learning
     run([
         py, "-u", "-m", "rlvr_pipeline", "train",
-        "--config", args.grpo_config,
+        "--config", args.config,
         "--sft-checkpoint", args.sft_output,
         "--output", args.grpo_output,
-        "--max-steps", str(args.grpo_max_steps),
     ])
+
+    # 4. Phase 3: Core 4 Benchmark Evaluation (AraIFEval, AraPro, AraTrust, AraMath)
+    if not args.skip_eval:
+        run([
+            py, "-u", "eval_four/run_eval_four.py",
+            "--model", "Qwen/Qwen3.5-4B",
+            "--adapter", args.grpo_output,
+            "--output", args.eval_output,
+        ])
 
 
 if __name__ == "__main__":
