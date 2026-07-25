@@ -20,6 +20,12 @@ try:
 except Exception:
     pass
 
+# Pre-import vllm.worker.worker so TRL 0.15 mock patch finds vllm.worker attribute
+try:
+    import vllm.worker.worker
+except Exception:
+    pass
+
 # Patch Qwen3_5ForCausalLM.__init__ to safely absorb use_cache kwarg passed by TRL
 try:
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForCausalLM
