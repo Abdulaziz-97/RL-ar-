@@ -63,3 +63,9 @@ save_steps: 200
 bf16: true
 fp16: false
 gradient_checkpointing: true
+
+# Live Completion Printing & Telemetry
+log_completions: true
+num_completions_to_print: 4
+use_wandb: false
+wandb_project: "arabic-reasoning-rlvr"

@@ -12,7 +12,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def run(cmd: list[str]) -> None:
-    print(f"\n{'=' * 60}\nRUNNING STAGE: {' '.join(cmd)}\n{'=' * 60}", flush=True)
+    log_dir = ROOT / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "pipeline_run.log"
+    
+    header = f"\n{'=' * 60}\nRUNNING STAGE: {' '.join(cmd)}\n{'=' * 60}\n"
+    print(header, flush=True)
+    with open(log_file, "a", encoding="utf-8") as f_log:
+        f_log.write(header)
+
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "src") + os.pathsep + env.get("PYTHONPATH", "")
     p = subprocess.Popen(
@@ -25,13 +33,22 @@ def run(cmd: list[str]) -> None:
         bufsize=1,
     )
     assert p.stdout is not None
-    for line in p.stdout:
-        print(line, end="", flush=True)
+    with open(log_file, "a", encoding="utf-8") as f_log:
+        for line in p.stdout:
+            print(line, end="", flush=True)
+            f_log.write(line)
+            f_log.flush()
     p.wait()
     if p.returncode != 0:
-        print(f"STAGE FAILED with code {p.returncode}", flush=True)
+        msg = f"\nSTAGE FAILED with code {p.returncode}\n"
+        print(msg, flush=True)
+        with open(log_file, "a", encoding="utf-8") as f_log:
+            f_log.write(msg)
         sys.exit(p.returncode)
-    print("\nSTAGE COMPLETED SUCCESSFULLY\n", flush=True)
+    msg = "\nSTAGE COMPLETED SUCCESSFULLY\n"
+    print(msg, flush=True)
+    with open(log_file, "a", encoding="utf-8") as f_log:
+        f_log.write(msg)
 
 
 def main() -> None:
