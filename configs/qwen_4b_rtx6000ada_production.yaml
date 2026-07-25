@@ -26,8 +26,8 @@ stop_strings: ["</answer>"]
 # Distributed Training Hyperparameters (RTX 6000 Ada 48GB)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 2   # 2 prompts x 16 rollouts = 32 rollouts per pass (~37.1GB peak VRAM!)
-gradient_accumulation_steps: 8   # 16 prompts total (256 rollouts per parameter update)
+per_device_train_batch_size: 1   # 1 prompt x 16 rollouts = 16 rollouts per pass (~32.6GB peak VRAM!)
+gradient_accumulation_steps: 16  # 16 prompts total (256 rollouts per parameter update)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
@@ -69,7 +69,7 @@ log_completions: false
 num_completions_to_print: 0
 use_transformers_continuous_batching: false
 use_vllm: true
-vllm_gpu_memory_utilization: 0.20
+vllm_gpu_memory_utilization: 0.35
 vllm_max_model_len: 4096
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
