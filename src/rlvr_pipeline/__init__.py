@@ -12,6 +12,14 @@ Wraps TRL's GRPOTrainer (2026) with:
 Plug-and-play: `python -m rlvr_pipeline train --config config.yaml --data data.jsonl`
 """
 
+# Backward compatibility patch for transformers hub cache
+try:
+    import transformers.utils.hub as _hub
+    if not hasattr(_hub, "TRANSFORMERS_CACHE"):
+        _hub.TRANSFORMERS_CACHE = getattr(_hub, "HF_HUB_CACHE", None)
+except Exception:
+    pass
+
 from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer
 
