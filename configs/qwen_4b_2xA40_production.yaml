@@ -15,7 +15,7 @@ train_data_path: "data/arabic_reasoning_rlvr_train.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
-num_generations: 4              # 4 rollouts per prompt (3s per step ultra-fast generation)
+num_generations: 16             # 16 rollouts per prompt (Requested $G=16$)
 max_completion_length: 512       # CoT reasoning soft token cap
 temperature: 1.35
 top_p: 0.95
@@ -25,8 +25,8 @@ stop_strings: ["</answer>"]
 # Distributed Training Hyperparameters (2x A40 GPUs)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 4   # 4 prompts x 4 rollouts = 16 rollouts per pass (3s per step!)
-gradient_accumulation_steps: 4   # 16 prompts total (64 rollouts per parameter update)
+per_device_train_batch_size: 1   # 1 prompt x 16 rollouts = 16 rollouts per batch (vLLM fast pass!)
+gradient_accumulation_steps: 16  # 16 prompts total (256 rollouts per update)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
@@ -67,5 +67,6 @@ gradient_checkpointing: true   # Gradient checkpointing with 4-bit NF4 for 100% 
 # Live Completion Printing & Telemetry
 log_completions: true
 num_completions_to_print: 4
+use_vllm: true
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
