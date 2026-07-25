@@ -20,6 +20,16 @@ try:
 except Exception:
     pass
 
+# Patch Qwen3_5ForCausalLM.__init__ to safely absorb use_cache kwarg passed by TRL
+try:
+    from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForCausalLM
+    _orig_qwen_init = Qwen3_5ForCausalLM.__init__
+    def _patched_qwen_init(self, config, *args, use_cache=None, **kwargs):
+        _orig_qwen_init(self, config, *args, **kwargs)
+    Qwen3_5ForCausalLM.__init__ = _patched_qwen_init
+except Exception:
+    pass
+
 from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer
 
