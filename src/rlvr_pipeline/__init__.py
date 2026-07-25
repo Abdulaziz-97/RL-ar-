@@ -20,13 +20,14 @@ try:
 except Exception:
     pass
 
-# Patch transformers.configuration_utils for vllm 0.26.0 compatibility on transformers 4.49.0
-try:
-    import transformers.configuration_utils as _cfg_utils
-    if not hasattr(_cfg_utils, "ALLOWED_LAYER_TYPES"):
-        _cfg_utils.ALLOWED_LAYER_TYPES = ["linear", "conv"]
-except Exception:
-    pass
+# Mock dummy module for mergekit so TRL callbacks load without mergekit installed
+import sys, types
+if "mergekit" not in sys.modules:
+    m = types.ModuleType("mergekit")
+    m.config = types.ModuleType("mergekit.config")
+    m.config.MergeConfiguration = object
+    sys.modules["mergekit"] = m
+    sys.modules["mergekit.config"] = m.config
 
 # Pre-import vllm.worker.worker so TRL 0.15 mock patch finds vllm.worker attribute
 try:
