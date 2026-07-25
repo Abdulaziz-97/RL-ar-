@@ -274,5 +274,12 @@ class RLVRConfig:
             kwargs["quantization_config"] = quant_config
         if self.bf16:
             kwargs["torch_dtype"] = "bfloat16"
-        kwargs["attn_implementation"] = getattr(self, "attn_implementation", "flash_attention_2")
+        attn_imp = getattr(self, "attn_implementation", "flash_attention_2")
+        if attn_imp == "flash_attention_2":
+            try:
+                import flash_attn  # noqa: F401
+            except ImportError:
+                print("Warning: flash_attn package not installed. Falling back to sdpa.", flush=True)
+                attn_imp = "sdpa"
+        kwargs["attn_implementation"] = attn_imp
         return kwargs
