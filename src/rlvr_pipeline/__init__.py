@@ -30,6 +30,14 @@ try:
 except Exception:
     pass
 
+# Patch PreTrainedModel.warnings_issued for TRL 0.15+ estimate_tokens compatibility
+try:
+    from transformers import PreTrainedModel
+    if not hasattr(PreTrainedModel, "warnings_issued"):
+        PreTrainedModel.warnings_issued = {}
+except Exception:
+    pass
+
 from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer
 
