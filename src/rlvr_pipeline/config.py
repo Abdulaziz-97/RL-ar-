@@ -268,4 +268,5 @@ class RLVRConfig:
             kwargs["quantization_config"] = quant_config
         if self.bf16:
             kwargs["torch_dtype"] = "bfloat16"
+        kwargs["attn_implementation"] = "sdpa"
         return kwargs
