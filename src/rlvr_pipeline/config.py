@@ -135,6 +135,7 @@ class RLVRConfig:
     gradient_checkpointing: bool = True
     use_transformers_continuous_batching: bool = False
     use_vllm: bool = False
+    vllm_gpu_memory_utilization: float = 0.65
     report_to: str = "wandb"
     use_wandb: bool = False
     wandb_project: str = "arabic-reasoning-rlvr"
