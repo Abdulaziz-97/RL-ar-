@@ -211,7 +211,7 @@ class RLVRConfig:
             report_to=self.report_to if self.use_wandb else "none",
             log_completions=self.log_completions,
             num_completions_to_print=self.num_completions_to_print,
-            use_vllm=False,
+            use_vllm=getattr(self, "use_vllm", False),
         )
 
         if include_model_init:
