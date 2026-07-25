@@ -73,6 +73,8 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             else max(int(steps_per_epoch * config.num_train_epochs), 1)
         )
 
+        gen_batch = getattr(self.args, "generation_batch_size", getattr(self.args, "per_device_train_batch_size", 4) * getattr(self.args, "gradient_accumulation_steps", 1))
+        batch_size = max(1, gen_batch // max(1, self.num_generations))
         sampler = CurriculumSampler(
             difficulty_tags=difficulty_tags,
             total_steps=total_steps,
@@ -80,8 +82,8 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             sigma_fraction=config.sigma_fraction,
             seed=config.seed,
             mini_repeat_count=self.num_generations,
-            batch_size=self.args.generation_batch_size // self.num_generations,
-            repeat_count=self.num_iterations * self.args.steps_per_generation,
+            batch_size=batch_size,
+            repeat_count=self.num_iterations * getattr(self.args, "steps_per_generation", 1),
         )
         self._curriculum_sampler = sampler
         self._curriculum_config = {
