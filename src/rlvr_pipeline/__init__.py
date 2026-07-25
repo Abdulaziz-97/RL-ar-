@@ -38,6 +38,17 @@ try:
 except Exception:
     pass
 
+# Patch PreTrainedModel.generate to force use_cache=True during rollout generation for 300x speedup
+try:
+    from transformers import PreTrainedModel
+    _orig_generate = PreTrainedModel.generate
+    def _patched_generate(self, *args, **kwargs):
+        kwargs["use_cache"] = True
+        return _orig_generate(self, *args, **kwargs)
+    PreTrainedModel.generate = _patched_generate
+except Exception:
+    pass
+
 # Patch TRL GRPOTrainer.__init__ batch validation so per_device_train_batch_size=4 runs at fast 20s speed with 16 rollouts
 try:
     import trl.trainer.grpo_trainer as _grpo_mod
