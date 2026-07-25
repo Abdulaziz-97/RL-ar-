@@ -1,39 +1,37 @@
-# Production recipe for 2x NVIDIA A40 (2 x 48GB = 96GB VRAM)
-# Model: Qwen3.5-4B (1,707 SFT + 1,707 RLVR samples)
+# Canonical config — Optimized for Vast.ai NVIDIA A40 48GB GPU
+# Model: Qwen3.5-4B. Pipeline: SFT cold-start → GRPO with Dr.GRPO + batch reward scale.
 
 model_name: "Qwen/Qwen3.5-4B"
 load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_quant_type: "nf4"
+bnb_4bit_use_double_quant: true
 
-# LoRA Configuration
 lora_r: 128
 lora_alpha: 256
 lora_dropout: 0.05
 
-# Dataset Paths (1,707 Verified Samples)
 train_data_path: "data/arabic_reasoning_rlvr_train.jsonl"
+eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
-# GRPO Generation Hyperparameters
-num_generations: 16             # 16 rollouts per prompt (Requested $G=16$)
-max_completion_length: 512       # CoT reasoning soft token cap
+num_generations: 16
+max_completion_length: 512
 temperature: 1.35
 top_p: 0.95
 top_k: 40
 stop_strings: ["</answer>"]
 
-# Distributed Training Hyperparameters (2x A40 GPUs)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 4   # 1 prompt x 16 rollouts = 16 rollouts per batch (vLLM fast pass!)
-gradient_accumulation_steps: 4  # 16 prompts total (256 rollouts per update)
+per_device_train_batch_size: 4
+gradient_accumulation_steps: 4
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
 optim: "adamw_torch"
 seed: 42
 
-# Loss & Stability Controls
 loss_type: "dr_grpo"
 scale_rewards: "batch"
 beta: 0.04
@@ -42,31 +40,41 @@ epsilon_high: 0.28
 importance_sampling_level: "token"
 mask_truncated_completions: true
 
-# Multi-Reward Weights: [correctness, format, language, answer_leak, structural_leak, length]
+# Weights: [correctness, format, language, answer_leak, structural_leak, length]
 reward_weights: [0.6, 0.2, 0.05, 0.5, 0.3, 0.15]
 
-# Adaptive Controls & Stability
 enable_stability_callback: true
 stability_consecutive: 2
 entropy_collapse_action: "warn"
 entropy_lr_reduction_factor: 0.5
+enable_adaptive_beta: true
+kl_near_zero_threshold: 0.001
+stuck_beta: 0.0
 enable_adaptive_temperature: true
 entropy_target_min: 1.5
 temp_bump: 0.15
 temp_max: 1.5
 temp_bump_cooldown_steps: 3
+early_diag_steps: 30
 
-# Infrastructure Settings
 output_dir: "./outputs/qwen_4b_2xA40_run"
 logging_steps: 10
-save_steps: 200
+save_steps: 500
 bf16: true
 fp16: false
-gradient_checkpointing: true   # Gradient checkpointing for full unquantized bfloat16 precision (~28GB VRAM peak)
-
-# Live Completion Printing & Telemetry
-log_completions: true
-num_completions_to_print: 4
-use_vllm: false
+gradient_checkpointing: true
+use_transformers_continuous_batching: false
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
+
+zero_variance_strategy: "direct_scoring"
+
+curriculum_schedule_type: "gaussian"
+sigma_fraction: 0.2
+
+enable_crps: true
+crps_max_age_steps: 100
+crps_max_traces: 256
+
+log_completions: true
+num_completions_to_print: 4
