@@ -133,7 +133,7 @@ class RLVRConfig:
     bf16: bool = False
     fp16: bool = True
     gradient_checkpointing: bool = True
-    use_transformers_continuous_batching: bool = True
+    use_transformers_continuous_batching: bool = False
     use_vllm: bool = False
     report_to: str = "wandb"
     use_wandb: bool = False
