@@ -100,10 +100,11 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         else:
             sampler_fn = self._get_train_sampler
 
+        steps_per_gen = getattr(self.args, "steps_per_generation", 1)
         return self._get_dataloader(
             dataset=self.train_dataset,
             description="Training",
-            batch_size=self._train_batch_size * self.args.steps_per_generation,
+            batch_size=self._train_batch_size * steps_per_gen,
             sampler_fn=sampler_fn,
             is_training=True,
         )
