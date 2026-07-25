@@ -12,11 +12,11 @@ Wraps TRL's GRPOTrainer (2026) with:
 Plug-and-play: `python -m rlvr_pipeline train --config config.yaml --data data.jsonl`
 """
 
-# Backward compatibility patch for transformers hub cache
+# Patch transformers.configuration_utils for vllm 0.26.0 compatibility on transformers 4.49.0
 try:
-    import transformers.utils.hub as _hub
-    if not hasattr(_hub, "TRANSFORMERS_CACHE"):
-        _hub.TRANSFORMERS_CACHE = getattr(_hub, "HF_HUB_CACHE", None)
+    import transformers.configuration_utils as _cfg_utils
+    if not hasattr(_cfg_utils, "ALLOWED_LAYER_TYPES"):
+        _cfg_utils.ALLOWED_LAYER_TYPES = ["linear", "conv"]
 except Exception:
     pass
 
