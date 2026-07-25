@@ -1,4 +1,4 @@
-﻿"""
+"""
 Data loading for the pipeline.
 
 Supports:
@@ -182,7 +182,7 @@ def load_production_dataset(
         puzzle_types.append(raw_domain if reward_domain == "logic" else None)
         difficulty_fields = {**raw, **metadata}
         difficulties.append(_derive_difficulty(difficulty_fields))
-        sample_ids.append(str(raw.get("problem_id") or raw.get("id") or ""))
+        sample_ids.append(str(raw.get("sample_id") or raw.get("problem_id") or raw.get("id") or raw.get("id_") or ""))
         family_ids.append(str(raw.get("family_id") or metadata.get("family_id") or ""))
         partitions.append(partition)
         answer_specs.append(json.dumps(spec, ensure_ascii=False) if spec else "")
@@ -281,7 +281,7 @@ def load_rlvr_dataset_legacy_v2(
         domains.append(reward_domain)
         puzzle_types.append(raw_domain if reward_domain == "logic" else None)
         difficulties.append(_derive_difficulty(metadata))
-        sample_ids.append(raw.get("id", ""))
+        sample_ids.append(str(raw.get("sample_id") or raw.get("problem_id") or raw.get("id") or raw.get("id_") or ""))
         answer_specs.append(spec_json)
 
     return Dataset.from_dict(
