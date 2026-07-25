@@ -224,7 +224,13 @@ class RLVRConfig:
         if self.max_steps is not None:
             kwargs["max_steps"] = self.max_steps
 
-        return GRPOConfig(**kwargs)
+        # Safely filter kwargs against GRPOConfig signature for cross-version compatibility
+        import inspect
+        sig = inspect.signature(GRPOConfig.__init__)
+        valid_keys = set(sig.parameters.keys())
+        filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys}
+
+        return GRPOConfig(**filtered_kwargs)
 
     def build_quantization_config(self):
         if not self.load_in_4bit:
