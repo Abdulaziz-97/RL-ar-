@@ -67,6 +67,6 @@ gradient_checkpointing: true   # Gradient checkpointing with 4-bit NF4 for 100% 
 # Live Completion Printing & Telemetry
 log_completions: true
 num_completions_to_print: 4
-use_vllm: true
+use_vllm: false
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
