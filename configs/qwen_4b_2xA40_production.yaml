@@ -2,8 +2,9 @@
 # Model: Qwen3.5-4B (1,707 SFT + 1,707 RLVR samples)
 
 model_name: "Qwen/Qwen3.5-4B"
-load_in_4bit: false
+load_in_4bit: true
 bnb_4bit_compute_dtype: "bfloat16"
+bnb_4bit_quant_type: "nf4"
 
 # LoRA Configuration
 lora_r: 128
@@ -25,8 +26,8 @@ stop_strings: ["</answer>"]
 # Distributed Training Hyperparameters (2x A40 GPUs)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 1   # 1 prompt x 16 rollouts = 16 rollouts per batch (vLLM fast pass!)
-gradient_accumulation_steps: 16  # 16 prompts total (256 rollouts per update)
+per_device_train_batch_size: 4   # 1 prompt x 16 rollouts = 16 rollouts per batch (vLLM fast pass!)
+gradient_accumulation_steps: 4  # 16 prompts total (256 rollouts per update)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
@@ -62,7 +63,7 @@ logging_steps: 10
 save_steps: 200
 bf16: true
 fp16: false
-gradient_checkpointing: true   # Gradient checkpointing with 4-bit NF4 for 100% OOM safety (~14s per step)
+gradient_checkpointing: false   # Gradient checkpointing with 4-bit NF4 for 100% OOM safety (~14s per step)
 
 # Live Completion Printing & Telemetry
 log_completions: true
