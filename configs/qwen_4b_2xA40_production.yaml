@@ -67,5 +67,6 @@ gradient_checkpointing: true
 # Live Completion Printing & Telemetry
 log_completions: true
 num_completions_to_print: 4
+use_transformers_continuous_batching: true
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
