@@ -138,6 +138,16 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         num_gen = self.num_generations
         num_groups = global_rewards.shape[0] // num_gen
 
+        # Explicitly log all rollouts & rewards to completions_log.jsonl file
+        try:
+            log_file = Path(self.args.output_dir) / "completions_log.jsonl"
+            log_file.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_file, "a", encoding="utf-8") as f:
+                for p, c, r in zip(prompts_text, completions_text, global_rewards.tolist()):
+                    f.write(json.dumps({"step": self.state.global_step, "prompt": p, "completion": c, "reward": r}, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+
         self._process_failure_mining(
             output,
             global_rewards_per_func,
