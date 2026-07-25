@@ -75,6 +75,7 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
 
         gen_batch = getattr(self.args, "generation_batch_size", getattr(self.args, "per_device_train_batch_size", 4) * getattr(self.args, "gradient_accumulation_steps", 1))
         batch_size = max(1, gen_batch // max(1, self.num_generations))
+        num_iters = getattr(self, "num_iterations", 1)
         sampler = CurriculumSampler(
             difficulty_tags=difficulty_tags,
             total_steps=total_steps,
@@ -83,7 +84,7 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             seed=config.seed,
             mini_repeat_count=self.num_generations,
             batch_size=batch_size,
-            repeat_count=self.num_iterations * getattr(self.args, "steps_per_generation", 1),
+            repeat_count=num_iters * getattr(self.args, "steps_per_generation", 1),
         )
         self._curriculum_sampler = sampler
         self._curriculum_config = {
