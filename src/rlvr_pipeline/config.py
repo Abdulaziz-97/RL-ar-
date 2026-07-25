@@ -137,6 +137,7 @@ class RLVRConfig:
     use_vllm: bool = False
     vllm_gpu_memory_utilization: float = 0.40
     vllm_max_model_len: int = 4096
+    attn_implementation: str = "flash_attention_2"
     report_to: str = "wandb"
     use_wandb: bool = False
     wandb_project: str = "arabic-reasoning-rlvr"
@@ -273,5 +274,5 @@ class RLVRConfig:
             kwargs["quantization_config"] = quant_config
         if self.bf16:
             kwargs["torch_dtype"] = "bfloat16"
-        kwargs["attn_implementation"] = "sdpa"
+        kwargs["attn_implementation"] = getattr(self, "attn_implementation", "flash_attention_2")
         return kwargs

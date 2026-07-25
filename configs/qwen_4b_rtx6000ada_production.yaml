@@ -72,6 +72,7 @@ use_transformers_continuous_batching: false
 use_vllm: false
 vllm_gpu_memory_utilization: 0.35
 vllm_max_model_len: 4096
+attn_implementation: "flash_attention_2"
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
 
