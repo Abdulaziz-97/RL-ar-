@@ -17,7 +17,7 @@ coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
 num_generations: 16             # 16 rollouts per prompt
-max_completion_length: 512       # CoT reasoning soft token cap
+max_completion_length: 768       # CoT reasoning soft token cap (0% truncation!)
 temperature: 1.35
 top_p: 0.95
 top_k: 40
@@ -69,7 +69,7 @@ log_completions: false
 num_completions_to_print: 0
 use_transformers_continuous_batching: false
 use_vllm: true
-vllm_gpu_memory_utilization: 0.40
+vllm_gpu_memory_utilization: 0.20
 vllm_max_model_len: 4096
 use_wandb: false
 wandb_project: "arabic-reasoning-rlvr"
