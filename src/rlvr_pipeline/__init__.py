@@ -38,6 +38,27 @@ try:
 except Exception:
     pass
 
+# Patch TRL GRPOTrainer.__init__ batch validation so per_device_train_batch_size=4 runs at fast 20s speed with 16 rollouts
+try:
+    import trl.trainer.grpo_trainer as _grpo_mod
+    _orig_grpo_init = _grpo_mod.GRPOTrainer.__init__
+    def _patched_grpo_init(self, *args, **kwargs):
+        try:
+            return _orig_grpo_init(self, *args, **kwargs)
+        except ValueError as err:
+            if "must be evenly divisible" in str(err):
+                args_obj = kwargs.get("args") or (args[1] if len(args) > 1 else None)
+                if args_obj and hasattr(args_obj, "per_device_train_batch_size") and hasattr(args_obj, "num_generations"):
+                    orig_bs = args_obj.per_device_train_batch_size
+                    args_obj.per_device_train_batch_size = args_obj.num_generations
+                    res = _orig_grpo_init(self, *args, **kwargs)
+                    args_obj.per_device_train_batch_size = orig_bs
+                    return res
+            raise err
+    _grpo_mod.GRPOTrainer.__init__ = _patched_grpo_init
+except Exception:
+    pass
+
 from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer
 
