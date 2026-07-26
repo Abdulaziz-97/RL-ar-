@@ -109,6 +109,13 @@ def evaluate_openended(completion: str, gold_answer: str) -> tuple[bool, str]:
 def evaluate_ifeval(completion: str, instructions: list[dict[str, Any]]) -> tuple[bool, float, dict[str, bool]]:
     """Evaluate AraIFEval instruction-following strict rules."""
     text = extract_final_answer(completion)
+    # If extract_final_answer extracted a tiny <answer> snippet (< 15 words) while completion has full body,
+    # evaluate the full completion text (with <think> tags stripped clean).
+    full_text = re.sub(r"<think>.*?</think>", "", completion, flags=re.DOTALL | re.IGNORECASE).strip()
+    full_text = re.sub(r"</?answer>", "", full_text).strip()
+    if len(text.split()) < 15 and len(full_text.split()) >= 15:
+        text = full_text
+
     if not text.strip():
         return False, 0.0, {"non_empty": False}
 
