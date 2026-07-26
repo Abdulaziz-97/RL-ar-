@@ -58,6 +58,7 @@ try:
     from transformers import PreTrainedModel
     _orig_generate = PreTrainedModel.generate
     def _patched_generate(self, *args, **kwargs):
+        kwargs.pop("mm_token_type_ids", None)
         kwargs["use_cache"] = True
         return _orig_generate(self, *args, **kwargs)
     PreTrainedModel.generate = _patched_generate

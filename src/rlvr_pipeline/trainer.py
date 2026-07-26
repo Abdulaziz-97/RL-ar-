@@ -140,6 +140,7 @@ def _attach_stop_string_criteria(trainer, stop_strings: list[str]) -> None:
         original_generate = model.generate
 
         def generate_with_answer_stop(*args, _original=original_generate, **kwargs):
+            kwargs.pop("mm_token_type_ids", None)
             existing = kwargs.get("stopping_criteria")
             if existing is None:
                 kwargs["stopping_criteria"] = criteria
