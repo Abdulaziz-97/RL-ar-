@@ -217,7 +217,7 @@ def build_sft_trainer(
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         report_to=config.report_to if config.use_wandb else "none",
-        dataset_text_field=None,
+        max_seq_length=1024,
     )
     if config.max_steps is not None:
         sft_config.max_steps = config.max_steps
