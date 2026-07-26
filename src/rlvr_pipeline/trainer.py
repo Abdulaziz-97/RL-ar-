@@ -228,6 +228,8 @@ def build_sft_trainer(
         from peft import get_peft_model
         init_kwargs = config.build_model_init_kwargs()
         base_model = AutoModelForCausalLM.from_pretrained(config.model_name, **init_kwargs)
+        if not hasattr(base_model.config, "text_config"):
+            base_model.config.text_config = base_model.config
         model = get_peft_model(base_model, peft_config)
         peft_config = None
 
