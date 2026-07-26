@@ -16,7 +16,7 @@ eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
-num_generations: 4              # 4 rollouts/prompt = 4 prompts/step (16 seqs, same VRAM) = 427 total steps
+num_generations: 8              # G=8: literature sweet spot (2 prompts/step, 854 steps, ~8.3h)
 max_completion_length: 768       # Arabic CoT reasoning — 768 tokens required
 temperature: 1.35
 top_p: 0.95
