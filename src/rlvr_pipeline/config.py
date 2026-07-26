@@ -93,6 +93,16 @@ class RLVRConfig:
     importance_sampling_level: ImportanceSamplingLevel = "token"
     mask_truncated_completions: bool = True
 
+    # Entropy regularization (prevents entropy collapse — TRL native)
+    # entropy_coef: coefficient for entropy bonus in the loss function
+    # use_adaptive_entropy: dynamically adjusts entropy_coef based on entropy_target
+    # entropy_target: target per-token entropy (nats); coefficient increases when below
+    # entropy_coef_delta: step size for adaptive entropy coefficient adjustments
+    entropy_coef: float = 0.0
+    use_adaptive_entropy: bool = False
+    entropy_target: float = 2.0
+    entropy_coef_delta: float = 0.005
+
     # Reward weights: [correctness, format, language, answer_leak, structural_leak, length]
     reward_weights: list[float] = field(
         default_factory=lambda: [0.6, 0.2, 0.05, 0.5, 0.3, 0.15]
@@ -210,6 +220,11 @@ class RLVRConfig:
             mask_truncated_completions=self.mask_truncated_completions,
             reward_weights=self.reward_weights,
             multi_objective_aggregation="normalize_then_sum" if self.gdpo_decoupled_normalization else "sum_then_normalize",
+            # Entropy regularization (prevents entropy collapse)
+            entropy_coef=self.entropy_coef,
+            use_adaptive_entropy=self.use_adaptive_entropy,
+            entropy_target=self.entropy_target,
+            entropy_coef_delta=self.entropy_coef_delta,
             gradient_checkpointing=self.gradient_checkpointing,
             bf16=self.bf16,
             fp16=self.fp16,

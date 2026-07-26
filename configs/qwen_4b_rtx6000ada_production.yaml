@@ -24,7 +24,7 @@ top_k: 40
 stop_strings: ["</answer>"]
 
 # Distributed Training Hyperparameters (RTX 6000 Ada 48GB)
-learning_rate: 1.0e-5
+learning_rate: 5.0e-6
 num_train_epochs: 1
 per_device_train_batch_size: 8   # 1 prompt × 8 rollouts per micro-step
 gradient_accumulation_steps: 2   # 2 micro-steps = 16 rollouts total per gradient update
@@ -37,16 +37,24 @@ seed: 42
 # Loss & Stability Controls
 loss_type: "dr_grpo"
 scale_rewards: "batch"
-beta: 0.04
+beta: 0.06
 epsilon: 0.2
 epsilon_high: 0.28
 importance_sampling_level: "token"
 mask_truncated_completions: true
 
 # Multi-Reward Weights: [correctness, format, language, answer_leak, structural_leak, length]
-reward_weights: [0.6, 0.2, 0.05, 0.5, 0.3, 0.15]
+# Length penalty set to 0.0 — allows full 768-token responses for multi-paragraph IFEval tasks
+reward_weights: [0.6, 0.3, 0.1, 0.5, 0.3, 0.0]
 # GDPO: Normalize each reward independently before weighted sum (NVlabs arXiv:2601.05242)
 gdpo_decoupled_normalization: true
+
+# Adaptive Entropy Regularization (prevents entropy collapse — TRL native)
+# When entropy drops below entropy_target, TRL auto-increases the entropy bonus coefficient
+entropy_coef: 0.01
+use_adaptive_entropy: true
+entropy_target: 2.0
+entropy_coef_delta: 0.005
 
 # Adaptive Controls & Stability
 enable_stability_callback: true
