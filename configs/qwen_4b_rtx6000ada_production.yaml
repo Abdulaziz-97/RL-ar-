@@ -2,12 +2,12 @@
 # Model: Qwen3.5-4B (1,707 SFT + 1,707 RLVR samples)
 
 model_name: "Qwen/Qwen3.5-4B"
-load_in_4bit: false
-bnb_4bit_compute_dtype: "bfloat16"
+load_in_4bit: true
+bnb_4bit_compute_dtype: "bfloat16"  # compute in bf16 despite int4 storage (QLoRA)
 
 # LoRA Configuration
-lora_r: 64
-lora_alpha: 128
+lora_r: 128
+lora_alpha: 256
 lora_dropout: 0.05
 
 # Dataset Paths (1,707 Verified Samples)
