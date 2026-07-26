@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 import torch
-from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 from english_eval.config import EnglishEvalConfig
@@ -79,6 +78,7 @@ class EnglishEvalRunner:
         )
 
         if self.config.adapter_path:
+            from peft import LoraConfig, get_peft_model
             print(f"Loading LoRA adapter from {self.config.adapter_path}...", flush=True)
             lora_cfg = LoraConfig.from_pretrained(self.config.adapter_path)
             lora_cfg.inference_mode = True
