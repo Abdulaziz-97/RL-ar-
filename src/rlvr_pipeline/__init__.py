@@ -63,23 +63,32 @@ try:
 except Exception:
     pass
 
-# Patch TRL GRPOTrainer.__init__ batch validation so per_device_train_batch_size=4 runs at fast 20s speed with 16 rollouts
+# Patch TRL GRPOTrainer.__init__ batch validation so per_device_train_batch_size=4
+# produces 4 prompts/step (not 1). TRL requires per_device_train_batch_size to be
+# divisible by num_generations during validation, so we temporarily set it to
+# num_generations, let init succeed, then fix _train_batch_size back to the real
+# intended value (e.g. 4) so get_train_dataloader fetches 4 prompts per step.
 try:
     import trl.trainer.grpo_trainer as _grpo_mod
     _orig_grpo_init = _grpo_mod.GRPOTrainer.__init__
     def _patched_grpo_init(self, *args, **kwargs):
+        args_obj = kwargs.get("args") or (args[1] if len(args) > 1 else None)
+        intended_bs = getattr(args_obj, "per_device_train_batch_size", None) if args_obj else None
         try:
-            return _orig_grpo_init(self, *args, **kwargs)
+            _orig_grpo_init(self, *args, **kwargs)
         except ValueError as err:
-            if "must be evenly divisible" in str(err):
-                args_obj = kwargs.get("args") or (args[1] if len(args) > 1 else None)
-                if args_obj and hasattr(args_obj, "per_device_train_batch_size") and hasattr(args_obj, "num_generations"):
-                    orig_bs = args_obj.per_device_train_batch_size
-                    args_obj.per_device_train_batch_size = args_obj.num_generations
-                    res = _orig_grpo_init(self, *args, **kwargs)
-                    args_obj.per_device_train_batch_size = orig_bs
-                    return res
-            raise err
+            if "must be evenly divisible" in str(err) and args_obj is not None and intended_bs is not None:
+                # TRL validation rejects batch_size not divisible by num_generations.
+                # Temporarily set to num_generations to pass validation, then fix after.
+                args_obj.per_device_train_batch_size = args_obj.num_generations
+                _orig_grpo_init(self, *args, **kwargs)
+                args_obj.per_device_train_batch_size = intended_bs
+            else:
+                raise err
+        # Restore _train_batch_size to actual intended prompts-per-step so that
+        # get_train_dataloader fetches `intended_bs` prompts, not num_generations.
+        if intended_bs is not None and hasattr(self, "_train_batch_size"):
+            self._train_batch_size = intended_bs
     _grpo_mod.GRPOTrainer.__init__ = _patched_grpo_init
 except Exception:
     pass
