@@ -2,7 +2,7 @@
 # Model: Qwen3.5-4B (1,707 SFT + 1,707 RLVR samples)
 
 model_name: "Qwen/Qwen3.5-4B"
-load_in_4bit: false
+load_in_4bit: true
 bnb_4bit_compute_dtype: "bfloat16"
 
 # LoRA Configuration
@@ -17,7 +17,7 @@ coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
 num_generations: 8              # G=8: literature sweet spot (2 prompts/step, 854 steps, ~8.3h)
-max_completion_length: 512       # Proven: avg completions 292-414 tok, fits VRAM at 2 prompts/step
+max_completion_length: 768       # Arabic CoT reasoning — 768 tokens required
 temperature: 1.35
 top_p: 0.95
 top_k: 40
