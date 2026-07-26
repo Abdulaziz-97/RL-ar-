@@ -93,6 +93,33 @@ try:
 except Exception:
     pass
 
+# Patch TRL entropy_from_logits to process in 256-token chunks, avoiding giant 11.37 GB memory spikes
+try:
+    import torch
+    import trl.trainer.utils as _trl_utils
+    import trl.trainer.grpo_trainer as _grpo_mod
+
+    def _chunked_entropy_from_logits(logits: torch.Tensor, chunk_size: int = 256) -> torch.Tensor:
+        shape_except_last = logits.shape[:-1]
+        num_classes = logits.shape[-1]
+        flat_logits = logits.reshape(-1, num_classes)
+        num_tokens = flat_logits.shape[0]
+
+        entropies = []
+        for i in range(0, num_tokens, chunk_size):
+            chunk = flat_logits[i : i + chunk_size]
+            logps = chunk.log_softmax(dim=-1)
+            chunk_entropy = -(torch.exp(logps) * logps).sum(dim=-1)
+            entropies.append(chunk_entropy)
+
+        return torch.cat(entropies, dim=0).reshape(shape_except_last)
+
+    _trl_utils.entropy_from_logits = _chunked_entropy_from_logits
+    if hasattr(_grpo_mod, "entropy_from_logits"):
+        _grpo_mod.entropy_from_logits = _chunked_entropy_from_logits
+except Exception:
+    pass
+
 from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer
 
