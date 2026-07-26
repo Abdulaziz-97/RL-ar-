@@ -57,17 +57,19 @@ def main() -> None:
     parser.add_argument("--sft-output", default="./runs/sft_v1", help="Output directory for SFT checkpoint")
     parser.add_argument("--grpo-output", default="./runs/grpo_v1", help="Output directory for GRPO checkpoint")
     parser.add_argument("--eval-output", default="./outputs/eval_four_results", help="Output directory for Core 4 evaluation")
+    parser.add_argument("--skip-sft", action="store_true", help="Skip SFT phase if checkpoint already exists")
     parser.add_argument("--skip-eval", action="store_true", help="Skip Core 4 evaluation stage")
     args = parser.parse_args()
 
     py = sys.executable
 
     # 1. Phase 1: Cold-Start SFT
-    run([
-        py, "-u", "-m", "rlvr_pipeline", "sft",
-        "--config", args.config,
-        "--output", args.sft_output,
-    ])
+    if not args.skip_sft:
+        run([
+            py, "-u", "-m", "rlvr_pipeline", "sft",
+            "--config", args.config,
+            "--output", args.sft_output,
+        ])
 
     # 2. Phase 1.5: SFT Format Probe Verification
     if (ROOT / "scripts" / "format_probe_sft.py").exists() and (Path(args.sft_output)).exists():
