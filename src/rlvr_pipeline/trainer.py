@@ -53,8 +53,22 @@ def load_sft_adapter_strict(peft_model, ckpt_dir: str) -> None:
 
     remapped = {}
     for key, value in ckpt.items():
-        candidates = (key, key.replace(".language_model.", "."))
+        candidates = [
+            key,
+            key.replace(".language_model.", "."),
+            key.replace(".model.model.", ".model."),
+            key.replace(".model.language_model.", ".model."),
+        ]
+        if key.startswith("base_model.model.model."):
+            candidates.append("base_model.model." + key[len("base_model.model.model."):])
+        elif key.startswith("base_model.model."):
+            candidates.append("base_model.model.model." + key[len("base_model.model."):])
+
         target = next((c for c in candidates if c in live_keys), None)
+        if target is None and ".layers." in key:
+            suffix = key.split(".layers.", 1)[-1]
+            target = next((lk for lk in live_keys if lk.endswith(suffix)), None)
+
         if target is None:
             raise RuntimeError(f"SFT adapter key cannot be mapped onto live model: {key}")
         remapped[target] = value
