@@ -13,7 +13,7 @@ ENGLISH_DATASETS: dict[str, str] = {
     "ifeval": "google/ifeval",
     "mmlu": "cais/mmlu",
     "hellaswag": "Rowan/hellaswag",
-    "gsm8k": "gsm8k",
+    "gsm8k": "openai/gsm8k",
 }
 
 DEFAULT_ENGLISH_TASKS: list[str] = [

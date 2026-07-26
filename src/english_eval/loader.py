@@ -182,12 +182,15 @@ def load_gsm8k_dataset(limit: Optional[int] = None) -> list[EnglishEvalSample]:
     """Load English GSM8K dataset."""
     from datasets import load_dataset
 
-    print("Loading English GSM8K (gsm8k)...", flush=True)
+    print("Loading English GSM8K (openai/gsm8k)...", flush=True)
     try:
-        ds = load_dataset("gsm8k", "main", split="test")
-    except Exception as e:
-        logger.warning(f"Failed to load GSM8K: {e}")
-        return []
+        ds = load_dataset("openai/gsm8k", "main", split="test")
+    except Exception:
+        try:
+            ds = load_dataset("gsm8k", "main", split="test")
+        except Exception as e:
+            logger.warning(f"Failed to load GSM8K: {e}")
+            return []
 
     samples = []
     for i, row in enumerate(ds):
