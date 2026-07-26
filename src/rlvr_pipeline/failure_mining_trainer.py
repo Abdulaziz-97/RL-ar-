@@ -320,8 +320,8 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
             merged["crps_trace_count"] = float(len(self.success_trace_store))
         return super().log_metrics(split, merged, **kwargs)
 
-    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
-        loss = super().compute_loss(model, inputs, return_outputs, num_items_in_batch)
+    def compute_loss(self, model, inputs, *args, **kwargs):
+        loss = super().compute_loss(model, inputs, *args, **kwargs)
 
         if self.zero_variance_strategy != "discard" and self.state.global_step % max(self.args.logging_steps, 1) == 0:
             for key, val in self._failure_mining_stats.items():
