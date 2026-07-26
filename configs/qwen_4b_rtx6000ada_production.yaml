@@ -26,8 +26,8 @@ stop_strings: ["</answer>"]
 # Distributed Training Hyperparameters (RTX 6000 Ada 48GB)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 64  # TRL unit = prompts × rollouts: 4 prompts × 16 rollouts = 64 slots/step
-gradient_accumulation_steps: 1   # gradient update every step (4 prompts per update)
+per_device_train_batch_size: 32  # TRL unit = 2 prompts × 16 rollouts = 32 slots/step (fits 48GB VRAM)
+gradient_accumulation_steps: 2   # gradient update every 2 steps = 4 prompts per update
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
