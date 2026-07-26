@@ -297,6 +297,7 @@ def build_trainer(
 
     print("Building GRPO config...", flush=True)
 
+    peft_config = None
     if model is None:
         from transformers import AutoModelForCausalLM
         from peft import PeftModel, get_peft_model
@@ -308,7 +309,6 @@ def build_trainer(
         if config.sft_checkpoint_path:
             print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
             model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
-            peft_config = None
         else:
             peft_config = config.build_peft_config()
             model = get_peft_model(base_model, peft_config)
