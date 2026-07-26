@@ -297,10 +297,24 @@ def build_trainer(
 
     print("Building GRPO config...", flush=True)
 
-    model_init_kwargs = config.build_model_init_kwargs() if model is None else None
-    peft_config = config.build_peft_config() if model is None else None
+    if model is None:
+        from transformers import AutoModelForCausalLM
+        from peft import PeftModel, get_peft_model
+        init_kwargs = config.build_model_init_kwargs()
+        base_model = AutoModelForCausalLM.from_pretrained(config.model_name, **init_kwargs)
+        if not hasattr(base_model.config, "text_config"):
+            base_model.config.text_config = base_model.config
 
-    grpo_config = config.build_grpo_config(include_model_init=(model is None))
+        if config.sft_checkpoint_path:
+            print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
+            model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
+            peft_config = None
+        else:
+            peft_config = config.build_peft_config()
+            model = get_peft_model(base_model, peft_config)
+            peft_config = None
+
+    grpo_config = config.build_grpo_config(include_model_init=False)
 
     use_extended_trainer = (
         config.zero_variance_strategy != "discard"
@@ -328,7 +342,7 @@ def build_trainer(
         from trl import GRPOTrainer as TrainerCls
 
     trainer_kwargs: dict[str, Any] = dict(
-        model=model if model is not None else config.model_name,
+        model=model,
         args=grpo_config,
         reward_funcs=reward_funcs,
         train_dataset=train_dataset,
@@ -349,10 +363,6 @@ def build_trainer(
 
     if fix_chat_template(getattr(trainer, "processing_class", None)):
         print("Chat template fixed: removed empty <think> injection (GRPO rollouts)", flush=True)
-
-    # Do not PeftModel.from_pretrained on an existing PeftModel (silent no-load).
-    if config.sft_checkpoint_path:
-        load_sft_adapter_strict(trainer.model, config.sft_checkpoint_path)
 
     _align_trainable_dtype_for_amp(trainer, fp16=config.fp16, bf16=config.bf16)
 
