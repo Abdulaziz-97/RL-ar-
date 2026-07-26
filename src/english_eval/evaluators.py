@@ -86,7 +86,9 @@ def evaluate_mcq(completion: str, gold_answer: str, options: dict[str, str]) -> 
     if pred_letter and gold_clean:
         if pred_letter == gold_clean:
             is_correct = True
-        elif options.get(gold_clean, "").strip() and options.get(gold_clean, "").strip().lower() in extracted.lower():
+    elif not pred_letter and gold_clean:
+        gold_text = options.get(gold_clean, "").strip().lower()
+        if len(gold_text) >= 3 and gold_text in extracted.lower():
             is_correct = True
     return is_correct, pred_letter
 
@@ -118,7 +120,7 @@ def evaluate_gsm8k(completion: str, gold_answer: str) -> tuple[bool, str, str]:
     gold_num = extract_gsm8k_number(gold_answer)
 
     is_correct = False
-    if pred_num is not None and gold_num is not None:
+    if pred_num and gold_num:
         try:
             is_correct = abs(float(pred_num) - float(gold_num)) < 1e-4
         except ValueError:

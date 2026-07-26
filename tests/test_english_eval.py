@@ -39,6 +39,11 @@ def test_evaluate_mcq():
     assert is_correct_wrong is False
     assert pred_wrong == "A"
 
+    # Guard against short text matching false positive when letter prediction is explicitly A (wrong)
+    short_options = {"A": "is", "B": "something else", "C": "third", "D": "fourth"}
+    is_correct_spurious, pred_spurious = evaluate_mcq("Option B is incorrect, the answer is B", "B", short_options)
+    assert is_correct_spurious is True
+
 
 def test_evaluate_gsm8k():
     completion = "Let's calculate step by step:\n3 + 4 = 7\n#### 7"
@@ -46,6 +51,10 @@ def test_evaluate_gsm8k():
     assert is_correct is True
     assert pred == "7"
     assert gold == "7"
+
+    # Empty numeric extraction guard
+    is_correct_empty, _, _ = evaluate_gsm8k("No numbers here", "No numbers here either")
+    assert is_correct_empty is False
 
 
 def test_evaluate_ifeval_item():
