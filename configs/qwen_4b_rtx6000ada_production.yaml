@@ -16,8 +16,8 @@ eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
-num_generations: 16             # 16 rollouts per prompt
-max_completion_length: 384       # 32 seqs × 384 tok × vocab × 4B = 7.1GB fp32 logits (fits 48GB)
+num_generations: 8              # 8 rollouts per prompt (2 prompts/step = same VRAM as 1 prompt×16)
+max_completion_length: 768       # Arabic CoT reasoning — 768 tokens required
 temperature: 1.35
 top_p: 0.95
 top_k: 40
@@ -26,8 +26,8 @@ stop_strings: ["</answer>"]
 # Distributed Training Hyperparameters (RTX 6000 Ada 48GB)
 learning_rate: 1.0e-5
 num_train_epochs: 1
-per_device_train_batch_size: 32  # TRL unit = 2 prompts × 16 rollouts = 32 slots/step (fits 48GB VRAM)
-gradient_accumulation_steps: 2   # gradient update every 2 steps = 4 prompts per update
+per_device_train_batch_size: 16  # TRL unit = 2 prompts × 8 rollouts = 16 slots/step (same logit size as 1× 16)
+gradient_accumulation_steps: 4   # gradient update every 4 steps = 8 effective prompts per update
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
