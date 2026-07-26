@@ -6,8 +6,8 @@ load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
 
 # LoRA Configuration
-lora_r: 128
-lora_alpha: 256
+lora_r: 64
+lora_alpha: 128
 lora_dropout: 0.05
 
 # Dataset Paths (1,707 Verified Samples)
