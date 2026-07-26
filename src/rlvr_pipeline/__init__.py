@@ -34,6 +34,23 @@ try:
 except Exception:
     pass
 
+# Patch trl.trainer.sft_trainer._patch_chunked_ce_lm_head for functools.partial forward compatibility
+try:
+    import functools
+    import trl.trainer.sft_trainer as _sft_mod
+    _orig_patch_chunked = _sft_mod._patch_chunked_ce_lm_head
+    def _safe_patch_chunked_ce_lm_head(target, *args, **kwargs):
+        if hasattr(target, "forward") and isinstance(target.forward, functools.partial):
+            target.forward = target.forward.func
+        try:
+            return _orig_patch_chunked(target, *args, **kwargs)
+        except AttributeError:
+            # If target.forward is still a partial or function lacking __func__, bypass signature attachment
+            pass
+    _sft_mod._patch_chunked_ce_lm_head = _safe_patch_chunked_ce_lm_head
+except Exception:
+    pass
+
 # Patch Qwen3_5ForCausalLM.__init__ to safely absorb use_cache kwarg passed by TRL
 try:
     from transformers.models.qwen3_5.modeling_qwen3_5 import Qwen3_5ForCausalLM
