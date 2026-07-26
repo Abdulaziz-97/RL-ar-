@@ -217,15 +217,22 @@ def build_sft_trainer(
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         report_to=config.report_to if config.use_wandb else "none",
-        dataset_text_field="messages",
     )
     if config.max_steps is not None:
         sft_config.max_steps = config.max_steps
     if model_init_kwargs:
         sft_config.model_init_kwargs = model_init_kwargs
 
+    if model is None:
+        from transformers import AutoModelForCausalLM
+        from peft import get_peft_model
+        init_kwargs = config.build_model_init_kwargs()
+        base_model = AutoModelForCausalLM.from_pretrained(config.model_name, **init_kwargs)
+        model = get_peft_model(base_model, peft_config)
+        peft_config = None
+
     trainer = SFTTrainer(
-        model=model if model is not None else config.model_name,
+        model=model,
         args=sft_config,
         train_dataset=sft_dataset,
         peft_config=peft_config,
