@@ -17,7 +17,7 @@ coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
 num_generations: 16             # 16 rollouts per prompt
-max_completion_length: 768       # CoT reasoning soft token cap (0% truncation!)
+max_completion_length: 384       # 32 seqs × 384 tok × vocab × 4B = 7.1GB fp32 logits (fits 48GB)
 temperature: 1.35
 top_p: 0.95
 top_k: 40
