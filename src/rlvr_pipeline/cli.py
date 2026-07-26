@@ -97,6 +97,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     eval_parser.add_argument("--data", required=True, help="Eval data path (JSONL)")
     eval_parser.add_argument("--checkpoint", required=True, help="Path to checkpoint dir")
 
+    # ── Eval Benchmark ──
+    eval_bm_parser = subparsers.add_parser("eval-benchmark", help="Evaluate model on standard benchmark (GSM8K/MATH/AraEval)")
+    eval_bm_parser.add_argument("--model", required=True, help="Base model name or checkpoint path")
+    eval_bm_parser.add_argument("--data", required=True, help="Benchmark dataset path (JSONL)")
+    eval_bm_parser.add_argument("--adapter", help="Optional LoRA adapter checkpoint path")
+    eval_bm_parser.add_argument("--batch-size", type=int, default=4, help="Batch size for evaluation")
+    eval_bm_parser.add_argument("--max-tokens", type=int, default=768, help="Max completion tokens")
+    eval_bm_parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature (0.0 for greedy)")
+
+    # ── Ingest English ──
+    ingest_parser = subparsers.add_parser("ingest-english", help="Ingest English GSM8K benchmark from HuggingFace")
+    ingest_parser.add_argument("--output", default="data/english_gsm8k_test.jsonl", help="Output JSONL path")
+    ingest_parser.add_argument("--split", default="test", help="HuggingFace dataset split (test/train)")
+
     # ── Audit cold-start ──
     audit_parser = subparsers.add_parser(
         "audit-coldstart", help="Audit cold-start JSONL for tag-boundary purity"
@@ -244,6 +258,25 @@ def main(argv: list[str] | None = None) -> int:
         trainer = build_trainer(config, evaluation_only=True)
         metrics = trainer.evaluate()
         print(f"Eval metrics: {metrics}")
+        return 0
+
+    elif args.command == "eval-benchmark":
+        from rlvr_pipeline.eval_benchmark import evaluate_benchmark_on_model
+
+        evaluate_benchmark_on_model(
+            model_name_or_path=args.model,
+            benchmark_data_path=args.data,
+            adapter_path=args.adapter,
+            batch_size=args.batch_size,
+            max_new_tokens=args.max_tokens,
+            temperature=args.temperature,
+        )
+        return 0
+
+    elif args.command == "ingest-english":
+        from rlvr_pipeline.ingest_english_benchmarks import fetch_and_export_gsm8k
+
+        fetch_and_export_gsm8k(output_path=args.output, split=args.split)
         return 0
 
     return 1
