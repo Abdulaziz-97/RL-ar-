@@ -9,7 +9,7 @@
 accelerate>=1.3.0
 bitsandbytes==0.49.2
 datasets==3.2.0
-huggingface_hub>=1.5.0
+huggingface_hub>=0.20.0
 jsonschema==4.26.0
 numpy==2.2.0
 pandas==2.2.3
@@ -20,7 +20,7 @@ protobuf==5.29.3
 PyYAML==6.0.2
 safetensors==0.5.2
 sentencepiece>=0.2.0
-tokenizers==0.21.0
+tokenizers>=0.20.0
 transformers==5.14.1
 vllm==0.26.0
 trl==0.15.0
