@@ -102,7 +102,27 @@ def evaluate_openended(completion: str, gold_answer: str) -> tuple[bool, str]:
     if not gold_clean:
         return True, extracted[:50]
 
-    is_correct = (gold_clean.lower() in extracted.lower()) or (len(extracted) > 10 and extracted.lower() in gold_clean.lower())
+    gold_stripped = re.sub(r"\\boxed\{([^}]+)\}", r"\1", gold_clean).strip()
+    ext_stripped = re.sub(r"\\boxed\{([^}]+)\}", r"\1", extracted).strip()
+
+    is_correct = (
+        (gold_clean.lower() in extracted.lower())
+        or (gold_stripped.lower() in ext_stripped.lower())
+        or (len(extracted) > 10 and extracted.lower() in gold_clean.lower())
+    )
+
+    if not is_correct:
+        gold_nums = re.findall(r"[-+]?\d*\.\d+|\d+", gold_stripped)
+        ext_nums = re.findall(r"[-+]?\d*\.\d+|\d+", ext_stripped)
+        if gold_nums and ext_nums:
+            try:
+                g_val = float(gold_nums[-1])
+                e_val = float(ext_nums[-1])
+                if abs(g_val - e_val) < 1e-4:
+                    is_correct = True
+            except ValueError:
+                pass
+
     return is_correct, extracted[:50]
 
 
