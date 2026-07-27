@@ -18,7 +18,7 @@ pydantic==2.10.6
 mergekit==0.1.4
 protobuf==5.29.3
 PyYAML==6.0.2
-safetensors==0.5.2
+safetensors>=0.5.2
 sentencepiece>=0.2.0
 tokenizers>=0.20.0
 transformers==5.14.1
