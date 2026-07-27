@@ -34,6 +34,7 @@ def main():
     parser.add_argument("--max-new-tokens", type=int, default=512, help="Max generated tokens (default: 512)")
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
     parser.add_argument("--limit", type=int, help="Limit number of samples per task (optional)")
+    parser.add_argument("--output", default="./araeval_results_four", help="Output directory")
     parser.add_argument("--tasks", nargs="+", default=CORE_FOUR_DATASETS, help="Tasks to evaluate (e.g. ara_math, ara_ifeval, ara_pro, ara_trust)")
     parser.add_argument("--load-in-4bit", action="store_true", help="Load base model in 4-bit")
     args = parser.parse_args()
