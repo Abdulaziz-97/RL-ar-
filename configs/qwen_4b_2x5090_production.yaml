@@ -16,7 +16,7 @@ eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 
 # GRPO Generation Hyperparameters
-num_generations: 16             # 16 rollouts per prompt (Restores G=16 advantage resolution!)
+num_generations: 8              # 8 rollouts per prompt (High throughput & fast generation)
 max_completion_length: 768       # Arabic CoT reasoning — 768 tokens required (Unlocked 75.20% AraIFEval)
 temperature: 1.0                # Base training temperature = 1.0 (Clean rollout sampling)
 top_p: 0.95
@@ -25,9 +25,9 @@ stop_strings: ["</answer>"]
 
 # Multi-GPU Hyperparameters (2x RTX 5090 PyTorch DDP)
 learning_rate: 5.0e-6
-num_train_epochs: 1              # 1 full epoch over 1,707 samples (27,312 completions total — prevents overfitting)
-per_device_train_batch_size: 1   # 1 prompt/GPU x 16 rollouts = 16 completions/GPU (~18.2GB VRAM per GPU, 13GB safety buffer)
-gradient_accumulation_steps: 8   # 8 micro-steps = generation_batch_size 16 (divisible by num_generations=16)
+num_train_epochs: 1              # 1 full epoch over 1,707 samples (prevents overfitting)
+per_device_train_batch_size: 1   # 1 prompt/GPU x 8 rollouts = 8 completions/GPU (~12-14GB VRAM per GPU)
+gradient_accumulation_steps: 4   # 4 micro-steps = generation_batch_size 8 (divisible by num_generations=8)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
