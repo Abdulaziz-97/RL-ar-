@@ -208,10 +208,35 @@ def load_araeval_task(task_name: str, limit: Optional[int] = None) -> list[AraEv
                 samples.append(normalize_sample(raw, task_name, idx))
             return samples
         except Exception as err:
-            logger.warning(f"Could not load HF dataset {hf_path}: {err}. Using mock fallback.")
+            logger.warning(f"Could not load HF dataset {hf_path}: {err}. Checking local dataset files...")
             pass
 
-    # Mock samples for fallback / offline testing
+    # Check local JSONL benchmark files for offline resiliency
+    from pathlib import Path
+    possible_local_paths = [
+        Path(f"data/{task_name}.jsonl"),
+        Path(f"data/arabic_reasoning_rlvr_eval.jsonl"),
+        Path(f"data_1/release_1600/rlvr_1600.jsonl"),
+    ]
+    for local_p in possible_local_paths:
+        if local_p.exists():
+            try:
+                records = []
+                with open(local_p, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.strip():
+                            records.append(json.loads(line))
+                if records:
+                    if limit:
+                        records = records[:limit]
+                    logger.info(f"Loaded {len(records)} local records from {local_p} for {task_name}")
+                    for idx, raw in enumerate(records):
+                        samples.append(normalize_sample(raw, task_name, idx))
+                    return samples
+            except Exception as e:
+                logger.warning(f"Error loading local file {local_p}: {e}")
+
+    # Fallback to synthetic mock samples
     mock_records = _get_mock_samples(task_name)
     if limit:
         mock_records = mock_records[:limit]
