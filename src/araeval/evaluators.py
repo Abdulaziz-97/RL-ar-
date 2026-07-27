@@ -75,9 +75,9 @@ def parse_mcq_choice(text: str, options: dict[str, str]) -> str:
         if len(clean) == 1 or clean[1] in (")", ".", ":", " ", "\n"):
             return clean[0].upper()
 
-    # Regex for explicit choice phrases in Arabic and English
+    # Regex for explicit choice phrases in Arabic and English (e.g. "الإجابة الصحيحة هي (أ)" or "Option B")
     match = re.search(
-        r"(?:الإجابة|الخيار|الإجابة الصحيحة|الخيار الصحيح|Option|Answer)\s*[:\(-]?\s*([A-Fأ-د١-٦])(?:[\)\.\s:]|$)",
+        r"(?:الإجابة|الخيار|الإجابة الصحيحة|الخيار الصحيح|Option|Answer)\s*(?:هي|هو|تكون|يكون)?\s*[:\(-]?\s*([A-Fأ-د١-٦])(?:[\)\.\s:]|$)",
         clean,
         re.IGNORECASE,
     )
