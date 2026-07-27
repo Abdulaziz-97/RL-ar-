@@ -40,7 +40,7 @@ def eval_single_model(model_name: str, adapter_path: str | None, batch_size: int
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate Base Model vs GRPO_V2 at Maximum Speed")
-    parser.add_argument("--batch-size", type=int, default=64, help="Evaluation batch size (default: 64 for maximum speed)")
+    parser.add_argument("--batch-size", type=int, default=16, help="Evaluation batch size (default: 16 for 100% OOM-safe GPU evaluation)")
     parser.add_argument("--grpo-adapter", default="aziz9788/qwen3.5-4b-arabic-grpo-v2", help="Hugging Face HF repo or local adapter path for GRPO_V2")
     parser.add_argument("--limit", type=int, help="Optional limit on number of samples per task (for testing)")
     args = parser.parse_args()
