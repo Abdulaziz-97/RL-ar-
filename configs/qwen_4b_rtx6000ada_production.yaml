@@ -25,7 +25,7 @@ stop_strings: ["</answer>"]
 
 # Distributed Training Hyperparameters (RTX 6000 Ada 48GB)
 learning_rate: 5.0e-6
-num_train_epochs: 1
+num_train_epochs: 2              # 2 full epochs (1700 steps) for complete convergence on 1,707 samples
 per_device_train_batch_size: 2   # 2 prompts × 8 rollouts = 16 completions per micro-step (26GB VRAM)
 gradient_accumulation_steps: 4   # 4 micro-steps = 64 completions total per gradient update
 max_grad_norm: 1.0
@@ -44,8 +44,8 @@ importance_sampling_level: "token"
 mask_truncated_completions: true
 
 # Multi-Reward Weights: [correctness, format, language, answer_leak, structural_leak, length]
-# Length penalty set to 0.0 — allows full 768-token responses for multi-paragraph IFEval tasks
-reward_weights: [0.6, 0.3, 0.1, 0.5, 0.3, 0.0]
+# Correctness set to 0.80 — mathematical correctness dominates policy gradients
+reward_weights: [0.8, 0.2, 0.05, 0.5, 0.3, 0.0]
 # GDPO: Normalize each reward independently before weighted sum (NVlabs arXiv:2601.05242)
 gdpo_decoupled_normalization: true
 

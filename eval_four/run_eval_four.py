@@ -32,7 +32,7 @@ def main():
     parser.add_argument("--adapter", help="Path to SFT/GRPO LoRA adapter directory")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size (default: 16)")
     parser.add_argument("--max-new-tokens", type=int, default=512, help="Max generated tokens (default: 512)")
-    parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
+    parser.add_argument("--temperature", type=float, default=0.6, help="Sampling temperature (0.6 standard for DeepSeekMath/Qwen2.5-Math evaluation)")
     parser.add_argument("--limit", type=int, help="Limit number of samples per task (optional)")
     parser.add_argument("--output", default="./araeval_results_four", help="Output directory")
     parser.add_argument("--tasks", nargs="+", default=CORE_FOUR_DATASETS, help="Tasks to evaluate (e.g. ara_math, ara_ifeval, ara_pro, ara_trust)")
