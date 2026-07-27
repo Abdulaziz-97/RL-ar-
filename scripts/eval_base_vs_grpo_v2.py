@@ -18,7 +18,7 @@ from araeval.config import AraEvalConfig, CORE_FOUR_DATASETS
 from araeval.runner import AraEvalRunner
 
 
-def eval_single_model(model_name: str, adapter_path: str | None, batch_size: int, output_dir: str) -> dict:
+def eval_single_model(model_name: str, adapter_path: str | None, batch_size: int, output_dir: str, limit: int | None = None) -> dict:
     print(f"\n=================================================================")
     print(f"EVALUATING MODEL: {adapter_path or model_name}")
     print(f"Batch Size: {batch_size} | High-Speed Vectorized Generation")
@@ -31,6 +31,7 @@ def eval_single_model(model_name: str, adapter_path: str | None, batch_size: int
         batch_size=batch_size,
         max_new_tokens=512,
         temperature=0.0,  # Greedy deterministic evaluation for maximum accuracy & speed
+        limit=limit,
         output_dir=output_dir,
     )
     runner = AraEvalRunner(cfg)
@@ -41,16 +42,19 @@ def main():
     parser = argparse.ArgumentParser(description="Evaluate Base Model vs GRPO_V2 at Maximum Speed")
     parser.add_argument("--batch-size", type=int, default=64, help="Evaluation batch size (default: 64 for maximum speed)")
     parser.add_argument("--grpo-adapter", default="aziz9788/qwen3.5-4b-arabic-grpo-v2", help="Hugging Face HF repo or local adapter path for GRPO_V2")
+    parser.add_argument("--limit", type=int, help="Optional limit on number of samples per task (for testing)")
     args = parser.parse_args()
 
     batch_size = args.batch_size
     grpo_adapter = args.grpo_adapter
+    limit = args.limit
 
     # 1. Evaluate Base Model (Qwen/Qwen3.5-4B)
     base_summary = eval_single_model(
         model_name="Qwen/Qwen3.5-4B",
         adapter_path=None,
         batch_size=batch_size,
+        limit=limit,
         output_dir="./outputs/eval_base_model",
     )
 
@@ -59,6 +63,7 @@ def main():
         model_name="Qwen/Qwen3.5-4B",
         adapter_path=grpo_adapter,
         batch_size=batch_size,
+        limit=limit,
         output_dir="./outputs/eval_grpo_v2",
     )
 
