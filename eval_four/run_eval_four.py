@@ -34,22 +34,20 @@ def main():
     parser.add_argument("--max-new-tokens", type=int, default=512, help="Max generated tokens (default: 512)")
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature")
     parser.add_argument("--limit", type=int, help="Limit number of samples per task (optional)")
-    parser.add_argument("--output", default="./araeval_results_four", help="Output directory")
+    parser.add_argument("--tasks", nargs="+", default=CORE_FOUR_DATASETS, help="Tasks to evaluate (e.g. ara_math, ara_ifeval, ara_pro, ara_trust)")
     parser.add_argument("--load-in-4bit", action="store_true", help="Load base model in 4-bit")
     args = parser.parse_args()
 
+    selected_tasks = args.tasks
+
     print("=================================================================")
-    print("RUNNING EVALUATION FOR CORE 4 ARABIC BENCHMARKS:")
-    print("   1. AraIFEval   (humain-ai/AraIFEval)")
-    print("   2. AraPro      (humain-ai/AraPro)")
-    print("   3. AraTrust    (humain-ai/AraTruthfulQA)")
-    print("   4. AraMath     (humain-ai/AraMath)")
+    print(f"RUNNING EVALUATION FOR TASKS: {', '.join(selected_tasks)}")
     print("=================================================================\n")
 
     cfg = AraEvalConfig(
         model_name_or_path=args.model,
         adapter_path=args.adapter,
-        tasks=CORE_FOUR_DATASETS,
+        tasks=selected_tasks,
         batch_size=args.batch_size,
         max_new_tokens=args.max_new_tokens,
         temperature=args.temperature,
@@ -64,7 +62,7 @@ def main():
     print("\n=================================================================")
     print("CORE 4 BENCHMARK RESULTS SUMMARY:")
     print("=================================================================")
-    for t_name in CORE_FOUR_DATASETS:
+    for t_name in selected_tasks:
         t_data = summary["tasks"].get(t_name, {})
         acc = t_data.get("accuracy", 0.0) * 100
         n_samples = t_data.get("total_samples", 0)
