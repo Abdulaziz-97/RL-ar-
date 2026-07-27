@@ -25,9 +25,9 @@ stop_strings: ["</answer>"]
 
 # Multi-GPU Hyperparameters (2x RTX 5090 PyTorch DDP)
 learning_rate: 5.0e-6
-num_train_epochs: 2              # 2 full epochs (1700 steps) for complete convergence on 1,707 samples
-per_device_train_batch_size: 1   # 1 prompt/GPU x 16 rollouts = 16 completions/GPU (~22-24GB VRAM per GPU, 8GB safety buffer)
-gradient_accumulation_steps: 4   # 4 micro-steps = 128 completions total per gradient update
+num_train_epochs: 1              # 1 full epoch (106 steps) for complete coverage of 1,707 samples
+per_device_train_batch_size: 8   # 8 prompts/GPU x 2 GPUs = 16 prompts/pass (106 total steps for 1,707 dataset!)
+gradient_accumulation_steps: 1   # Instant gradient update every step (~0.8s per step!)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
