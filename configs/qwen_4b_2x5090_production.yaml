@@ -27,7 +27,7 @@ stop_strings: ["</answer>"]
 learning_rate: 5.0e-6
 num_train_epochs: 1              # 1 full epoch over 1,707 samples (27,312 completions total — prevents overfitting)
 per_device_train_batch_size: 1   # 1 prompt/GPU x 16 rollouts = 16 completions/GPU (~18.2GB VRAM per GPU, 13GB safety buffer)
-gradient_accumulation_steps: 4   # 4 micro-steps = 128 completions total per gradient update
+gradient_accumulation_steps: 8   # 8 micro-steps = generation_batch_size 16 (divisible by num_generations=16)
 max_grad_norm: 1.0
 warmup_ratio: 0.1
 lr_scheduler_type: "cosine"
