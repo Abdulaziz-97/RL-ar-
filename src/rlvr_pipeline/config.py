@@ -237,6 +237,7 @@ class RLVRConfig:
             use_vllm=getattr(self, "use_vllm", False),
             vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.40),
             vllm_max_model_len=getattr(self, "vllm_max_model_len", 4096),
+            ddp_find_unused_parameters=getattr(self, "ddp_find_unused_parameters", False),
         )
 
         if include_model_init:
