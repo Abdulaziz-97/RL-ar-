@@ -18,7 +18,7 @@ coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
 # GRPO Generation Hyperparameters
 num_generations: 8              # 8 rollouts per prompt (Safe for 48GB VRAM)
 max_completion_length: 768       # Arabic CoT reasoning — 768 tokens required (Unlocked 75.20% AraIFEval)
-temperature: 1.15                # Calibrated temperature (prevents arithmetic calculation slips)
+temperature: 1.0                # Base training temperature = 1.0 (Clean rollout sampling)
 top_p: 0.95
 top_k: 40
 stop_strings: ["</answer>"]
@@ -63,8 +63,8 @@ entropy_collapse_action: "warn"
 entropy_lr_reduction_factor: 0.5
 enable_adaptive_temperature: true
 entropy_target_min: 1.5
-temp_bump: 0.15
-temp_max: 1.5
+temp_bump: 0.10
+temp_max: 1.25                   # Adaptive temperature capped at 1.25
 temp_bump_cooldown_steps: 3
 early_diag_steps: 30
 
