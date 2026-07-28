@@ -28,6 +28,16 @@ import time
 from pathlib import Path
 from typing import Any
 
+# Monkey-patch transformers for vLLM compatibility if all_special_tokens_extended is missing
+try:
+    import transformers.tokenization_utils_base
+    if not hasattr(transformers.tokenization_utils_base.PreTrainedTokenizerBase, "all_special_tokens_extended"):
+        transformers.tokenization_utils_base.PreTrainedTokenizerBase.all_special_tokens_extended = property(
+            lambda self: getattr(self, "all_special_tokens", [])
+        )
+except Exception:
+    pass
+
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
