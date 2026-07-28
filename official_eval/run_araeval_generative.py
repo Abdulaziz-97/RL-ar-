@@ -134,6 +134,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Override max_new_tokens for generation (e.g. --max-new-tokens 1024)",
     )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Limit number of samples per task (for debugging)",
+    )
     return parser.parse_args(argv)
 
 
