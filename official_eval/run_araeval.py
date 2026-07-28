@@ -20,20 +20,28 @@ try:
 except Exception:
     pass
 
-# Monkey-patch PretrainedConfig for Qwen3_5 pad_token_id compatibility
+# Monkey-patch PretrainedConfig for Qwen3_5 text_config attribute forwarding
 try:
     from transformers.configuration_utils import PretrainedConfig
     _orig_config_getattribute = PretrainedConfig.__getattribute__
     def _patched_config_getattribute(self, key):
+        try:
+            val = _orig_config_getattribute(self, key)
+            if val is not None:
+                return val
+        except AttributeError:
+            pass
+        # Fallback 1: Delegate to nested text_config if present
+        try:
+            tc = _orig_config_getattribute(self, "text_config")
+            if tc is not None and hasattr(tc, key):
+                return getattr(tc, key)
+        except AttributeError:
+            pass
+        # Fallback 2: Default for pad_token_id
         if key == "pad_token_id":
-            try:
-                val = _orig_config_getattribute(self, key)
-                if val is not None:
-                    return val
-            except AttributeError:
-                pass
             return getattr(self, "eos_token_id", 151643)
-        return _orig_config_getattribute(self, key)
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
     PretrainedConfig.__getattribute__ = _patched_config_getattribute
 except Exception:
     pass
