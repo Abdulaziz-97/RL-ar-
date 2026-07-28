@@ -59,6 +59,9 @@ python3 "$EVAL_SCRIPT" \
 
 echo ""
 echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2)..."
+pkill -9 -f vllm 2>/dev/null || true
+rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
+sleep 2
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
