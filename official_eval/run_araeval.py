@@ -211,11 +211,11 @@ TASK_HYPERPARAMETERS: dict[str, dict[str, Any]] = {
         "max_num_batched_tokens": 1024,
         "gpu_memory_utilization": 0.50,
     },
-    # AraIFEval (Task 7): High-throughput generation batching (batch_size: 32) for 10x speedup
+    # AraIFEval (Task 7): High-throughput generation batching (batch_size: 32) with 4096 max batched tokens
     "araeval_ifeval": {
         "batch_size": 32,
         "max_batch_size": 32,
-        "max_num_batched_tokens": 8192,
+        "max_num_batched_tokens": 4096,
         "gpu_memory_utilization": 0.85,
     },
 }
