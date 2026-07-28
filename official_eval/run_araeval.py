@@ -187,7 +187,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch-size", default="auto")
-    parser.add_argument("--max-batch-size", type=int, default=16)
+    parser.add_argument("--max-batch-size", type=int, default=8)
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--max-lora-rank", type=int, default=32)
     parser.add_argument("--enable-thinking", action="store_true", default=False, help="Enable thinking/reasoning generation (default: False for loglik tasks)")
@@ -201,7 +201,7 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else 1
     
     enable_thinking = getattr(args, "enable_thinking", False)
-    kwargs = {
+    return {
         "pretrained": args.model,
         "dtype": "bfloat16",
         "trust_remote_code": True,
@@ -210,7 +210,7 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "max_length": args.max_length,
         "enable_thinking": enable_thinking,
         "language_model_only": True,
-        "gpu_memory_utilization": 0.85,
+        "gpu_memory_utilization": 0.70,
         "tensor_parallel_size": tp_size,
         "enforce_eager": True,
         "enable_prefix_caching": False,
