@@ -26,14 +26,17 @@ def main():
 
     for i in range(device_count):
         prop = torch.cuda.get_device_properties(i)
-        free_bytes, total_bytes = torch.cuda.mem_get_info(i)
-        free_gb = free_bytes / (1024**3)
-        total_gb = total_bytes / (1024**3)
-        allocated_gb = (total_bytes - free_bytes) / (1024**3)
-        print(f"  - GPU {i}: {prop.name}")
-        print(f"    Total Memory: {total_gb:.2f} GB")
-        print(f"    Free Memory:  {free_gb:.2f} GB")
-        print(f"    In Use / Reserved: {allocated_gb:.2f} GB")
+        try:
+            free_bytes, total_bytes = torch.cuda.mem_get_info(i)
+            free_gb = free_bytes / (1024**3)
+            total_gb = total_bytes / (1024**3)
+            allocated_gb = (total_bytes - free_bytes) / (1024**3)
+            print(f"  - GPU {i}: {prop.name}")
+            print(f"    Total Memory: {total_gb:.2f} GB")
+            print(f"    Free Memory:  {free_gb:.2f} GB")
+            print(f"    In Use / Reserved: {allocated_gb:.2f} GB")
+        except Exception as e:
+            print(f"  - GPU {i}: {prop.name} (mem_get_info error: {e})")
 
     # 2. nvidia-smi System Processes Check
     print(f"\n[2] System nvidia-smi Process Check:")

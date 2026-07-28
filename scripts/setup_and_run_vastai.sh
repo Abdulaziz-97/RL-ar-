@@ -41,10 +41,11 @@ echo "================================================================="
 echo "[4/4] STARTING OFFICIAL BENCHMARKS FOR BASE & GRPO_V2 MODELS"
 echo "================================================================="
 
-# Clean any lingering background vLLM worker processes & stale IPC sockets from previous runs
-pkill -9 -f vllm || true
-pkill -9 -f python3 || true
-pkill -9 -f python || true
+# Clean any lingering background vLLM worker processes, stale IPC sockets & corrupted CUDA driver handles
+pkill -9 -f vllm 2>/dev/null || true
+pkill -9 -f python3 2>/dev/null || true
+pkill -9 -f python 2>/dev/null || true
+fuser -k -9 /dev/nvidia* 2>/dev/null || true
 rm -rf /dev/shm/vllm* /dev/shm/torch* /dev/shm/nccl* 2>/dev/null || true
 sleep 2
 
