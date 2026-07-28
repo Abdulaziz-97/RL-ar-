@@ -72,7 +72,52 @@ python3 "$EVAL_SCRIPT" \
 
 echo ""
 echo "================================================================="
-echo "OFFICIAL VAST.AI EVALUATION COMPLETE! 🏆"
+echo "LOG-LIKELIHOOD EVALUATION COMPLETE!"
 echo "Base Model Summary : /workspace/outputs/official_eval_base_model/summary.json"
 echo "GRPO_V2 Summary    : /workspace/outputs/official_eval_grpo_v2/summary.json"
+echo "================================================================="
+
+# --- GENERATIVE EVALUATION (Fair GRPO Assessment) ---
+GENERATIVE_SCRIPT="/workspace/RL-ar-/official_eval/run_araeval_generative.py"
+if [ ! -f "$GENERATIVE_SCRIPT" ]; then
+    GENERATIVE_SCRIPT="./official_eval/run_araeval_generative.py"
+fi
+
+echo ""
+echo "================================================================="
+echo "STARTING GENERATIVE EVALUATION (FAIR GRPO ASSESSMENT)"
+echo "================================================================="
+
+echo ""
+echo ">>> STEP C: Generative Eval — Base Model (thinking=OFF)..."
+pkill -9 -f vllm 2>/dev/null || true
+rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
+sleep 2
+python3 "$GENERATIVE_SCRIPT" \
+  --model unsloth/Qwen3.5-4B \
+  --output-dir /workspace/outputs/generative_eval_base
+
+echo ""
+echo ">>> STEP D: Generative Eval — GRPO_V2 Model (thinking=ON)..."
+pkill -9 -f vllm 2>/dev/null || true
+rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
+sleep 2
+python3 "$GENERATIVE_SCRIPT" \
+  --model unsloth/Qwen3.5-4B \
+  --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
+  --enable-thinking \
+  --max-lora-rank 128 \
+  --output-dir /workspace/outputs/generative_eval_grpo_v2
+
+echo ""
+echo "================================================================="
+echo "ALL EVALUATIONS COMPLETE! 🏆"
+echo "================================================================="
+echo "Log-Likelihood (Official):"
+echo "  Base Model  : /workspace/outputs/official_eval_base_model/summary.json"
+echo "  GRPO_V2     : /workspace/outputs/official_eval_grpo_v2/summary.json"
+echo ""
+echo "Generative (Fair GRPO Assessment):"
+echo "  Base Model  : /workspace/outputs/generative_eval_base/summary.json"
+echo "  GRPO_V2     : /workspace/outputs/generative_eval_grpo_v2/summary.json"
 echo "================================================================="
