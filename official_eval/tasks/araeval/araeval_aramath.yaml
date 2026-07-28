@@ -1,0 +1,16 @@
+task: araeval_aramath
+dataset_path: humain-ai/AraMath
+dataset_kwargs:
+  revision: b79e79b1b993d153613d1ce2357a1177f2cdcfa1
+test_split: test
+process_docs: !function utils.process_aramath
+output_type: multiple_choice
+doc_to_text: query
+doc_to_choice: choices
+doc_to_target: gold
+metric_list:
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

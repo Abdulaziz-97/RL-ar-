@@ -1,0 +1,397 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Any
+
+ROOT = Path(__file__).resolve().parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from tasks.araeval.utils import (
+    PUBLIC_TEST_COUNTS,
+    RANDOM_BASELINES,
+    araeval_overall,
+    normalize_against_random,
+)
+
+
+DEFAULT_MODEL = "unsloth/Qwen3.5-4B"
+DEFAULT_LOADER = "vllm"
+VLLM_ENV = {
+    "VLLM_USE_FLASHINFER_SAMPLER": "0",
+}
+TASKS = [
+    "araeval_ien_mcq",
+    "araeval_ien_tf",
+    "araeval_aramath",
+    "araeval_etec",
+    "araeval_arapro",
+    "araeval_truthfulqa",
+    "araeval_ifeval",
+]
+FULL_PUBLIC_DOCUMENTS = sum(PUBLIC_TEST_COUNTS.values())
+
+_SHORT_NAMES = {
+    "araeval_ien_mcq": "ien_mcq",
+    "araeval_ien_tf": "ien_tf",
+    "araeval_aramath": "aramath",
+    "araeval_etec": "etec",
+    "araeval_arapro": "arapro",
+    "araeval_truthfulqa": "truthfulqa",
+}
+
+_COUNT_KEYS = {
+    **_SHORT_NAMES,
+    "araeval_ifeval": "araifeval",
+}
+
+_IFEVAL_METRICS = {
+    "prompt_strict": "prompt_level_strict_acc,none",
+    "instruction_strict": "inst_level_strict_acc,none",
+    "prompt_loose": "prompt_level_loose_acc,none",
+    "instruction_loose": "inst_level_loose_acc,none",
+}
+
+
+def proportional_sample_counts(total: int) -> dict[str, int]:
+    available = sum(PUBLIC_TEST_COUNTS.values())
+    if not 1 <= total <= available:
+        raise ValueError(f"sample size must be between 1 and {available}")
+
+    allocation: dict[str, int] = {}
+    remainders: list[tuple[int, int, str]] = []
+    for position, task in enumerate(TASKS):
+        count = PUBLIC_TEST_COUNTS[_COUNT_KEYS[task]]
+        allocation[task] = total * count // available
+        remainders.append((total * count % available, -position, task))
+
+    remaining = total - sum(allocation.values())
+    for _, _, task in sorted(remainders, reverse=True)[:remaining]:
+        allocation[task] += 1
+    return allocation
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    os.replace(temporary, path)
+
+
+def _metric(metrics: dict[str, Any], name: str) -> float:
+    value = metrics.get(name)
+    if value is None and "," not in name:
+        value = metrics.get(f"{name},none")
+    if not isinstance(value, (int, float)):
+        raise KeyError(f"Missing numeric metric {name!r}")
+    return float(value)
+
+
+def summarize_checkpoint(checkpoint: dict[str, Any]) -> dict[str, Any]:
+    completed = checkpoint.get("completed", {})
+    raw_percent: dict[str, float] = {}
+
+    for task, short_name in _SHORT_NAMES.items():
+        if task not in completed:
+            continue
+        raw_percent[short_name] = 100.0 * _metric(
+            completed[task]["metrics"], "acc_norm"
+        )
+
+    ifeval = completed.get("araeval_ifeval")
+    if ifeval:
+        for variant, metric_name in _IFEVAL_METRICS.items():
+            raw_percent[f"ifeval_{variant}"] = 100.0 * _metric(
+                ifeval["metrics"], metric_name
+            )
+
+    normalized: dict[str, float] = {}
+    for name in _SHORT_NAMES.values():
+        if name in raw_percent:
+            normalized[name] = normalize_against_random(
+                raw_percent[name], RANDOM_BASELINES[name]
+            )
+    for variant in _IFEVAL_METRICS:
+        key = f"ifeval_{variant}"
+        if key in raw_percent:
+            normalized[key] = raw_percent[key]
+
+    overall: dict[str, float] = {}
+    core_names = set(_SHORT_NAMES.values())
+    if core_names.issubset(raw_percent):
+        for variant in _IFEVAL_METRICS:
+            ifeval_key = f"ifeval_{variant}"
+            if ifeval_key not in raw_percent:
+                continue
+            scores = {name: raw_percent[name] for name in core_names}
+            scores["araifeval"] = raw_percent[ifeval_key]
+            overall[variant] = araeval_overall(scores)
+
+    return {
+        "benchmark_mode": checkpoint.get("benchmark_mode"),
+        "full_public_documents": checkpoint.get("full_public_documents"),
+        "selected_tasks": checkpoint.get("selected_tasks"),
+        "model": checkpoint.get("model"),
+        "adapter_path": checkpoint.get("adapter_path"),
+        "limit": checkpoint.get("limit"),
+        "sample_size": checkpoint.get("sample_size"),
+        "seed": checkpoint.get("seed"),
+        "sample_counts": checkpoint.get("sample_counts"),
+        "completed_tasks": sorted(completed),
+        "total_seconds": sum(
+            float(task.get("seconds", 0.0))
+            for task in completed.values()
+        ),
+        "raw_percent": raw_percent,
+        "normalized_percent": normalized,
+        "overall_normalized": overall,
+        "paper_primary": overall.get("prompt_strict"),
+    }
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Run the full checkpointed AraEval benchmark with vLLM."
+    )
+    parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--adapter-path", type=Path)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=ROOT.parent / "outputs" / "araeval_full_qwen35_4b",
+    )
+    parser.add_argument(
+        "--task",
+        action="append",
+        choices=TASKS,
+        help="Run only this task; repeat the option to select multiple tasks.",
+    )
+    subset = parser.add_mutually_exclusive_group()
+    subset.add_argument(
+        "--limit",
+        type=int,
+        help="Diagnostic per-task limit; omit for the reported full benchmark.",
+    )
+    subset.add_argument(
+        "--sample-size",
+        type=int,
+        help="Diagnostic proportional sample; omit for the reported full benchmark.",
+    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--batch-size", default="auto")
+    parser.add_argument("--max-batch-size", type=int, default=16)
+    parser.add_argument("--max-length", type=int, default=4096)
+    parser.add_argument("--max-lora-rank", type=int, default=32)
+    return parser.parse_args(argv)
+
+
+def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    return {
+        "pretrained": args.model,
+        "dtype": "bfloat16",
+        "trust_remote_code": True,
+        "batch_size": args.batch_size,
+        "max_batch_size": args.max_batch_size,
+        "max_length": args.max_length,
+        "enable_thinking": False,
+        "language_model_only": True,
+        "gpu_memory_utilization": 0.90,
+        "enable_prefix_caching": False,
+        "lora_local_path": (
+            str(args.adapter_path.resolve())
+            if args.adapter_path is not None
+            else None
+        ),
+        "max_lora_rank": args.max_lora_rank,
+    }
+
+
+def benchmark_mode(args: argparse.Namespace) -> str:
+    if args.sample_size is not None:
+        return "sample"
+    if args.limit is not None:
+        return "per_task_limit"
+    return "full"
+
+
+def new_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
+    sample_counts = (
+        proportional_sample_counts(args.sample_size)
+        if args.sample_size is not None
+        else None
+    )
+    selected_tasks = args.task or TASKS
+    return {
+        "version": 3,
+        "benchmark_mode": benchmark_mode(args),
+        "full_public_documents": FULL_PUBLIC_DOCUMENTS,
+        "selected_tasks": list(selected_tasks),
+        "model": args.model,
+        "adapter_path": (
+            str(args.adapter_path.resolve())
+            if args.adapter_path is not None
+            else None
+        ),
+        "limit": args.limit,
+        "sample_size": args.sample_size,
+        "seed": args.seed,
+        "sample_counts": sample_counts,
+        "settings": {
+            "loader": DEFAULT_LOADER,
+            "dtype": "bfloat16",
+            "device": "cuda",
+            "batch_size": args.batch_size,
+            "max_batch_size": args.max_batch_size,
+            "max_length": args.max_length,
+            "max_lora_rank": args.max_lora_rank,
+            "apply_chat_template": True,
+            "enable_thinking": False,
+            "num_fewshot": 0,
+            "bootstrap_iters": 0,
+            "enable_prefix_caching": False,
+        },
+        "completed": {},
+    }
+
+
+def _load_checkpoint(path: Path, args: argparse.Namespace) -> dict[str, Any]:
+    if not path.exists():
+        return new_checkpoint(args)
+    checkpoint = json.loads(path.read_text(encoding="utf-8"))
+    if checkpoint.get("model") != args.model:
+        raise ValueError("Checkpoint model differs from --model")
+    adapter_path = (
+        str(args.adapter_path.resolve())
+        if args.adapter_path is not None
+        else None
+    )
+    if checkpoint.get("adapter_path") != adapter_path:
+        raise ValueError("Checkpoint adapter differs from --adapter-path")
+    if checkpoint.get("limit") != args.limit:
+        raise ValueError("Checkpoint limit differs from --limit")
+    if checkpoint.get("sample_size") != args.sample_size:
+        raise ValueError("Checkpoint sample size differs from --sample-size")
+    if checkpoint.get("seed") != args.seed:
+        raise ValueError("Checkpoint seed differs from --seed")
+    if checkpoint.get("selected_tasks") != list(args.task or TASKS):
+        raise ValueError("Checkpoint task selection differs from this run")
+    return checkpoint
+
+
+def pending_tasks(
+    checkpoint: dict[str, Any],
+    selected_tasks: list[str],
+) -> list[str]:
+    completed = checkpoint.get("completed", {})
+    return [task for task in selected_tasks if task not in completed]
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    for name, value in VLLM_ENV.items():
+        os.environ.setdefault(name, value)
+
+    try:
+        import lm_eval
+        from lm_eval.models.vllm_causallms import VLLM
+        from lm_eval.tasks import TaskManager
+    except ImportError as exc:
+        raise RuntimeError(
+            "lm_eval or vllm is not installed. Please install vllm and lm_eval."
+        ) from exc
+
+    task_dir = ROOT / "tasks" / "araeval"
+    if args.adapter_path is not None:
+        adapter_path = args.adapter_path.resolve()
+        if not (adapter_path / "adapter_config.json").is_file():
+            raise ValueError(f"Invalid adapter directory: {adapter_path}")
+        if not any(adapter_path.glob("adapter_model.*")):
+            raise ValueError(f"Adapter weights are missing: {adapter_path}")
+    output_dir = args.output_dir.resolve()
+    checkpoint_path = output_dir / "checkpoint.json"
+    summary_path = output_dir / "summary.json"
+    checkpoint = _load_checkpoint(checkpoint_path, args)
+    selected_tasks = args.task or TASKS
+    if args.sample_size is not None and args.task:
+        raise ValueError("--sample-size runs the complete seven-task suite")
+    if checkpoint["sample_counts"] is not None:
+        os.environ["ARAEVAL_SAMPLE_COUNTS"] = json.dumps(
+            checkpoint["sample_counts"], sort_keys=True
+        )
+        os.environ["ARAEVAL_SAMPLE_SEED"] = str(args.seed)
+    else:
+        os.environ.pop("ARAEVAL_SAMPLE_COUNTS", None)
+        os.environ.pop("ARAEVAL_SAMPLE_SEED", None)
+    pending = pending_tasks(checkpoint, selected_tasks)
+
+    if not pending:
+        summary = summarize_checkpoint(checkpoint)
+        _atomic_write_json(summary_path, summary)
+        return summary
+
+    print(
+        f"Loading {args.model} once for {len(pending)} pending AraEval task(s)...",
+        flush=True,
+    )
+    model = VLLM(**build_vllm_kwargs(args))
+    task_manager = TaskManager(include_path=str(task_dir))
+
+    for task in pending:
+        position = selected_tasks.index(task) + 1
+        print(f"[{position}/{len(selected_tasks)}] {task}", flush=True)
+        started = time.monotonic()
+        try:
+            result = lm_eval.simple_evaluate(
+                model=model,
+                tasks=[task],
+                num_fewshot=0,
+                limit=args.limit,
+                bootstrap_iters=0,
+                log_samples=False,
+                apply_chat_template=True,
+                fewshot_as_multiturn=False,
+                task_manager=task_manager,
+            )
+            if result is None:
+                raise RuntimeError(f"LM Harness returned no result for {task}")
+            metrics = dict(result["results"][task])
+            checkpoint["completed"][task] = {
+                "metrics": metrics,
+                "n_samples": result.get("n-samples", {}).get(task),
+                "seconds": time.monotonic() - started,
+            }
+            checkpoint.pop("last_error", None)
+            _atomic_write_json(checkpoint_path, checkpoint)
+            _atomic_write_json(summary_path, summarize_checkpoint(checkpoint))
+        except Exception as exc:
+            checkpoint["last_error"] = {
+                "task": task,
+                "type": type(exc).__name__,
+                "message": str(exc),
+            }
+            _atomic_write_json(checkpoint_path, checkpoint)
+            raise
+
+    summary = summarize_checkpoint(checkpoint)
+    _atomic_write_json(summary_path, summary)
+    return summary
+
+
+def main() -> None:
+    summary = run(parse_args())
+    print(json.dumps(summary, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Interrupted; completed tasks remain checkpointed.", file=sys.stderr)
+        raise SystemExit(130)

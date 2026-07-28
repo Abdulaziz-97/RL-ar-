@@ -1,0 +1,16 @@
+task: araeval_ien_tf
+dataset_path: humain-ai/IEN_TF
+dataset_kwargs:
+  revision: 1d2d4bcd3a08173bef4a29eb2530f505a99f0812
+test_split: test
+process_docs: !function utils.process_ien_tf
+output_type: multiple_choice
+doc_to_text: query
+doc_to_choice: choices
+doc_to_target: gold
+metric_list:
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

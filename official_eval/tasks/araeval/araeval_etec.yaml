@@ -1,0 +1,16 @@
+task: araeval_etec
+dataset_path: humain-ai/Etec
+dataset_kwargs:
+  revision: 61a79b9c2d8528e57d14adb145ff7a85261654e7
+test_split: test
+process_docs: !function utils.process_etec
+output_type: multiple_choice
+doc_to_text: query
+doc_to_choice: choices
+doc_to_target: gold
+metric_list:
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

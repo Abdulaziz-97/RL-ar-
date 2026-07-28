@@ -22,15 +22,10 @@ def main():
     parser.add_argument("--output-dir", default="./outputs/eval_team_results", help="Output directory for checkpoint.json and summary.json")
     args = parser.parse_args()
 
-    if not OFFICIAL_EVAL_SCRIPT.exists():
-        # Try relative path if running on Linux/WSL
-        alt_script = Path("/workspace/Saudi-LLM/Eval/scripts/run_araeval.py")
-        if alt_script.exists():
-            eval_script_path = alt_script
-        else:
-            raise FileNotFoundError(f"Official evaluation script not found at {OFFICIAL_EVAL_SCRIPT} or {alt_script}")
-    else:
-        eval_script_path = OFFICIAL_EVAL_SCRIPT
+    repo_root = Path(__file__).resolve().parent.parent
+    eval_script_path = repo_root / "official_eval" / "run_araeval.py"
+    if not eval_script_path.exists():
+        raise FileNotFoundError(f"Official evaluation script not found at {eval_script_path}")
 
     cmd = [
         sys.executable,

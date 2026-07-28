@@ -1,0 +1,16 @@
+task: araeval_ien_mcq
+dataset_path: humain-ai/IEN_MCQ
+dataset_kwargs:
+  revision: a3ddadfbe6ed009001be9f1cecd4a61cff979337
+test_split: test
+process_docs: !function utils.process_ien_mcq
+output_type: multiple_choice
+doc_to_text: query
+doc_to_choice: choices
+doc_to_target: gold
+metric_list:
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0

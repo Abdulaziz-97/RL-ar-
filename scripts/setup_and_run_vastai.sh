@@ -21,33 +21,10 @@ apt-get update -qq && apt-get install -y -qq git git-lfs > /dev/null 2>&1 || tru
 python3 -m pip install --upgrade pip -q
 python3 -m pip install -q vllm lm-eval transformers peft accelerate datasets trl || true
 
-# 3. Verify / Clone Repositories
-echo "[2/4] Verifying repository setups..."
-if [ ! -d "/workspace/RL-ar-" ]; then
-    echo "Cloning RL-ar- repository..."
-    git clone -b Efficient-Arabic-Reasnoning-Pipeline https://github.com/Abdulaziz-97/RL-ar-.git /workspace/RL-ar-
-fi
-
-if [ ! -d "/workspace/Saudi-LLM" ]; then
-    echo "Cloning private Saudi-LLM repository..."
-    if [ -n "$GH_TOKEN" ] || [ -n "$GITHUB_TOKEN" ]; then
-        TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"
-        git clone "https://${TOKEN}@github.com/Zeyddd/Saudi-LLM.git" /workspace/Saudi-LLM
-    else
-        git clone https://github.com/Zeyddd/Saudi-LLM.git /workspace/Saudi-LLM || true
-    fi
-fi
-
-# Locate run_araeval.py script
-EVAL_SCRIPT="/workspace/Saudi-LLM/Eval/scripts/run_araeval.py"
+# 3. Locate Internal Official Evaluation Script
+EVAL_SCRIPT="/workspace/RL-ar-/official_eval/run_araeval.py"
 if [ ! -f "$EVAL_SCRIPT" ]; then
-    EVAL_SCRIPT="/workspace/RL-ar-/Saudi-LLM/Eval/scripts/run_araeval.py"
-fi
-
-if [ ! -f "$EVAL_SCRIPT" ]; then
-    echo "ERROR: Official evaluation script run_araeval.py not found!"
-    echo "Please ensure Saudi-LLM repo is placed at /workspace/Saudi-LLM"
-    exit 1
+    EVAL_SCRIPT="./official_eval/run_araeval.py"
 fi
 
 echo "[3/4] Script located at: $EVAL_SCRIPT"

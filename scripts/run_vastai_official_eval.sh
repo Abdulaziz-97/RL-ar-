@@ -6,10 +6,7 @@ set -e
 export HF_HOME="${HF_HOME:-/root/.cache/huggingface}"
 export VLLM_USE_FLASHINFER_SAMPLER="0"
 
-EVAL_SCRIPT_PATH="/workspace/Saudi-LLM/Eval/scripts/run_araeval.py"
-if [ ! -f "$EVAL_SCRIPT_PATH" ]; then
-    EVAL_SCRIPT_PATH="./Saudi-LLM/Eval/scripts/run_araeval.py"
-fi
+EVAL_SCRIPT_PATH="./official_eval/run_araeval.py"
 
 echo "================================================================="
 echo "LAUNCHING OFFICIAL BENCHMARKS ON VAST.AI GPU INSTANCE"

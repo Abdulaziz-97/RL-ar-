@@ -1,0 +1,17 @@
+task: araeval_arapro
+dataset_path: humain-ai/AraPro
+dataset_name: AraPro
+dataset_kwargs:
+  revision: e606730ed50b663d7655ea2e02793238f5166422
+test_split: test
+process_docs: !function utils.process_arapro
+output_type: multiple_choice
+doc_to_text: query
+doc_to_choice: choices
+doc_to_target: gold
+metric_list:
+  - metric: acc_norm
+    aggregation: mean
+    higher_is_better: true
+metadata:
+  version: 1.0
