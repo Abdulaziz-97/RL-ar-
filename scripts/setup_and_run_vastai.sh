@@ -8,6 +8,8 @@ echo "================================================================="
 
 # 1. Environment Variables (ensure HF_TOKEN is exported in shell)
 export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
+export HF_HUB_CACHE="${HF_HUB_CACHE:-/workspace/.hf_cache/hub}"
+export TMPDIR="${TMPDIR:-/workspace/tmp}"
 export VLLM_USE_FLASHINFER_SAMPLER="0"
 export VLLM_ENFORCE_EAGER="1"
 export VLLM_WORKER_MULTIPROC_METHOD="spawn"
@@ -18,6 +20,7 @@ export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"
 
 mkdir -p /workspace/outputs
 mkdir -p "$HF_HOME"
+mkdir -p "$TMPDIR"
 
 # 2. Install uv package manager & Python dependencies
 echo "[1/4] Installing uv package manager & Python dependencies..."
