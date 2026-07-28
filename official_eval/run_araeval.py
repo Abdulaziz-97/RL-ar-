@@ -187,7 +187,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--batch-size", default="auto")
-    parser.add_argument("--max-batch-size", type=int, default=16)
+    parser.add_argument("--max-batch-size", type=int, default=32)
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--max-lora-rank", type=int, default=32)
     parser.add_argument("--enable-thinking", action="store_true", default=True, help="Enable thinking/reasoning generation (default: True)")

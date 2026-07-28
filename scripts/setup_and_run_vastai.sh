@@ -40,18 +40,20 @@ echo "[4/4] STARTING OFFICIAL BENCHMARKS FOR BASE & GRPO_V2 MODELS"
 echo "================================================================="
 
 echo ""
-echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B) WITH THINKING ENABLED..."
+echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B) WITH THINKING ENABLED (2x GPU TP=2)..."
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --enable-thinking \
+  --max-batch-size 32 \
   --output-dir /workspace/outputs/official_eval_base_model
 
 echo ""
-echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2) WITH THINKING ENABLED..."
+echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2) WITH THINKING ENABLED (2x GPU TP=2)..."
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
   --enable-thinking \
+  --max-batch-size 32 \
   --output-dir /workspace/outputs/official_eval_grpo_v2
 
 echo ""
