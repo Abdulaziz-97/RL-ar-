@@ -97,8 +97,15 @@ def main():
         limit=args.limit,
         output_dir=str(output_base / "arabic"),
     )
-    runner_ara_base = AraEvalRunner(ara_cfg_base)
-    base_ara_results = runner_ara_base.run()
+    base_results_file = output_base / "arabic" / "araeval_results.json"
+    if base_results_file.exists():
+        print(f"Base model Arabic evaluation already saved on disk at {base_results_file}. Skipping re-eval!", flush=True)
+        import json
+        with open(base_results_file, "r", encoding="utf-8") as f:
+            base_ara_results = json.load(f)
+    else:
+        runner_ara_base = AraEvalRunner(ara_cfg_base)
+        base_ara_results = runner_ara_base.run()
 
     print("\n=================================================================")
     print("STEP 2/4: EVALUATING BASE MODEL ON ENGLISH BASELINE BENCHMARKS")

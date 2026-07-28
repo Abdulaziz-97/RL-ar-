@@ -28,41 +28,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-# ---------------------------------------------------------------------------
-# Production-Grade Architecture Adapter for Qwen 3.5 Models in vLLM
-# ---------------------------------------------------------------------------
-try:
-    from vllm.model_executor.models import ModelRegistry
-    from vllm.model_executor.models.qwen2 import Qwen2ForCausalLM
-
-    class Qwen3_5ForConditionalGeneration(Qwen2ForCausalLM):
-        """Production-grade vLLM model wrapper for Qwen 3.5 conditional generation architecture."""
-
-        def __init__(self, vllm_config, prefix: str = ""):
-            hf_config = vllm_config.model_config.hf_config
-            # Mirror nested text_config attributes cleanly onto hf_config if needed
-            text_config = getattr(hf_config, "text_config", None)
-            if text_config is not None:
-                for attr in (
-                    "vocab_size",
-                    "pad_token_id",
-                    "hidden_size",
-                    "num_hidden_layers",
-                    "num_attention_heads",
-                    "num_key_value_heads",
-                    "intermediate_size",
-                ):
-                    if not hasattr(hf_config, attr) and hasattr(text_config, attr):
-                        setattr(hf_config, attr, getattr(text_config, attr))
-            if not hasattr(hf_config, "pad_token_id") or hf_config.pad_token_id is None:
-                hf_config.pad_token_id = getattr(hf_config, "eos_token_id", 151643)
-
-            super().__init__(vllm_config=vllm_config, prefix=prefix)
-
-    ModelRegistry.register_model("Qwen3_5ForConditionalGeneration", Qwen3_5ForConditionalGeneration)
-except Exception as e:
-    pass
-
 ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
