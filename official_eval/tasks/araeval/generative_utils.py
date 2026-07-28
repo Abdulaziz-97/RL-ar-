@@ -35,29 +35,29 @@ GENERATION_PROFILES: dict[str, dict[str, Any]] = {
     "gen_mcq": {
         "max_new_tokens": 768,
         "temperature": 0.0,
-        "batch_size": 16,
-        "gpu_memory_utilization": 0.75,
+        "gpu_memory_utilization": 0.88,
+        "max_num_seqs": 64,
     },
     # AraMath: long chain-of-thought math reasoning
     "araeval_aramath": {
         "max_new_tokens": 768,
         "temperature": 0.0,
-        "batch_size": 8,
-        "gpu_memory_utilization": 0.75,
+        "gpu_memory_utilization": 0.88,
+        "max_num_seqs": 32,
     },
     # AraPro: long medical/science passages + reasoning
     "araeval_arapro": {
         "max_new_tokens": 768,
         "temperature": 0.0,
-        "batch_size": 4,
-        "gpu_memory_utilization": 0.50,
+        "gpu_memory_utilization": 0.80,
+        "max_num_seqs": 16,
     },
     # IFEval: full instruction-following generation
     "araeval_ifeval": {
         "max_new_tokens": 1280,
         "temperature": 0.0,
-        "batch_size": 8,
-        "gpu_memory_utilization": 0.85,
+        "gpu_memory_utilization": 0.88,
+        "max_num_seqs": 32,
     },
 }
 

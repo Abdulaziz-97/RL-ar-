@@ -169,9 +169,10 @@ def run_tests() -> None:
     math_profile = get_generation_profile("araeval_aramath")
     assert math_profile["max_new_tokens"] >= 768, f"Math max_new_tokens should be >= 768: {math_profile['max_new_tokens']}"
 
-    # AraPro (long passages) should have conservative batch_size
+    # AraPro (long passages) should have conservative max_num_seqs
     arapro_profile = get_generation_profile("araeval_arapro")
-    assert arapro_profile["batch_size"] <= 8, f"AraPro batch_size too high: {arapro_profile['batch_size']}"
+    assert arapro_profile["max_num_seqs"] <= 32, f"AraPro max_num_seqs too high: {arapro_profile['max_num_seqs']}"
+    assert arapro_profile["gpu_memory_utilization"] == 0.80
 
     # IFEval should have longest max_new_tokens
     ifeval_profile = get_generation_profile("araeval_ifeval")

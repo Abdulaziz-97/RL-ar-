@@ -177,6 +177,8 @@ def build_vllm_engine(args: argparse.Namespace, task: str):
         "tensor_parallel_size": tp_size,
         "enforce_eager": True,
         "enable_prefix_caching": False,
+        "max_num_seqs": profile.get("max_num_seqs", 64),
+        "max_num_batched_tokens": 8192,
     }
 
     # Enable LoRA if adapter path is provided
