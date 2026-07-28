@@ -192,10 +192,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-lora-rank", type=int, default=32)
     parser.add_argument("--enable-thinking", action="store_true", default=True, help="Enable thinking/reasoning generation (default: True)")
     parser.add_argument("--disable-thinking", action="store_false", dest="enable_thinking", help="Disable thinking/reasoning generation")
+    parser.add_argument("--tensor-parallel-size", type=int, default=None, help="Number of GPUs for tensor parallelism (default: auto-detect CUDA count)")
     return parser.parse_args(argv)
 
 
 def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+    import torch
+    tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else (torch.cuda.device_count() if torch.cuda.is_available() else 1)
+    tp_size = max(1, tp_size)
+    
     return {
         "pretrained": args.model,
         "dtype": "bfloat16",
@@ -206,6 +211,7 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "enable_thinking": getattr(args, "enable_thinking", True),
         "language_model_only": True,
         "gpu_memory_utilization": 0.90,
+        "tensor_parallel_size": tp_size,
         "enable_prefix_caching": False,
         "lora_local_path": (
             str(args.adapter_path.resolve())
