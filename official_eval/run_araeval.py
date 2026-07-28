@@ -20,6 +20,24 @@ try:
 except Exception:
     pass
 
+# Monkey-patch PretrainedConfig for Qwen3_5 pad_token_id compatibility
+try:
+    from transformers.configuration_utils import PretrainedConfig
+    _orig_config_getattribute = PretrainedConfig.__getattribute__
+    def _patched_config_getattribute(self, key):
+        if key == "pad_token_id":
+            try:
+                val = _orig_config_getattribute(self, key)
+                if val is not None:
+                    return val
+            except AttributeError:
+                pass
+            return getattr(self, "eos_token_id", 151643)
+        return _orig_config_getattribute(self, key)
+    PretrainedConfig.__getattribute__ = _patched_config_getattribute
+except Exception:
+    pass
+
 from tasks.araeval.utils import (
     PUBLIC_TEST_COUNTS,
     RANDOM_BASELINES,
