@@ -41,6 +41,11 @@ echo "================================================================="
 echo "[4/4] STARTING OFFICIAL BENCHMARKS FOR BASE & GRPO_V2 MODELS"
 echo "================================================================="
 
+# Clean any lingering background vLLM worker processes from previous runs
+pkill -9 -f vllm || true
+pkill -9 -f python3 || true
+sleep 2
+
 echo ""
 echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B) (2x GPU TP=2)..."
 python3 "$EVAL_SCRIPT" \
