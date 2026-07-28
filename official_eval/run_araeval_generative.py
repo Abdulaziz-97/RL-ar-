@@ -250,19 +250,15 @@ def evaluate_task(
     if adapter_path is not None:
         lora_request = LoRARequest("grpo_v2_adapter", 1, adapter_path)
 
-    # Generate in batches
-    all_outputs = []
-    for i in range(0, len(prompts), batch_size):
-        batch_prompts = prompts[i : i + batch_size]
-        if lora_request is not None:
-            outputs = llm.generate(
-                batch_prompts,
-                sampling_params,
-                lora_request=lora_request,
-            )
-        else:
-            outputs = llm.generate(batch_prompts, sampling_params)
-        all_outputs.extend(outputs)
+    # Generate all prompts with vLLM's native continuous batching engine
+    if lora_request is not None:
+        all_outputs = llm.generate(
+            prompts,
+            sampling_params,
+            lora_request=lora_request,
+        )
+    else:
+        all_outputs = llm.generate(prompts, sampling_params)
 
     # Extract and grade answers
     correct = 0
