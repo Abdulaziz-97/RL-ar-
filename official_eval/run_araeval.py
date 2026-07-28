@@ -147,7 +147,7 @@ def summarize_checkpoint(checkpoint: dict[str, Any]) -> dict[str, Any]:
         "sample_counts": checkpoint.get("sample_counts"),
         "completed_tasks": sorted(completed),
         "total_seconds": sum(
-            float(task.get("seconds", 0.0))
+            float(task.get("seconds", task.get("elapsed_seconds", 0.0)))
             for task in completed.values()
         ),
         "raw_percent": raw_percent,
