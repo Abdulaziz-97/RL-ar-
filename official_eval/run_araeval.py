@@ -198,8 +198,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     import torch
-    tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else (torch.cuda.device_count() if torch.cuda.is_available() else 1)
-    tp_size = max(1, tp_size)
+    tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else 1
     
     enable_thinking = getattr(args, "enable_thinking", False)
     kwargs = {
@@ -211,7 +210,7 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "max_length": args.max_length,
         "enable_thinking": enable_thinking,
         "language_model_only": True,
-        "gpu_memory_utilization": 0.80,
+        "gpu_memory_utilization": 0.85,
         "tensor_parallel_size": tp_size,
         "enforce_eager": True,
         "enable_prefix_caching": False,

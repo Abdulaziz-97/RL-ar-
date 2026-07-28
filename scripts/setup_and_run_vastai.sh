@@ -47,14 +47,14 @@ pkill -9 -f python3 || true
 sleep 2
 
 echo ""
-echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B) (2x GPU TP=2)..."
+echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B)..."
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --max-batch-size 16 \
   --output-dir /workspace/outputs/official_eval_base_model
 
 echo ""
-echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2) (2x GPU TP=2)..."
+echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2)..."
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
