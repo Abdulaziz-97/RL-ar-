@@ -121,8 +121,28 @@ def run_unit_tests():
     print(f"  - Calculated Paper Primary Metric: {summary['paper_primary']:.2f}%")
     print("  --> PASS: Checkpoint summarizer & paper primary metric calculated perfectly!\n")
 
+    # --- Test 7: vLLM Kwargs Configuration ---
+    print("[Test 7] vLLM Kwargs & Log-Likelihood Compatibility...")
+    class MockArgs:
+        model = "unsloth/Qwen3.5-4B"
+        batch_size = "auto"
+        max_batch_size = 32
+        max_length = 4096
+        max_lora_rank = 32
+        adapter_path = None
+        tensor_parallel_size = 2
+        enable_thinking = False
+
+    from run_araeval import build_vllm_kwargs
+    vllm_kw = build_vllm_kwargs(MockArgs())
+    assert vllm_kw["enable_thinking"] is False, "Test 7.1 Failed: enable_thinking should be False for loglik tasks"
+    assert vllm_kw["enforce_eager"] is True, "Test 7.2 Failed: enforce_eager should be True"
+    assert vllm_kw["tensor_parallel_size"] == 2, "Test 7.3 Failed: tensor_parallel_size should be 2"
+    assert "think_end_token" not in vllm_kw, "Test 7.4 Failed: think_end_token should not be present when enable_thinking=False"
+    print("  --> PASS: vLLM Kwargs (enable_thinking=False, enforce_eager=True, TP=2) 100% verified!\n")
+
     print("=================================================================")
-    print("ALL 6 EXECUTIVE UNIT TESTS PASSED SUCCESSFULLY! 🏆")
+    print("ALL 7 EXECUTIVE UNIT TESTS PASSED SUCCESSFULLY! 🏆")
     print("=================================================================")
 
 
