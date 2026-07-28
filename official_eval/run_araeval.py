@@ -189,7 +189,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--batch-size", default="auto")
     parser.add_argument("--max-batch-size", type=int, default=8)
     parser.add_argument("--max-length", type=int, default=4096)
-    parser.add_argument("--max-lora-rank", type=int, default=32)
+    parser.add_argument("--max-lora-rank", type=int, default=128)
     parser.add_argument("--enable-thinking", action="store_true", default=False, help="Enable thinking/reasoning generation (default: False for loglik tasks)")
     parser.add_argument("--disable-thinking", action="store_false", dest="enable_thinking", help="Disable thinking/reasoning generation")
     parser.add_argument("--tensor-parallel-size", type=int, default=None, help="Number of GPUs for tensor parallelism (default: auto-detect CUDA count)")

@@ -65,6 +65,7 @@ sleep 2
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
+  --max-lora-rank 128 \
   --batch-size 4 \
   --max-batch-size 4 \
   --output-dir /workspace/outputs/official_eval_grpo_v2
