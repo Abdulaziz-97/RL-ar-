@@ -55,6 +55,20 @@ def run_tests() -> None:
     assert extract_answer("After careful analysis, the correct option is B") == "B"
     assert extract_answer("بعد التحليل، الإجابة الصحيحة هي A") == "A"
 
+    # Arabic letter answers (أ=A, ب=B, ج=C, د=D)
+    assert extract_answer("الإجابة هي: أ") == "A"
+    assert extract_answer("الخيار الصحيح هو (ب)") == "B"
+    assert extract_answer("الإجابة الصحيحة: ج") == "C"
+    assert extract_answer("الجواب د") == "D"
+
+    # Markdown and bracketed formats
+    assert extract_answer("The correct option is **B**") == "B"
+    assert extract_answer("Therefore [C] is correct") == "C"
+    assert extract_answer("الإجابة: **(أ)**") == "A"
+
+    # Unclosed <think> tag
+    assert extract_answer("<think>Let me reason... The answer is C") == "C"
+
     # Answer after thinking tags (stripped before extraction)
     assert extract_answer("<think>Let me think step by step...</think>\nالإجابة: C") == "C"
 

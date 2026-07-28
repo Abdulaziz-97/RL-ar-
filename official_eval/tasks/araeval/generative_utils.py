@@ -81,77 +81,121 @@ def get_generation_profile(task: str) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Thinking tag handling
 # ---------------------------------------------------------------------------
-_THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_THINK_CLOSED_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
+_THINK_OPEN_RE = re.compile(r"<think>.*$", re.DOTALL)
+
+_ARABIC_TO_LATIN = {
+    "أ": "A",
+    "ب": "B",
+    "ج": "C",
+    "د": "D",
+    "A": "A",
+    "B": "B",
+    "C": "C",
+    "D": "D",
+    "a": "A",
+    "b": "B",
+    "c": "C",
+    "d": "D",
+}
 
 
 def strip_thinking_tags(text: str) -> str:
-    """Remove all <think>...</think> blocks from generated text."""
-    return _THINK_RE.sub("", text)
+    """Remove all <think>...</think> blocks (including unclosed <think>...) from generated text."""
+    # First remove closed <think>...</think> blocks
+    stripped = _THINK_CLOSED_RE.sub("", text)
+    # If <think> is still present (unclosed), strip from <think> to end of text
+    if "<think>" in stripped:
+        stripped = _THINK_OPEN_RE.sub("", stripped)
+    return stripped
 
 
 # ---------------------------------------------------------------------------
 # Answer extraction
 # ---------------------------------------------------------------------------
-# Layer 1: Explicit answer statement patterns
+# All choice tokens (Latin A-D and Arabic أ/ب/ج/د)
+_CHOICE_PATTERN = r"([A-Da-dأبجد])"
+
+# Layer 1: Explicit answer statement patterns (e.g. الإجابة: A, الإجابة هي (أ), Answer: B)
 _EXPLICIT_ANSWER_RE = re.compile(
     r"(?:الإجابة|الاجابة|الجواب|الإجابة\s+الصحيحة|answer)"
     r"[\s:：]*(?:هي|هو|الصحيحة?|is|are)?\s*[:：]?\s*"
-    r"([A-Da-d])",
+    r"[\*\(\[\"\']*" + _CHOICE_PATTERN + r"[\*\)\]\"\']*",
     re.IGNORECASE,
 )
 
-# Layer 2: "option/choice is X" patterns
+# Layer 2: "option/choice is X" patterns (e.g. الخيار الصحيح هو أ, option (B))
 _OPTION_RE = re.compile(
     r"(?:الخيار|الاختيار|option|choice)\s+(?:الصحيح|الصحيحة?)?\s*(?:هو|هي)?\s*"
-    r"([A-Da-d])",
+    r"[\*\(\[\"\']*" + _CHOICE_PATTERN + r"[\*\)\]\"\']*",
     re.IGNORECASE,
 )
 
-# Layer 3: Standalone letter at end of text
-_END_LETTER_RE = re.compile(r"([A-Da-d])\s*[.。)]*\s*$")
+# Layer 3: Markdown / bracketed letter patterns (e.g. **A**, [B], (أ), **C.**)
+_BRACKETED_RE = re.compile(
+    r"(?:\*\*|__|\[|\()[\s]*" + _CHOICE_PATTERN + r"[\s]*[\.\)]*[\s]*(?:\*\*|__|\]|\))"
+)
 
-# Layer 4: Any A-D letter (last occurrence)
-_ANY_LETTER_RE = re.compile(r"\b([A-Da-d])\b")
+# Layer 4: Standalone letter at end of text
+_END_LETTER_RE = re.compile(_CHOICE_PATTERN + r"\s*[.。)]*\s*$")
+
+# Layer 5: Any choice letter (last occurrence)
+_ANY_LETTER_RE = re.compile(r"(?<!\w)" + _CHOICE_PATTERN + r"(?!\w)")
 
 
 def extract_answer(text: str) -> str | None:
     """Extract the answer letter (A/B/C/D) from model-generated text.
 
-    Uses a multi-layer fallback strategy:
-    1. Explicit answer statement (الإجابة: X) — takes LAST match
-    2. Option/choice reference (الخيار الصحيح هو X) — takes LAST match
-    3. Letter at the end of text
-    4. Last standalone A-D letter in text
+    Handles both Latin (A/B/C/D) and Arabic (أ/ب/ج/د) choice tokens,
+    markdown formatting (**A**, [B], (أ)), explicit statements, and unclosed <think> tags.
 
-    Returns the uppercase letter or None if extraction fails.
+    Uses a multi-layer fallback strategy:
+    1. Explicit answer statement (الإجابة: A or (أ)) — takes LAST match
+    2. Option/choice reference (الخيار الصحيح هو B) — takes LAST match
+    3. Markdown/bracketed patterns (**A**, [B], (أ)) — takes LAST match
+    4. Choice letter at the end of text
+    5. Last standalone choice letter in text
+
+    Returns uppercase Latin letter (A/B/C/D) or None if extraction fails.
     """
     if not text or not text.strip():
         return None
 
     # Strip thinking tags first
     clean = strip_thinking_tags(text).strip()
-    if not clean:
-        return None
+    
+    # If stripping unclosed <think> left empty text, search inside the raw text
+    search_text = clean if clean else text
 
-    # Layer 1: All explicit answer statements — take the LAST one (final answer)
-    matches = list(_EXPLICIT_ANSWER_RE.finditer(clean))
+    # Layer 1: All explicit answer statements — take the LAST one
+    matches = list(_EXPLICIT_ANSWER_RE.finditer(search_text))
     if matches:
-        return matches[-1].group(1).upper()
+        raw = matches[-1].group(1)
+        return _ARABIC_TO_LATIN.get(raw)
 
     # Layer 2: All option/choice references — take the LAST one
-    matches = list(_OPTION_RE.finditer(clean))
+    matches = list(_OPTION_RE.finditer(search_text))
     if matches:
-        return matches[-1].group(1).upper()
+        raw = matches[-1].group(1)
+        return _ARABIC_TO_LATIN.get(raw)
 
-    # Layer 3: Letter at end of text
-    match = _END_LETTER_RE.search(clean)
+    # Layer 3: Markdown / bracketed letter patterns — take the LAST one
+    matches = list(_BRACKETED_RE.finditer(search_text))
+    if matches:
+        raw = matches[-1].group(1)
+        return _ARABIC_TO_LATIN.get(raw)
+
+    # Layer 4: Letter at end of text
+    match = _END_LETTER_RE.search(search_text)
     if match:
-        return match.group(1).upper()
+        raw = match.group(1)
+        return _ARABIC_TO_LATIN.get(raw)
 
-    # Layer 4: Last standalone A-D letter
-    all_letters = _ANY_LETTER_RE.findall(clean)
+    # Layer 5: Last standalone choice letter
+    all_letters = _ANY_LETTER_RE.findall(search_text)
     if all_letters:
-        return all_letters[-1].upper()
+        raw = all_letters[-1]
+        return _ARABIC_TO_LATIN.get(raw)
 
     return None
 
