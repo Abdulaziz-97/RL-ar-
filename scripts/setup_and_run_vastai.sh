@@ -89,12 +89,13 @@ echo "STARTING GENERATIVE EVALUATION (FAIR GRPO ASSESSMENT)"
 echo "================================================================="
 
 echo ""
-echo ">>> STEP C: Generative Eval — Base Model (thinking=OFF)..."
+echo ">>> STEP C: Generative Eval — Base Model (thinking=ON)..."
 pkill -9 -f vllm 2>/dev/null || true
 rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
 sleep 2
 python3 "$GENERATIVE_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
+  --enable-thinking \
   --output-dir /workspace/outputs/generative_eval_base
 
 echo ""
