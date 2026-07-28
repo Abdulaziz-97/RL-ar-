@@ -9,6 +9,7 @@ echo "================================================================="
 # 1. Environment Variables (ensure HF_TOKEN is exported in shell)
 export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
 export VLLM_USE_FLASHINFER_SAMPLER="0"
+export VLLM_ENFORCE_EAGER="1"
 export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"
 
 mkdir -p /workspace/outputs

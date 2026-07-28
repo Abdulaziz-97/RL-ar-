@@ -212,6 +212,7 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         "language_model_only": True,
         "gpu_memory_utilization": 0.90,
         "tensor_parallel_size": tp_size,
+        "enforce_eager": True,
         "enable_prefix_caching": False,
         "lora_local_path": (
             str(args.adapter_path.resolve())
