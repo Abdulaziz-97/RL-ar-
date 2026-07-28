@@ -14,11 +14,17 @@ export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"
 mkdir -p /workspace/outputs
 mkdir -p "$HF_HOME"
 
-# 2. System Packages & Python Dependencies Setup
-echo "[1/4] Installing required system packages & Python libraries..."
-apt-get update -qq && apt-get install -y -qq git git-lfs > /dev/null 2>&1 || true
+# 2. Install uv package manager & Python dependencies
+echo "[1/4] Installing uv package manager & Python dependencies..."
+curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1 || true
+export PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
 
-python3 -m pip install -q vllm lm-eval transformers peft accelerate datasets trl --break-system-packages || python3 -m pip install -q vllm lm-eval transformers peft accelerate datasets trl || true
+if command -v uv >/dev/null 2>&1; then
+    echo "Using uv to install vllm, lm-eval, peft, accelerate, datasets..."
+    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl
+else
+    python3 -m pip install -q --break-system-packages vllm lm-eval transformers peft accelerate datasets trl || true
+fi
 
 # 3. Locate Internal Official Evaluation Script
 EVAL_SCRIPT="/workspace/RL-ar-/official_eval/run_araeval.py"
