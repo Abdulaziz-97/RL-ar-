@@ -190,7 +190,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-batch-size", type=int, default=32)
     parser.add_argument("--max-length", type=int, default=4096)
     parser.add_argument("--max-lora-rank", type=int, default=32)
-    parser.add_argument("--enable-thinking", action="store_true", default=True, help="Enable thinking/reasoning generation (default: True)")
+    parser.add_argument("--enable-thinking", action="store_true", default=False, help="Enable thinking/reasoning generation (default: False for loglik tasks)")
     parser.add_argument("--disable-thinking", action="store_false", dest="enable_thinking", help="Disable thinking/reasoning generation")
     parser.add_argument("--tensor-parallel-size", type=int, default=None, help="Number of GPUs for tensor parallelism (default: auto-detect CUDA count)")
     return parser.parse_args(argv)
@@ -201,7 +201,7 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else (torch.cuda.device_count() if torch.cuda.is_available() else 1)
     tp_size = max(1, tp_size)
     
-    enable_thinking = getattr(args, "enable_thinking", True)
+    enable_thinking = getattr(args, "enable_thinking", False)
     kwargs = {
         "pretrained": args.model,
         "dtype": "bfloat16",
