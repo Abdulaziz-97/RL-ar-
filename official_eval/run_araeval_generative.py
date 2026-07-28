@@ -226,7 +226,6 @@ def evaluate_task(
     samples: list[dict[str, Any]],
     enable_thinking: bool,
     adapter_path: str | None,
-    batch_size: int = 16,
 ) -> dict[str, Any]:
     """Evaluate a single task using generation mode."""
     from vllm import SamplingParams
@@ -361,7 +360,6 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             samples=samples,
             enable_thinking=args.enable_thinking,
             adapter_path=args.adapter_path,
-            batch_size=profile["batch_size"],
         )
         result["seconds"] = round(time.monotonic() - started, 2)
 
