@@ -29,8 +29,13 @@ if [ ! -d "/workspace/RL-ar-" ]; then
 fi
 
 if [ ! -d "/workspace/Saudi-LLM" ]; then
-    echo "Cloning Saudi-LLM repository..."
-    git clone https://github.com/Abdulaziz-97/Saudi-LLM.git /workspace/Saudi-LLM || true
+    echo "Cloning private Saudi-LLM repository..."
+    if [ -n "$GH_TOKEN" ] || [ -n "$GITHUB_TOKEN" ]; then
+        TOKEN="${GH_TOKEN:-$GITHUB_TOKEN}"
+        git clone "https://${TOKEN}@github.com/Zeyddd/Saudi-LLM.git" /workspace/Saudi-LLM
+    else
+        git clone https://github.com/Zeyddd/Saudi-LLM.git /workspace/Saudi-LLM || true
+    fi
 fi
 
 # Locate run_araeval.py script
