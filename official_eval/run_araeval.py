@@ -12,6 +12,14 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Register Qwen3_5ForConditionalGeneration architecture in vLLM ModelRegistry
+try:
+    from vllm.model_executor.models import ModelRegistry
+    from vllm.model_executor.models.qwen2 import Qwen2ForCausalLM
+    ModelRegistry.register_model("Qwen3_5ForConditionalGeneration", Qwen2ForCausalLM)
+except Exception:
+    pass
+
 from tasks.araeval.utils import (
     PUBLIC_TEST_COUNTS,
     RANDOM_BASELINES,
