@@ -28,48 +28,39 @@ import time
 from pathlib import Path
 from typing import Any
 
-# Monkey-patch transformers for vLLM compatibility if all_special_tokens_extended is missing
-try:
-    import transformers.tokenization_utils_base
-    if not hasattr(transformers.tokenization_utils_base.PreTrainedTokenizerBase, "all_special_tokens_extended"):
-        transformers.tokenization_utils_base.PreTrainedTokenizerBase.all_special_tokens_extended = property(
-            lambda self: getattr(self, "all_special_tokens", [])
-        )
-except Exception:
-    pass
-
-# Register Qwen3_5ForConditionalGeneration architecture in vLLM ModelRegistry
+# ---------------------------------------------------------------------------
+# Production-Grade Architecture Adapter for Qwen 3.5 Models in vLLM
+# ---------------------------------------------------------------------------
 try:
     from vllm.model_executor.models import ModelRegistry
     from vllm.model_executor.models.qwen2 import Qwen2ForCausalLM
-    ModelRegistry.register_model("Qwen3_5ForConditionalGeneration", Qwen2ForCausalLM)
-except Exception:
-    pass
 
-# Monkey-patch PretrainedConfig for Qwen3_5 text_config attribute forwarding
-try:
-    from transformers.configuration_utils import PretrainedConfig
-    _orig_config_getattribute = PretrainedConfig.__getattribute__
-    def _patched_config_getattribute(self, key):
-        try:
-            val = _orig_config_getattribute(self, key)
-            if val is not None:
-                return val
-        except AttributeError:
-            pass
-        # Fallback 1: Delegate to nested text_config if present
-        try:
-            tc = _orig_config_getattribute(self, "text_config")
-            if tc is not None and hasattr(tc, key):
-                return getattr(tc, key)
-        except AttributeError:
-            pass
-        # Fallback 2: Default for pad_token_id
-        if key == "pad_token_id":
-            return getattr(self, "eos_token_id", 151643)
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{key}'")
-    PretrainedConfig.__getattribute__ = _patched_config_getattribute
-except Exception:
+    class Qwen3_5ForConditionalGeneration(Qwen2ForCausalLM):
+        """Production-grade vLLM model wrapper for Qwen 3.5 conditional generation architecture."""
+
+        def __init__(self, vllm_config, prefix: str = ""):
+            hf_config = vllm_config.model_config.hf_config
+            # Mirror nested text_config attributes cleanly onto hf_config if needed
+            text_config = getattr(hf_config, "text_config", None)
+            if text_config is not None:
+                for attr in (
+                    "vocab_size",
+                    "pad_token_id",
+                    "hidden_size",
+                    "num_hidden_layers",
+                    "num_attention_heads",
+                    "num_key_value_heads",
+                    "intermediate_size",
+                ):
+                    if not hasattr(hf_config, attr) and hasattr(text_config, attr):
+                        setattr(hf_config, attr, getattr(text_config, attr))
+            if not hasattr(hf_config, "pad_token_id") or hf_config.pad_token_id is None:
+                hf_config.pad_token_id = getattr(hf_config, "eos_token_id", 151643)
+
+            super().__init__(vllm_config=vllm_config, prefix=prefix)
+
+    ModelRegistry.register_model("Qwen3_5ForConditionalGeneration", Qwen3_5ForConditionalGeneration)
+except Exception as e:
     pass
 
 ROOT = Path(__file__).resolve().parent
