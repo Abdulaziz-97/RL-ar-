@@ -18,8 +18,7 @@ mkdir -p "$HF_HOME"
 echo "[1/4] Installing required system packages & Python libraries..."
 apt-get update -qq && apt-get install -y -qq git git-lfs > /dev/null 2>&1 || true
 
-python3 -m pip install --upgrade pip -q
-python3 -m pip install -q vllm lm-eval transformers peft accelerate datasets trl || true
+python3 -m pip install -q vllm lm-eval transformers peft accelerate datasets trl --break-system-packages || python3 -m pip install -q vllm lm-eval transformers peft accelerate datasets trl || true
 
 # 3. Locate Internal Official Evaluation Script
 EVAL_SCRIPT="/workspace/RL-ar-/official_eval/run_araeval.py"
