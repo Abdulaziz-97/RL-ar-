@@ -123,10 +123,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Number of GPUs for tensor parallelism",
     )
     parser.add_argument(
-        "--limit",
+        "--tasks",
+        nargs="+",
+        default=None,
+        help="List of specific tasks to evaluate (e.g. --tasks araeval_aramath araeval_ifeval)",
+    )
+    parser.add_argument(
+        "--max-new-tokens",
         type=int,
         default=None,
-        help="Limit number of samples per task (for debugging)",
+        help="Override max_new_tokens for generation (e.g. --max-new-tokens 1024)",
     )
     return parser.parse_args(argv)
 
@@ -188,8 +194,14 @@ def build_vllm_engine(args: argparse.Namespace, task: str):
 
     llm = LLM(**engine_kwargs)
 
+    max_tokens = (
+        args.max_new_tokens
+        if args.max_new_tokens is not None
+        else profile["max_new_tokens"]
+    )
+
     sampling_params = SamplingParams(
-        max_tokens=profile["max_new_tokens"],
+        max_tokens=max_tokens,
         temperature=profile["temperature"],
         top_p=1.0,
     )
@@ -303,7 +315,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
         save_generative_checkpoint(checkpoint_path, checkpoint)
 
-    pending = pending_generative_tasks(checkpoint)
+    all_tasks = args.tasks if args.tasks is not None else GENERATIVE_TASKS
+    pending = [t for t in pending_generative_tasks(checkpoint) if t in all_tasks]
+
     if not pending:
         summary = summarize_generative_checkpoint(checkpoint)
         save_generative_checkpoint(summary_path, summary)
@@ -314,6 +328,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         f"Generative evaluation: {len(pending)} tasks pending for {args.model}",
         flush=True,
     )
+    if args.tasks:
+        print(f"  Selected tasks: {args.tasks}", flush=True)
+    if args.max_new_tokens:
+        print(f"  Max new tokens override: {args.max_new_tokens}", flush=True)
     if args.adapter_path:
         print(f"  LoRA adapter: {args.adapter_path}", flush=True)
     print(f"  Thinking: {'ON' if args.enable_thinking else 'OFF'}", flush=True)
