@@ -10,6 +10,7 @@ echo "================================================================="
 export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
 export VLLM_USE_FLASHINFER_SAMPLER="0"
 export VLLM_ENFORCE_EAGER="1"
+export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"
 
 mkdir -p /workspace/outputs
@@ -44,7 +45,7 @@ echo ""
 echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B) (2x GPU TP=2)..."
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
-  --max-batch-size 32 \
+  --max-batch-size 16 \
   --output-dir /workspace/outputs/official_eval_base_model
 
 echo ""
@@ -52,7 +53,7 @@ echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2) 
 python3 "$EVAL_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
   --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
-  --max-batch-size 32 \
+  --max-batch-size 16 \
   --output-dir /workspace/outputs/official_eval_grpo_v2
 
 echo ""
