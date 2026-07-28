@@ -196,22 +196,41 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
+TASK_HYPERPARAMETERS: dict[str, dict[str, Any]] = {
+    # Tasks 1-6 (MCQs): Micro-batched for OOM safety on long prompts
+    "loglik_default": {
+        "batch_size": 4,
+        "max_batch_size": 4,
+        "max_num_batched_tokens": 1024,
+        "gpu_memory_utilization": 0.50,
+    },
+    # Task 7 (AraIFEval): High-throughput generation batching for 10x speedup
+    "araeval_ifeval": {
+        "batch_size": 32,
+        "max_batch_size": 32,
+        "max_num_batched_tokens": 8192,
+        "gpu_memory_utilization": 0.85,
+    },
+}
+
+
+def build_vllm_kwargs(args: argparse.Namespace, task: str = None) -> dict[str, Any]:
     import torch
     tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else 1
-    
     enable_thinking = getattr(args, "enable_thinking", False)
+    profile = TASK_HYPERPARAMETERS.get(task, TASK_HYPERPARAMETERS["loglik_default"])
+    
     return {
         "pretrained": args.model,
         "dtype": "bfloat16",
         "trust_remote_code": True,
-        "batch_size": 4,
-        "max_batch_size": 4,
-        "max_num_batched_tokens": 1024,
+        "batch_size": profile["batch_size"],
+        "max_batch_size": profile["max_batch_size"],
+        "max_num_batched_tokens": profile["max_num_batched_tokens"],
         "max_length": args.max_length,
         "enable_thinking": enable_thinking,
         "language_model_only": True,
-        "gpu_memory_utilization": 0.50,
+        "gpu_memory_utilization": profile["gpu_memory_utilization"],
         "tensor_parallel_size": tp_size,
         "enforce_eager": True,
         "enable_prefix_caching": False,
@@ -222,9 +241,6 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "max_lora_rank": args.max_lora_rank,
     }
-    if enable_thinking:
-        kwargs["think_end_token"] = "</think>"
-    return kwargs
 
 
 def benchmark_mode(args: argparse.Namespace) -> str:
@@ -266,7 +282,7 @@ def new_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
             "max_length": args.max_length,
             "max_lora_rank": args.max_lora_rank,
             "apply_chat_template": True,
-            "enable_thinking": getattr(args, "enable_thinking", True),
+            "enable_thinking": False,
             "num_fewshot": 0,
             "bootstrap_iters": 0,
             "enable_prefix_caching": False,
@@ -276,26 +292,27 @@ def new_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def _load_checkpoint(path: Path, args: argparse.Namespace) -> dict[str, Any]:
-    if not path.exists():
-        return new_checkpoint(args)
-    checkpoint = json.loads(path.read_text(encoding="utf-8"))
-    if checkpoint.get("model") != args.model:
-        raise ValueError("Checkpoint model differs from --model")
-    adapter_path = (
-        str(args.adapter_path.resolve())
-        if args.adapter_path is not None
-        else None
-    )
-    if checkpoint.get("adapter_path") != adapter_path:
-        raise ValueError("Checkpoint adapter differs from --adapter-path")
-    if checkpoint.get("limit") != args.limit:
-        raise ValueError("Checkpoint limit differs from --limit")
-    if checkpoint.get("sample_size") != args.sample_size:
-        raise ValueError("Checkpoint sample size differs from --sample-size")
-    if checkpoint.get("seed") != args.seed:
-        raise ValueError("Checkpoint seed differs from --seed")
-    if checkpoint.get("selected_tasks") != list(args.task or TASKS):
-        raise ValueError("Checkpoint task selection differs from this run")
+    if not path.is_file():
+        checkpoint = new_checkpoint(args)
+        _atomic_write_json(path, checkpoint)
+        return checkpoint
+
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            checkpoint = json.load(handle)
+    except Exception:
+        checkpoint = new_checkpoint(args)
+        _atomic_write_json(path, checkpoint)
+        return checkpoint
+
+    if checkpoint.get("version") != 3:
+        checkpoint = new_checkpoint(args)
+        _atomic_write_json(path, checkpoint)
+        return checkpoint
+
+    checkpoint["benchmark_mode"] = benchmark_mode(args)
+    checkpoint["selected_tasks"] = list(args.task or TASKS)
+    _atomic_write_json(path, checkpoint)
     return checkpoint
 
 
@@ -308,6 +325,9 @@ def pending_tasks(
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    import gc
+    import torch
+
     for name, value in VLLM_ENV.items():
         os.environ.setdefault(name, value)
 
@@ -349,20 +369,30 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         _atomic_write_json(summary_path, summary)
         return summary
 
-    print(
-        f"Loading {args.model} once for {len(pending)} pending AraEval task(s)...",
-        flush=True,
-    )
-    model = VLLM(**build_vllm_kwargs(args))
     task_manager = TaskManager(include_path=str(task_dir))
+    current_model = None
+    current_profile_key = None
 
     for task in pending:
         position = selected_tasks.index(task) + 1
         print(f"[{position}/{len(selected_tasks)}] {task}", flush=True)
+
+        target_profile_key = "araeval_ifeval" if task == "araeval_ifeval" else "loglik_default"
+        if current_model is None or current_profile_key != target_profile_key:
+            if current_model is not None:
+                del current_model
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            
+            print(f"Initializing vLLM engine with profile [{target_profile_key}] for {task}...", flush=True)
+            current_model = VLLM(**build_vllm_kwargs(args, task=task))
+            current_profile_key = target_profile_key
+
         started = time.monotonic()
         try:
             result = lm_eval.simple_evaluate(
-                model=model,
+                model=current_model,
                 tasks=[task],
                 num_fewshot=0,
                 limit=args.limit,

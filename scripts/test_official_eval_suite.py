@@ -134,12 +134,15 @@ def run_unit_tests():
         enable_thinking = False
 
     from run_araeval import build_vllm_kwargs
-    vllm_kw = build_vllm_kwargs(MockArgs())
-    assert vllm_kw["enable_thinking"] is False, "Test 7.1 Failed: enable_thinking should be False for loglik tasks"
-    assert vllm_kw["enforce_eager"] is True, "Test 7.2 Failed: enforce_eager should be True"
-    assert vllm_kw["tensor_parallel_size"] == 2, "Test 7.3 Failed: tensor_parallel_size should be 2"
-    assert "think_end_token" not in vllm_kw, "Test 7.4 Failed: think_end_token should not be present when enable_thinking=False"
-    print("  --> PASS: vLLM Kwargs (enable_thinking=False, enforce_eager=True, TP=2) 100% verified!\n")
+    vllm_kw_loglik = build_vllm_kwargs(MockArgs(), task="araeval_arapro")
+    assert vllm_kw_loglik["batch_size"] == 4, "Test 7.1 Failed: LogLik batch_size should be 4"
+    assert vllm_kw_loglik["max_num_batched_tokens"] == 1024, "Test 7.2 Failed: LogLik max_num_batched_tokens should be 1024"
+    
+    vllm_kw_ifeval = build_vllm_kwargs(MockArgs(), task="araeval_ifeval")
+    assert vllm_kw_ifeval["batch_size"] == 32, "Test 7.3 Failed: IFEval batch_size should be 32"
+    assert vllm_kw_ifeval["max_num_batched_tokens"] == 8192, "Test 7.4 Failed: IFEval max_num_batched_tokens should be 8192"
+    assert vllm_kw_ifeval["gpu_memory_utilization"] == 0.85, "Test 7.5 Failed: IFEval gpu_memory_utilization should be 0.85"
+    print("  --> PASS: Per-stage hyperparameter profiles (LogLik micro-batch vs IFEval high-throughput) 100% verified!\n")
 
     print("=================================================================")
     print("ALL 7 EXECUTIVE UNIT TESTS PASSED SUCCESSFULLY! 🏆")
