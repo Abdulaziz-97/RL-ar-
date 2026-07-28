@@ -31,7 +31,7 @@ def main():
     parser.add_argument("--model", default="Qwen/Qwen3.5-4B", help="Base model name or path")
     parser.add_argument("--adapter", help="Path to SFT/GRPO LoRA adapter directory")
     parser.add_argument("--batch-size", type=int, default=16, help="Batch size (default: 16)")
-    parser.add_argument("--max-new-tokens", type=int, default=512, help="Max generated tokens (default: 512)")
+    parser.add_argument("--max-new-tokens", type=int, default=1024, help="Max generated tokens (default: 1024 to support 768-token GRPO reasoning)")
     parser.add_argument("--temperature", type=float, default=0.0, help="Sampling temperature (0.0 for greedy deterministic evaluation)")
     parser.add_argument("--limit", type=int, help="Limit number of samples per task (optional)")
     parser.add_argument("--output", default="./araeval_results_four", help="Output directory")
