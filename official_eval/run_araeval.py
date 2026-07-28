@@ -197,14 +197,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 TASK_HYPERPARAMETERS: dict[str, dict[str, Any]] = {
-    # Tasks 1-6 (MCQs): Micro-batched for OOM safety on long prompts
-    "loglik_default": {
+    # Short MCQ tasks (Tasks 1, 2, 3, 4, 6): Fast batching (batch_size: 16)
+    "fast_mcq": {
+        "batch_size": 16,
+        "max_batch_size": 16,
+        "max_num_batched_tokens": 4096,
+        "gpu_memory_utilization": 0.75,
+    },
+    # AraPro (Task 5 Alone): Long medical/science passages -> Micro-batched (batch_size: 4) for 100% OOM safety
+    "araeval_arapro": {
         "batch_size": 4,
         "max_batch_size": 4,
         "max_num_batched_tokens": 1024,
         "gpu_memory_utilization": 0.50,
     },
-    # Task 7 (AraIFEval): High-throughput generation batching for 10x speedup
+    # AraIFEval (Task 7): High-throughput generation batching (batch_size: 32) for 10x speedup
     "araeval_ifeval": {
         "batch_size": 32,
         "max_batch_size": 32,
@@ -218,9 +225,9 @@ def build_vllm_kwargs(args: argparse.Namespace, task: str = None) -> dict[str, A
     import torch
     tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else 1
     enable_thinking = getattr(args, "enable_thinking", False)
-    profile = TASK_HYPERPARAMETERS.get(task, TASK_HYPERPARAMETERS["loglik_default"])
+    profile = TASK_HYPERPARAMETERS.get(task, TASK_HYPERPARAMETERS.get("fast_mcq"))
     
-    return {
+    kwargs = {
         "pretrained": args.model,
         "dtype": "bfloat16",
         "trust_remote_code": True,
@@ -241,6 +248,9 @@ def build_vllm_kwargs(args: argparse.Namespace, task: str = None) -> dict[str, A
         ),
         "max_lora_rank": args.max_lora_rank,
     }
+    if enable_thinking:
+        kwargs["think_end_token"] = "</think>"
+    return kwargs
 
 
 def benchmark_mode(args: argparse.Namespace) -> str:
@@ -377,7 +387,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         position = selected_tasks.index(task) + 1
         print(f"[{position}/{len(selected_tasks)}] {task}", flush=True)
 
-        target_profile_key = "araeval_ifeval" if task == "araeval_ifeval" else "loglik_default"
+        target_profile_key = task if task in TASK_HYPERPARAMETERS else "fast_mcq"
         if current_model is None or current_profile_key != target_profile_key:
             if current_model is not None:
                 del current_model
