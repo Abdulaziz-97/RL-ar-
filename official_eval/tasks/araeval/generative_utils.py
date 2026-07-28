@@ -31,23 +31,23 @@ _LABELS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 # Per-task generation hyperparameter profiles
 # ---------------------------------------------------------------------------
 GENERATION_PROFILES: dict[str, dict[str, Any]] = {
-    # Short MCQ tasks: brief reasoning + single letter answer
+    # Short MCQ tasks: long reasoning chain + letter answer
     "gen_mcq": {
-        "max_new_tokens": 128,
+        "max_new_tokens": 768,
         "temperature": 0.0,
         "batch_size": 16,
         "gpu_memory_utilization": 0.75,
     },
-    # AraMath: longer chain-of-thought reasoning
+    # AraMath: long chain-of-thought math reasoning
     "araeval_aramath": {
-        "max_new_tokens": 512,
+        "max_new_tokens": 768,
         "temperature": 0.0,
         "batch_size": 8,
         "gpu_memory_utilization": 0.75,
     },
-    # AraPro: long medical/science passages, conservative memory
+    # AraPro: long medical/science passages + reasoning
     "araeval_arapro": {
-        "max_new_tokens": 128,
+        "max_new_tokens": 768,
         "temperature": 0.0,
         "batch_size": 4,
         "gpu_memory_utilization": 0.50,

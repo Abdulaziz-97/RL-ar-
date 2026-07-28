@@ -146,14 +146,14 @@ def run_tests() -> None:
     print("[Test 5] Per-Task Generation Hyperparameters...")
     from tasks.araeval.generative_utils import GENERATION_PROFILES, get_generation_profile
 
-    # MCQ tasks should have short max_new_tokens
+    # All profiles must have at least 768 tokens for reasoning
     mcq_profile = get_generation_profile("araeval_ien_mcq")
-    assert mcq_profile["max_new_tokens"] <= 256, f"MCQ max_new_tokens too high: {mcq_profile['max_new_tokens']}"
+    assert mcq_profile["max_new_tokens"] >= 768, f"MCQ max_new_tokens should be >= 768: {mcq_profile['max_new_tokens']}"
     assert mcq_profile["temperature"] == 0.0, "MCQ temperature should be 0.0 (greedy)"
 
-    # Math should allow longer reasoning
+    # Math should allow at least 768 tokens reasoning
     math_profile = get_generation_profile("araeval_aramath")
-    assert math_profile["max_new_tokens"] >= 256, f"Math max_new_tokens too low: {math_profile['max_new_tokens']}"
+    assert math_profile["max_new_tokens"] >= 768, f"Math max_new_tokens should be >= 768: {math_profile['max_new_tokens']}"
 
     # AraPro (long passages) should have conservative batch_size
     arapro_profile = get_generation_profile("araeval_arapro")
