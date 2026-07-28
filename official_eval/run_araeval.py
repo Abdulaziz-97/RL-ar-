@@ -201,14 +201,15 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
     tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else (torch.cuda.device_count() if torch.cuda.is_available() else 1)
     tp_size = max(1, tp_size)
     
-    return {
+    enable_thinking = getattr(args, "enable_thinking", True)
+    kwargs = {
         "pretrained": args.model,
         "dtype": "bfloat16",
         "trust_remote_code": True,
         "batch_size": args.batch_size,
         "max_batch_size": args.max_batch_size,
         "max_length": args.max_length,
-        "enable_thinking": getattr(args, "enable_thinking", True),
+        "enable_thinking": enable_thinking,
         "language_model_only": True,
         "gpu_memory_utilization": 0.90,
         "tensor_parallel_size": tp_size,
@@ -221,6 +222,9 @@ def build_vllm_kwargs(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "max_lora_rank": args.max_lora_rank,
     }
+    if enable_thinking:
+        kwargs["think_end_token"] = "</think>"
+    return kwargs
 
 
 def benchmark_mode(args: argparse.Namespace) -> str:
