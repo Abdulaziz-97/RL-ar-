@@ -242,7 +242,7 @@ def build_vllm_kwargs(args: argparse.Namespace, task: str = None) -> dict[str, A
         "enforce_eager": True,
         "enable_prefix_caching": False,
         "lora_local_path": (
-            str(args.adapter_path.resolve())
+            str(args.adapter_path)
             if args.adapter_path is not None
             else None
         ),
@@ -275,7 +275,7 @@ def new_checkpoint(args: argparse.Namespace) -> dict[str, Any]:
         "selected_tasks": list(selected_tasks),
         "model": args.model,
         "adapter_path": (
-            str(args.adapter_path.resolve())
+            str(args.adapter_path)
             if args.adapter_path is not None
             else None
         ),
@@ -352,11 +352,13 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     task_dir = ROOT / "tasks" / "araeval"
     if args.adapter_path is not None:
-        adapter_path = args.adapter_path.resolve()
-        if not (adapter_path / "adapter_config.json").is_file():
-            raise ValueError(f"Invalid adapter directory: {adapter_path}")
-        if not any(adapter_path.glob("adapter_model.*")):
-            raise ValueError(f"Adapter weights are missing: {adapter_path}")
+        adapter_str = str(args.adapter_path)
+        adapter_path = Path(adapter_str)
+        if adapter_path.exists() and adapter_path.is_dir():
+            if not (adapter_path / "adapter_config.json").is_file():
+                raise ValueError(f"Invalid local adapter directory: {adapter_path}")
+            if not any(adapter_path.glob("adapter_model.*")):
+                raise ValueError(f"Adapter weights are missing: {adapter_path}")
     output_dir = args.output_dir.resolve()
     checkpoint_path = output_dir / "checkpoint.json"
     summary_path = output_dir / "summary.json"

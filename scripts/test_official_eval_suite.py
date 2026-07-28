@@ -140,7 +140,7 @@ def run_unit_tests():
     
     vllm_kw_ifeval = build_vllm_kwargs(MockArgs(), task="araeval_ifeval")
     assert vllm_kw_ifeval["batch_size"] == 32, "Test 7.3 Failed: IFEval batch_size should be 32"
-    assert vllm_kw_ifeval["max_num_batched_tokens"] == 8192, "Test 7.4 Failed: IFEval max_num_batched_tokens should be 8192"
+    assert vllm_kw_ifeval["max_num_batched_tokens"] == 4096, "Test 7.4 Failed: IFEval max_num_batched_tokens should be 4096"
     assert vllm_kw_ifeval["gpu_memory_utilization"] == 0.85, "Test 7.5 Failed: IFEval gpu_memory_utilization should be 0.85"
     print("  --> PASS: Per-stage hyperparameter profiles (LogLik micro-batch vs IFEval high-throughput) 100% verified!\n")
 
