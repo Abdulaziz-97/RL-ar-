@@ -41,9 +41,11 @@ echo "================================================================="
 echo "[4/4] STARTING OFFICIAL BENCHMARKS FOR BASE & GRPO_V2 MODELS"
 echo "================================================================="
 
-# Clean any lingering background vLLM worker processes from previous runs
+# Clean any lingering background vLLM worker processes & stale IPC sockets from previous runs
 pkill -9 -f vllm || true
 pkill -9 -f python3 || true
+pkill -9 -f python || true
+rm -rf /dev/shm/vllm* /dev/shm/torch* /dev/shm/nccl* 2>/dev/null || true
 sleep 2
 
 echo ""
