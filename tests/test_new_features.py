@@ -137,5 +137,26 @@ class TestBenchmarkProbeCallback(unittest.TestCase):
         mock_run_probe.assert_called_once()
 
 
+class TestArabicTerminalRenderer(unittest.TestCase):
+    """Test Arabic text formatting and BiDi reshaping for terminal display."""
+
+    def test_format_arabic_terminal_text_basic(self):
+        from rlvr_pipeline.utils import format_arabic_terminal_text
+        arabic_sample = "الالتزام بها بالضبط: 1. ابدأ بـ: <think>"
+        result = format_arabic_terminal_text(arabic_sample)
+        self.assertIsInstance(result, str)
+        self.assertGreater(len(result), 0)
+
+    def test_format_arabic_terminal_text_strips_box_borders(self):
+        from rlvr_pipeline.utils import format_arabic_terminal_text
+        corrupted_box = "│ في الحساب الضروي هو │ 610 ريالاً │"
+        cleaned = format_arabic_terminal_text(corrupted_box)
+        self.assertNotIn("│", cleaned)
+
+    def test_format_arabic_terminal_text_empty(self):
+        from rlvr_pipeline.utils import format_arabic_terminal_text
+        self.assertEqual(format_arabic_terminal_text(""), "")
+
+
 if __name__ == "__main__":
     unittest.main()
