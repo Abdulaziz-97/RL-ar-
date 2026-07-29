@@ -103,6 +103,6 @@ attn_implementation: "flash_attention_2"
 zero_variance_strategy: "direct_scoring"
 curriculum_schedule_type: "gaussian"
 sigma_fraction: 0.2
-enable_crps: true
+enable_crps: false                # Set to false for multi-GPU DDP (CRPS is rank-local)
 crps_max_age_steps: 100
 crps_max_traces: 256
