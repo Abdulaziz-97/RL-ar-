@@ -6,7 +6,10 @@ echo "================================================================="
 echo "INITIALIZING FRESH VAST.AI GPU INSTANCE FOR SAUDI-LLM GRPO V3"
 echo "================================================================="
 
-# 1. Environment Variables & Storage Redirection
+# 1. Create Storage Directories FIRST (prevents mktemp errors)
+mkdir -p /workspace/tmp /workspace/.hf_cache /workspace/outputs
+
+# Environment Variables & Storage Redirection
 export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
 export HF_HUB_CACHE="${HF_HUB_CACHE:-/workspace/.hf_cache/hub}"
 export TMPDIR="${TMPDIR:-/workspace/tmp}"
@@ -17,10 +20,6 @@ export NCCL_IGNORE_DISABLED_P2P="1"
 export NCCL_IB_DISABLE="1"
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
 export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"
-
-mkdir -p /workspace/outputs
-mkdir -p "$HF_HOME"
-mkdir -p "$TMPDIR"
 
 # Detect Available GPU Count
 NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
