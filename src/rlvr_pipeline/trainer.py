@@ -408,5 +408,15 @@ def build_trainer(
     probe_cb = BenchmarkProbeCallback(base_model=config.model_name, enable_probe=True)
     trainer.add_callback(probe_cb)
 
+    # Attach StepCheckCallback to verify LR Scheduler state at on_train_begin
+    from transformers.trainer_callback import TrainerCallback
+    class StepCheckCallback(TrainerCallback):
+        def on_train_begin(self, args, state, control, **kwargs):
+            sched = kwargs.get("lr_scheduler") or getattr(self, "lr_scheduler", None)
+            sch_info = sched.state_dict() if hasattr(sched, "state_dict") else "N/A"
+            print(f"\n[ON_TRAIN_BEGIN] Verified LR Scheduler State: {sch_info}", flush=True)
+
+    trainer.add_callback(StepCheckCallback())
+
     return trainer
 
