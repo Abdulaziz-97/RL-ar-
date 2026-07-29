@@ -398,5 +398,10 @@ def build_trainer(
         stability_cb.trainer = trainer
         trainer.add_callback(stability_cb)
 
+    # Attach automatic benchmark telemetry probe callback (runs on every checkpoint save)
+    from rlvr_pipeline.benchmark_probe_callback import BenchmarkProbeCallback
+    probe_cb = BenchmarkProbeCallback(base_model=config.model_name, enable_probe=True)
+    trainer.add_callback(probe_cb)
+
     return trainer
 

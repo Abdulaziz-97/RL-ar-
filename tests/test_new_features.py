@@ -115,5 +115,27 @@ class TestRunBenchmarkProbeScript(unittest.TestCase):
         self.assertEqual(docs, docs_again)
 
 
+class TestBenchmarkProbeCallback(unittest.TestCase):
+    """Test automatic benchmark probe callback."""
+
+    @patch("scripts.run_benchmark_probe.run_probe")
+    def test_on_save_triggers_probe(self, mock_run_probe):
+        from rlvr_pipeline.benchmark_probe_callback import BenchmarkProbeCallback
+        mock_run_probe.return_value = {"araeval_aramath": 91.5}
+
+        cb = BenchmarkProbeCallback(enable_probe=True)
+
+        mock_args = MagicMock()
+        mock_args.process_index = 0
+        mock_args.output_dir = "./outputs"
+        mock_args.report_to = "none"
+
+        mock_state = MagicMock()
+        mock_state.global_step = 50
+
+        cb.on_save(mock_args, mock_state, MagicMock())
+        mock_run_probe.assert_called_once()
+
+
 if __name__ == "__main__":
     unittest.main()
