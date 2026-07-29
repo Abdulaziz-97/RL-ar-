@@ -232,6 +232,13 @@ def main(argv: list[str] | None = None) -> int:
         print()
 
         trainer = build_trainer(config)
+        print("=================================================================")
+        print("VERIFIED TRAINER STEP CONFIGURATION:")
+        print(f"  * trainer.args.max_steps                      = {getattr(trainer.args, 'max_steps', 'N/A')}")
+        print(f"  * trainer.args.num_train_epochs               = {getattr(trainer.args, 'num_train_epochs', 'N/A')}")
+        print(f"  * trainer.args.gradient_accumulation_steps    = {getattr(trainer.args, 'gradient_accumulation_steps', 'N/A')}")
+        print(f"  * trainer.args.per_device_train_batch_size     = {getattr(trainer.args, 'per_device_train_batch_size', 'N/A')}")
+        print("=================================================================", flush=True)
         trainer.train()
         trainer.save_model()
         return 0
