@@ -24,9 +24,9 @@ stop_strings: ["</answer>"]
 # Multi-GPU Hyperparameters (2x RTX 5090 DDP / DeepSpeed Stage 3)
 learning_rate: 1.5e-6            # Lower LR for Full-FT (1.5e-6 vs 3.0e-6 for LoRA)
 num_train_epochs: 2
-max_steps: 210
+max_steps: 105
 per_device_train_batch_size: 1   # Batch size 1 per GPU for Full-FT VRAM safety
-gradient_accumulation_steps: 8   # 8 micro-steps = 16 prompts per gradient update
+gradient_accumulation_steps: 16  # 16 micro-steps (1 batch × 16 accum = 16, divisible by 16 rollouts)
 ddp_find_unused_parameters: false
 max_grad_norm: 1.0
 warmup_ratio: 0.1

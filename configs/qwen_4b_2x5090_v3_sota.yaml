@@ -40,9 +40,9 @@ stop_strings: ["</answer>"]
 # Multi-GPU Hyperparameters (2x RTX 5090 PyTorch DDP)
 learning_rate: 3.0e-6            # was 5.0e-6 — slower, more stable gradient updates
 num_train_epochs: 2              # 2 passes over hard data (1,678 prompts)
-max_steps: 210                   # 210 optimizer steps (3,356 prompts / 16 batch per step = 210 steps = ~2.5 hours!)
+max_steps: 105                   # 105 optimizer steps (3,356 prompts / 32 batch per step = 105 steps = ~1.8 hours!)
 per_device_train_batch_size: 2   # 2 prompts/GPU × 16 rollouts = 32 completions/GPU
-gradient_accumulation_steps: 4   # 4 micro-steps = 128 completions per gradient update
+gradient_accumulation_steps: 8   # 8 micro-steps (2 batch × 8 accum = 16, divisible by 16 rollouts)
 ddp_find_unused_parameters: false
 max_grad_norm: 1.0
 warmup_ratio: 0.1
