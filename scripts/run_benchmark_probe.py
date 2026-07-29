@@ -40,6 +40,7 @@ from official_eval.tasks.araeval.generative_utils import (
 from official_eval.tasks.araeval.utils import (
     normalize_aramath,
     normalize_arapro,
+    normalize_truthfulqa,
 )
 
 PROBE_CONFIGS = {
@@ -57,6 +58,13 @@ PROBE_CONFIGS = {
         "name": "AraPro",
         "normalizer": normalize_arapro,
         "sample_size": 500, # Fixed 500 sample (seed=42)
+    },
+    "araeval_truthfulqa": {
+        "path": "humain-ai/AraTruthfulQA",
+        "revision": "162744fbf0590606415eb0924f2b5bd680486e3a",
+        "split": "test",
+        "normalizer": normalize_truthfulqa,
+        "sample_size": None, # Full 536
     },
 }
 
