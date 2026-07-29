@@ -307,10 +307,12 @@ def build_trainer(
         if not hasattr(base_model.config, "text_config"):
             base_model.config.text_config = base_model.config
 
-        if config.sft_checkpoint_path:
+        if config.sft_checkpoint_path and os.path.exists(os.path.join(config.sft_checkpoint_path, "adapter_config.json")):
             print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
             model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
         else:
+            if config.sft_checkpoint_path:
+                print(f"Warning: Valid adapter_config.json not found in {config.sft_checkpoint_path}. Initializing new PEFT adapter on base model.", flush=True)
             peft_config = config.build_peft_config()
             model = get_peft_model(base_model, peft_config)
             peft_config = None
