@@ -1,0 +1,85 @@
+# GRPO_V3b — Full-Parameter Fine-Tuning SOTA Recipe (No LoRA)
+# Model: Qwen3.5-4B (All 4 Billion Parameters Trainable)
+# Requires: 2x RTX 5090 (64GB VRAM) or DeepSpeed Stage 3
+
+model_name: "Qwen/Qwen3.5-4B"
+load_in_4bit: false
+bnb_4bit_compute_dtype: "bfloat16"
+
+# FULL FINE-TUNING (No LoRA adapters — unconstrained SVD parameter updates)
+
+# Dataset: CURATED HARD EXAMPLES ONLY
+train_data_path: "data/arabic_reasoning_rlvr_hard_v3.jsonl"
+eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
+coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
+
+# GRPO Generation
+num_generations: 16             # 16 rollouts per prompt
+max_completion_length: 1024      # 1,024 completion tokens
+temperature: 1.15                # Warmer sampling
+top_p: 0.95
+top_k: 40
+stop_strings: ["</answer>"]
+
+# Multi-GPU Hyperparameters (2x RTX 5090 DDP / DeepSpeed Stage 3)
+learning_rate: 1.5e-6            # Lower LR for Full-FT (1.5e-6 vs 3.0e-6 for LoRA)
+num_train_epochs: 2
+per_device_train_batch_size: 1   # Batch size 1 per GPU for Full-FT VRAM safety
+gradient_accumulation_steps: 8   # 8 micro-steps = 16 prompts per gradient update
+ddp_find_unused_parameters: false
+max_grad_norm: 1.0
+warmup_ratio: 0.1
+lr_scheduler_type: "cosine"
+optim: "adamw_torch"
+seed: 42
+
+# GRPO Loss — DAPO Recipe
+loss_type: "dr_grpo"
+scale_rewards: "batch"
+beta: 0.0                        # Remove KL penalty
+epsilon: 0.2
+epsilon_high: 0.28
+importance_sampling_level: "token"
+mask_truncated_completions: true
+
+# Multi-Reward Weights
+reward_weights: [0.85, 0.15, 0.0, 0.5, 0.3, 0.0]
+gdpo_decoupled_normalization: true
+
+# Entropy Regularization
+entropy_coef: 0.05
+use_adaptive_entropy: true
+entropy_target: 3.0
+entropy_coef_delta: 0.01
+
+# Stability Guards
+enable_stability_callback: true
+stability_consecutive: 2
+entropy_collapse_action: "reduce_lr"
+entropy_lr_reduction_factor: 0.5
+enable_adaptive_temperature: true
+entropy_target_min: 2.0
+temp_bump: 0.15
+temp_max: 1.5
+temp_bump_cooldown_steps: 3
+early_diag_steps: 30
+
+# Infrastructure Settings
+output_dir: "./outputs/qwen_4b_v3b_full_ft_run"
+logging_steps: 10
+save_steps: 100
+bf16: true
+fp16: false
+gradient_checkpointing: true
+log_completions: true
+num_completions_to_print: 4
+use_vllm: false
+use_wandb: true
+wandb_project: "arabic-reasoning-rlvr-v3b"
+
+zero_variance_strategy: "direct_scoring"
+curriculum_schedule_type: "gaussian"
+sigma_fraction: 0.2
+enable_crps: false
+crps_max_age_steps: 100
+crps_max_traces: 256
