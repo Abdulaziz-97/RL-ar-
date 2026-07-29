@@ -1,12 +1,12 @@
 #!/bin/bash
-# Master Setup and Execution Script for Fresh Vast.ai GPU Instances
+# Master Setup and Execution Script for Fresh Vast.ai GPU Instances (Multi-GPU & UV Accelerated)
 set -e
 
 echo "================================================================="
-echo "INITIALIZING FRESH VAST.AI GPU INSTANCE FOR SAUDI-LLM EVALUATION"
+echo "INITIALIZING FRESH VAST.AI GPU INSTANCE FOR SAUDI-LLM GRPO V3"
 echo "================================================================="
 
-# 1. Environment Variables (ensure HF_TOKEN is exported in shell)
+# 1. Environment Variables & Storage Redirection
 export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
 export HF_HUB_CACHE="${HF_HUB_CACHE:-/workspace/.hf_cache/hub}"
 export TMPDIR="${TMPDIR:-/workspace/tmp}"
@@ -22,109 +22,74 @@ mkdir -p /workspace/outputs
 mkdir -p "$HF_HOME"
 mkdir -p "$TMPDIR"
 
-# 2. Install uv package manager & Python dependencies
-echo "[1/4] Installing uv package manager & Python dependencies..."
+# Detect Available GPU Count
+NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
+if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi
+echo "[System Diagnostic] Detected $NUM_GPUS active NVIDIA GPU(s)."
+
+# 2. Fast Install via UV Package Manager
+echo "================================================================="
+echo "[1/4] Installing UV Package Manager & Accelerated Dependencies..."
+echo "================================================================="
 curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1 || true
 export PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
 
 if command -v uv >/dev/null 2>&1; then
-    echo "Using uv to install vllm, lm-eval, peft, accelerate, datasets..."
-    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl
+    echo "⚡ Using UV to install PyTorch, vLLM, TRL, PEFT, and RLVR pipeline..."
+    uv pip install --system --break-system-packages -e /workspace/RL-ar-
+    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl flash-attn --no-build-isolation || true
 else
-    python3 -m pip install -q --break-system-packages vllm lm-eval transformers peft accelerate datasets trl || true
+    echo "Installing via standard pip..."
+    pip install -e /workspace/RL-ar- --no-deps
+    pip install vllm lm-eval transformers peft accelerate datasets trl || true
 fi
 
-# 3. Locate Internal Official Evaluation Script
-EVAL_SCRIPT="/workspace/RL-ar-/official_eval/run_araeval.py"
-if [ ! -f "$EVAL_SCRIPT" ]; then
-    EVAL_SCRIPT="./official_eval/run_araeval.py"
+# 3. Data Curation Check
+echo "================================================================="
+echo "[2/4] Curating V3 Hard Dataset (Filtering pass@8=1.0 Trivial Items)..."
+echo "================================================================="
+python3 /workspace/RL-ar-/scripts/filter_hard_dataset.py
+
+# 4. GRPO V3 Parallel Multi-GPU Training Launch
+echo "================================================================="
+echo "[3/4] LAUNCHING GRPO V3 PARALLEL MULTI-GPU TRAINING ($NUM_GPUS GPUs)"
+echo "================================================================="
+
+CONFIG_FILE="/workspace/RL-ar-/configs/qwen_4b_2x5090_v3_sota.yaml"
+
+if [ "$NUM_GPUS" -gt 1 ]; then
+    echo "🚀 Running PyTorch Distributed Data Parallel (DDP) on $NUM_GPUS GPUs..."
+    torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli train --config "$CONFIG_FILE"
+else
+    echo "🚀 Running Single GPU GRPO Training..."
+    python3 -m rlvr_pipeline.cli train --config "$CONFIG_FILE"
 fi
 
-echo "[3/4] Script located at: $EVAL_SCRIPT"
-
-# 4. Run Official Benchmark Suite
+# 5. Parallel Generative Evaluation across 23,842 Test Questions
 echo "================================================================="
-echo "[4/4] STARTING OFFICIAL BENCHMARKS FOR BASE & GRPO_V2 MODELS"
+echo "[4/4] STARTING PARALLEL GENERATIVE EVALUATION ($NUM_GPUS GPUs)"
 echo "================================================================="
 
-# Clean any lingering background vLLM worker processes, stale IPC sockets & corrupted CUDA driver handles
+# Clean any lingering background vLLM worker processes
 pkill -9 -f vllm 2>/dev/null || true
 pkill -9 -f python3 2>/dev/null || true
-pkill -9 -f python 2>/dev/null || true
-fuser -k -9 /dev/nvidia* 2>/dev/null || true
 rm -rf /dev/shm/vllm* /dev/shm/torch* /dev/shm/nccl* 2>/dev/null || true
 sleep 2
 
-echo ""
-echo ">>> STEP A: Evaluating Base Model (unsloth/Qwen3.5-4B)..."
-python3 "$EVAL_SCRIPT" \
-  --model unsloth/Qwen3.5-4B \
-  --batch-size 4 \
-  --max-batch-size 4 \
-  --output-dir /workspace/outputs/official_eval_base_model
-
-echo ""
-echo ">>> STEP B: Evaluating GRPO_V2 Model (aziz9788/qwen3.5-4b-arabic-grpo-v2)..."
-pkill -9 -f vllm 2>/dev/null || true
-rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
-sleep 2
-python3 "$EVAL_SCRIPT" \
-  --model unsloth/Qwen3.5-4B \
-  --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
-  --max-lora-rank 128 \
-  --batch-size 4 \
-  --max-batch-size 4 \
-  --output-dir /workspace/outputs/official_eval_grpo_v2
-
-echo ""
-echo "================================================================="
-echo "LOG-LIKELIHOOD EVALUATION COMPLETE!"
-echo "Base Model Summary : /workspace/outputs/official_eval_base_model/summary.json"
-echo "GRPO_V2 Summary    : /workspace/outputs/official_eval_grpo_v2/summary.json"
-echo "================================================================="
-
-# --- GENERATIVE EVALUATION (Fair GRPO Assessment) ---
 GENERATIVE_SCRIPT="/workspace/RL-ar-/official_eval/run_araeval_generative.py"
-if [ ! -f "$GENERATIVE_SCRIPT" ]; then
-    GENERATIVE_SCRIPT="./official_eval/run_araeval_generative.py"
-fi
+OUTPUT_DIR="/workspace/outputs/generative_eval_grpo_v3"
+TRAINED_CHECKPOINT=$(ls -d /workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run/checkpoint-* 2>/dev/null | tail -n 1 || echo "/workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run")
 
-echo ""
-echo "================================================================="
-echo "STARTING GENERATIVE EVALUATION (FAIR GRPO ASSESSMENT)"
-echo "================================================================="
-
-echo ""
-echo ">>> STEP C: Generative Eval — Base Model (thinking=ON)..."
-pkill -9 -f vllm 2>/dev/null || true
-rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
-sleep 2
+echo ">>> Evaluating Final GRPO_V3 Checkpoint: $TRAINED_CHECKPOINT..."
 python3 "$GENERATIVE_SCRIPT" \
   --model unsloth/Qwen3.5-4B \
-  --enable-thinking \
-  --output-dir /workspace/outputs/generative_eval_base
-
-echo ""
-echo ">>> STEP D: Generative Eval — GRPO_V2 Model (thinking=ON)..."
-pkill -9 -f vllm 2>/dev/null || true
-rm -rf /dev/shm/vllm* /dev/shm/torch* 2>/dev/null || true
-sleep 2
-python3 "$GENERATIVE_SCRIPT" \
-  --model unsloth/Qwen3.5-4B \
-  --adapter-path aziz9788/qwen3.5-4b-arabic-grpo-v2 \
+  --adapter-path "$TRAINED_CHECKPOINT" \
   --enable-thinking \
   --max-lora-rank 128 \
-  --output-dir /workspace/outputs/generative_eval_grpo_v2
+  --output-dir "$OUTPUT_DIR"
 
-echo ""
 echo "================================================================="
-echo "ALL EVALUATIONS COMPLETE! 🏆"
-echo "================================================================="
-echo "Log-Likelihood (Official):"
-echo "  Base Model  : /workspace/outputs/official_eval_base_model/summary.json"
-echo "  GRPO_V2     : /workspace/outputs/official_eval_grpo_v2/summary.json"
-echo ""
-echo "Generative (Fair GRPO Assessment):"
-echo "  Base Model  : /workspace/outputs/generative_eval_base/summary.json"
-echo "  GRPO_V2     : /workspace/outputs/generative_eval_grpo_v2/summary.json"
+echo "ALL STAGES COMPLETE SUCCESSFULLY! 🏆"
+echo "GRPO V3 Model Checkpoint : $TRAINED_CHECKPOINT"
+echo "Generative Evaluation    : $OUTPUT_DIR/summary.json"
 echo "================================================================="
