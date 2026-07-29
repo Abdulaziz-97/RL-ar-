@@ -56,7 +56,12 @@ SFT_OUT="/workspace/outputs/sft_coldstart"
 echo "================================================================="
 echo "[3/5] STAGE 1: COLD-START CoT SFT WARM-UP (1,707 CoT Solutions)"
 echo "================================================================="
-python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100 || true
+if [ "$NUM_GPUS" -gt 1 ]; then
+    echo "🚀 Running PyTorch DDP SFT Warm-up on $NUM_GPUS GPUs..."
+    torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100 || true
+else
+    CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100 || true
+fi
 
 # 5. Stage 2: GRPO V3 Parallel Multi-GPU Training Launch
 echo "================================================================="
