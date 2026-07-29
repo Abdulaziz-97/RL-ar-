@@ -20,6 +20,7 @@ export VLLM_WORKER_MULTIPROC_METHOD="spawn"
 export NCCL_IGNORE_DISABLED_P2P="1"
 export NCCL_IB_DISABLE="1"
 export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
+export WANDB_MODE="${WANDB_MODE:-offline}"
 export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"
 
 # Detect Available GPU Count
