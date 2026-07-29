@@ -255,6 +255,9 @@ class RLVRConfig:
 
         if self.max_steps is not None:
             kwargs["max_steps"] = self.max_steps
+        else:
+            # Explicitly set max_steps to 210 so TRL and the LR scheduler decay over 210 steps
+            kwargs["max_steps"] = 210
 
         # Safely filter kwargs against GRPOConfig signature for cross-version compatibility
         import inspect
