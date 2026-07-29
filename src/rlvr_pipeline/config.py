@@ -151,6 +151,7 @@ class RLVRConfig:
     vllm_gpu_memory_utilization: float = 0.40
     vllm_max_model_len: int = 4096
     attn_implementation: str = "flash_attention_2"
+    ddp_find_unused_parameters: bool = False
     report_to: str = "wandb"
     use_wandb: bool = False
     wandb_project: str = "arabic-reasoning-rlvr"
@@ -163,6 +164,7 @@ class RLVRConfig:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "RLVRConfig":
+        import dataclasses
         config_path = Path(path).resolve()
         with open(config_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
@@ -175,7 +177,10 @@ class RLVRConfig:
             value = data.get(key)
             if value and not Path(value).is_absolute():
                 data[key] = str((base_dir / value).resolve())
-        return cls(**data)
+
+        valid_fields = {f.name for f in dataclasses.fields(cls)}
+        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
+        return cls(**filtered_data)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
