@@ -64,9 +64,17 @@ echo "[4/5] STAGE 2: LAUNCHING GRPO V3 PARALLEL MULTI-GPU TRAINING ($NUM_GPUS GP
 echo "================================================================="
 
 SFT_ARG=""
-if [ -d "$SFT_OUT" ]; then
+if [ -f "$SFT_OUT/adapter_config.json" ] || [ -f "$SFT_OUT/adapter_model.safetensors" ]; then
     SFT_ARG="--sft-checkpoint $SFT_OUT"
     echo "  * Chaining from Stage 1 SFT Checkpoint: $SFT_OUT"
+else
+    LATEST_SFT_CKPT=$(ls -d $SFT_OUT/checkpoint-* 2>/dev/null | tail -n 1 || echo "")
+    if [ -n "$LATEST_SFT_CKPT" ]; then
+        SFT_ARG="--sft-checkpoint $LATEST_SFT_CKPT"
+        echo "  * Chaining from Stage 1 SFT Checkpoint: $LATEST_SFT_CKPT"
+    else
+        echo "  * Warning: No SFT adapter checkpoint found in $SFT_OUT; starting GRPO from Base Model."
+    fi
 fi
 
 if [ "$NUM_GPUS" -gt 1 ]; then
