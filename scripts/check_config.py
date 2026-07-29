@@ -19,12 +19,16 @@ def main():
         return 1
 
     cfg = RLVRConfig.from_yaml(config_path)
+    trainer = build_trainer(cfg)
+    train_dl_len = len(trainer.get_train_dataloader()) if hasattr(trainer, "get_train_dataloader") else "N/A"
+
     print("================================================")
     print("RLVR PIPELINE STEP DIAGNOSTIC CHECK:")
-    print(f"  * max_steps                   = {cfg.max_steps}")
-    print(f"  * num_train_epochs            = {cfg.num_train_epochs}")
-    print(f"  * gradient_accumulation_steps = {cfg.gradient_accumulation_steps}")
-    print(f"  * per_device_train_batch_size  = {cfg.per_device_train_batch_size}")
+    print(f"  * max_steps                   = {trainer.args.max_steps}")
+    print(f"  * num_train_epochs            = {trainer.args.num_train_epochs}")
+    print(f"  * len(train_dataloader)       = {train_dl_len}")
+    print(f"  * gradient_accumulation_steps = {trainer.args.gradient_accumulation_steps}")
+    print(f"  * per_device_train_batch_size  = {trainer.args.per_device_train_batch_size}")
     print("=================================================")
     return 0
 
