@@ -45,23 +45,36 @@ fi
 
 # 3. Data Curation Check
 echo "================================================================="
-echo "[2/4] Curating V3 Hard Dataset (Filtering pass@8=1.0 Trivial Items)..."
+echo "[2/5] Curating V3 Hard Dataset (Filtering pass@8=1.0 Trivial Items)..."
 echo "================================================================="
 python3 /workspace/RL-ar-/scripts/filter_hard_dataset.py
 
-# 4. GRPO V3 Parallel Multi-GPU Training Launch
+CONFIG_FILE="/workspace/RL-ar-/configs/qwen_4b_2x5090_v3_sota.yaml"
+SFT_OUT="/workspace/outputs/sft_coldstart"
+
+# 4. Stage 1: Cold-Start SFT (CoT Distillation)
 echo "================================================================="
-echo "[3/4] LAUNCHING GRPO V3 PARALLEL MULTI-GPU TRAINING ($NUM_GPUS GPUs)"
+echo "[3/5] STAGE 1: COLD-START CoT SFT WARM-UP (1,707 CoT Solutions)"
+echo "================================================================="
+python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100 || true
+
+# 5. Stage 2: GRPO V3 Parallel Multi-GPU Training Launch
+echo "================================================================="
+echo "[4/5] STAGE 2: LAUNCHING GRPO V3 PARALLEL MULTI-GPU TRAINING ($NUM_GPUS GPUs)"
 echo "================================================================="
 
-CONFIG_FILE="/workspace/RL-ar-/configs/qwen_4b_2x5090_v3_sota.yaml"
+SFT_ARG=""
+if [ -d "$SFT_OUT" ]; then
+    SFT_ARG="--sft-checkpoint $SFT_OUT"
+    echo "  * Chaining from Stage 1 SFT Checkpoint: $SFT_OUT"
+fi
 
 if [ "$NUM_GPUS" -gt 1 ]; then
     echo "🚀 Running PyTorch Distributed Data Parallel (DDP) on $NUM_GPUS GPUs..."
-    torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli train --config "$CONFIG_FILE"
+    torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli train --config "$CONFIG_FILE" $SFT_ARG
 else
     echo "🚀 Running Single GPU GRPO Training..."
-    python3 -m rlvr_pipeline.cli train --config "$CONFIG_FILE"
+    python3 -m rlvr_pipeline.cli train --config "$CONFIG_FILE" $SFT_ARG
 fi
 
 # 5. Parallel Generative Evaluation across 23,842 Test Questions
