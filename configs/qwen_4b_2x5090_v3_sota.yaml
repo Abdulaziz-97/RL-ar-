@@ -1,0 +1,108 @@
+# GRPO_V3 — Evidence-Backed SOTA Config for 2x NVIDIA RTX 5090
+# Sources: DAPO (Yu et al., 2025), Dr.GRPO (arXiv:2503.20783),
+#          Entropy Mechanism of RL for LLMs (Cui et al., 2026),
+#          GDPO (NVlabs, arXiv:2601.05242)
+#
+# KEY CHANGES from V2 (qwen_4b_rtx6000ada_production.yaml):
+#   1. beta: 0.04 → 0.0        (Remove KL penalty — DAPO recipe)
+#   2. entropy_coef: 0.01 → 0.05  (5x stronger entropy regularization)
+#   3. entropy_target: 2.0 → 3.0  (Higher exploration floor)
+#   4. entropy_collapse_action: "warn" → "reduce_lr"  (Actually intervenes)
+#   5. temperature: 1.0 → 1.15    (Warmer rollout sampling)
+#   6. max_completion_length: 768 → 1024  (More thinking room)
+#   7. train_data_path: curated hard examples only
+#   8. log_completions: true       (Monitor reasoning quality)
+
+model_name: "Qwen/Qwen3.5-4B"
+load_in_4bit: false
+bnb_4bit_compute_dtype: "bfloat16"
+
+# LoRA Configuration (A/B test: also try full-FT with DeepSpeed Stage 3)
+lora_r: 128
+lora_alpha: 256
+lora_dropout: 0.05
+
+# Dataset: CURATED HARD EXAMPLES ONLY
+# Filtered: keep only problems where Base Model pass@8 < 0.875
+# Target: 1,500–2,500 genuinely challenging problems
+train_data_path: "data/arabic_reasoning_rlvr_hard_v3.jsonl"
+eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
+coldstart_data_path: "data/arabic_reasoning_coldstart_train.jsonl"
+
+# GRPO Generation Hyperparameters
+num_generations: 16              # 16 rollouts per prompt (high diversity)
+max_completion_length: 1024      # was 768 — more thinking room for hard problems
+temperature: 1.15                # was 1.0 — warmer for diversity (DAPO-inspired)
+top_p: 0.95
+top_k: 40
+stop_strings: ["</answer>"]
+
+# Multi-GPU Hyperparameters (2x RTX 5090 PyTorch DDP)
+learning_rate: 3.0e-6            # was 5.0e-6 — slower, more stable gradient updates
+num_train_epochs: 2              # 2 passes over hard data
+per_device_train_batch_size: 2   # 2 prompts/GPU × 16 rollouts = 32 completions/GPU
+gradient_accumulation_steps: 4   # 4 micro-steps = 128 completions per gradient update
+ddp_find_unused_parameters: false
+max_grad_norm: 1.0
+warmup_ratio: 0.1
+lr_scheduler_type: "cosine"
+optim: "adamw_torch"
+seed: 42
+
+# GRPO Loss — DAPO Recipe
+loss_type: "dr_grpo"
+scale_rewards: "batch"
+beta: 0.0                        # ← CRITICAL: Remove KL penalty (DAPO recipe, arXiv:2503.14476)
+epsilon: 0.2                     # Lower clip bound (standard)
+epsilon_high: 0.28               # Higher clip bound (DAPO asymmetric clipping)
+importance_sampling_level: "token"
+mask_truncated_completions: true
+
+# Multi-Reward Weights: [correctness, format, language, answer_leak, structural_leak, length]
+# Correctness at 0.85 — mathematical correctness dominates policy gradients
+reward_weights: [0.85, 0.15, 0.0, 0.5, 0.3, 0.0]
+# GDPO: Normalize each reward independently before weighted sum (NVlabs arXiv:2601.05242)
+gdpo_decoupled_normalization: true
+
+# CRITICAL: Entropy Collapse Prevention (fixed from V2)
+# V2 used entropy_coef=0.01, entropy_target=2.0 → entropy collapsed to 0.034
+# Research (Cui et al., 2026): recommends 0.03–0.10 range for 4B models
+entropy_coef: 0.05               # ← CRITICAL: 5x stronger (was 0.01)
+use_adaptive_entropy: true
+entropy_target: 3.0              # ← CRITICAL: Higher floor (was 2.0)
+entropy_coef_delta: 0.01         # ← Faster adaptation (was 0.005)
+
+# Stability — Actually Intervene When Entropy Collapses
+enable_stability_callback: true
+stability_consecutive: 2
+entropy_collapse_action: "reduce_lr"  # ← CRITICAL: Actually intervenes (was "warn")
+entropy_lr_reduction_factor: 0.5
+enable_adaptive_temperature: true
+entropy_target_min: 2.0          # was 1.5
+temp_bump: 0.15                  # was 0.10
+temp_max: 1.5                    # was 1.25 — more adaptive range
+temp_bump_cooldown_steps: 3
+early_diag_steps: 30
+
+# Infrastructure Settings
+output_dir: "./outputs/qwen_4b_2x5090_v3_run"
+logging_steps: 10
+save_steps: 100                  # Save more frequently for debugging
+bf16: true
+fp16: false
+gradient_checkpointing: true
+
+# Monitoring — ENABLED (was disabled in V2, blind training is unacceptable)
+log_completions: true            # ← ENABLED: Inspect reasoning quality
+num_completions_to_print: 4      # ← ENABLED: Visual verification during training
+use_vllm: false
+use_wandb: true                  # ← ENABLED: Track entropy/reward/KL curves
+wandb_project: "arabic-reasoning-rlvr-v3"
+attn_implementation: "flash_attention_2"
+
+zero_variance_strategy: "direct_scoring"
+curriculum_schedule_type: "gaussian"
+sigma_fraction: 0.2
+enable_crps: true
+crps_max_age_steps: 100
+crps_max_traces: 256
