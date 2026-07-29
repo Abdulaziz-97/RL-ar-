@@ -297,7 +297,7 @@ def run_tests() -> None:
     print("  --> PASS: TruthfulQA prompt format verified!\n")
 
     print("=================================================================")
-    print("ALL 8 TDD TESTS PASSED SUCCESSFULLY! 🏆")
+    print("ALL 8 TDD TESTS PASSED SUCCESSFULLY! [SUCCESS]")
     print("=================================================================")
 
 
