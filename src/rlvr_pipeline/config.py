@@ -160,6 +160,7 @@ class RLVRConfig:
     log_completions: bool = True
     num_completions_to_print: int = 4
 
+    sft_learning_rate: float = 2.0e-4
     max_steps: Optional[int] = None
 
     @classmethod
