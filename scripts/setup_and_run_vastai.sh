@@ -6,8 +6,9 @@ echo "================================================================="
 echo "INITIALIZING FRESH VAST.AI GPU INSTANCE FOR SAUDI-LLM GRPO V3"
 echo "================================================================="
 
-# 1. Create Storage Directories FIRST (prevents mktemp errors)
+# 1. Create Storage Directories FIRST & Redirect Terminal Output to Disk
 mkdir -p /workspace/tmp /workspace/.hf_cache /workspace/outputs
+exec > >(tee -a /workspace/outputs/master_execution.log) 2>&1
 
 # Environment Variables & Storage Redirection
 export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
@@ -34,13 +35,13 @@ curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1 || true
 export PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
 
 if command -v uv >/dev/null 2>&1; then
-    echo "⚡ Using UV to install PyTorch, vLLM, TRL, PEFT, and RLVR pipeline..."
+    echo "⚡ Using UV to install PyTorch, vLLM, TRL, PEFT, Arabic Rendering, and RLVR pipeline..."
     uv pip install --system --break-system-packages -e /workspace/RL-ar-
-    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl
+    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl python-bidi arabic-reshaper
 else
     echo "Installing via standard pip..."
     pip install -e /workspace/RL-ar- --no-deps
-    pip install vllm lm-eval transformers peft accelerate datasets trl || true
+    pip install vllm lm-eval transformers peft accelerate datasets trl python-bidi arabic-reshaper || true
 fi
 
 # 3. Data Curation Check
