@@ -36,7 +36,7 @@ export PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
 if command -v uv >/dev/null 2>&1; then
     echo "⚡ Using UV to install PyTorch, vLLM, TRL, PEFT, and RLVR pipeline..."
     uv pip install --system --break-system-packages -e /workspace/RL-ar-
-    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl flash-attn --no-build-isolation || true
+    uv pip install --system --break-system-packages vllm lm-eval transformers peft accelerate datasets trl
 else
     echo "Installing via standard pip..."
     pip install -e /workspace/RL-ar- --no-deps

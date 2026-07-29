@@ -76,6 +76,7 @@ num_completions_to_print: 4
 use_vllm: false
 use_wandb: true
 wandb_project: "arabic-reasoning-rlvr-v3b"
+attn_implementation: "sdpa"
 
 zero_variance_strategy: "direct_scoring"
 curriculum_schedule_type: "gaussian"

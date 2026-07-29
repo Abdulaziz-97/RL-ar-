@@ -98,7 +98,7 @@ num_completions_to_print: 4      # ← ENABLED: Visual verification during train
 use_vllm: false
 use_wandb: true                  # ← ENABLED: Track entropy/reward/KL curves
 wandb_project: "arabic-reasoning-rlvr-v3"
-attn_implementation: "flash_attention_2"
+attn_implementation: "sdpa"
 
 zero_variance_strategy: "direct_scoring"
 curriculum_schedule_type: "gaussian"
