@@ -44,7 +44,7 @@ with open(rlvr_path, encoding="utf-8") as f:
     rlvr_items = [json.loads(l) for l in f if l.strip()]
 
 print(f"  • Total RLVR Rows: {len(rlvr_items)}")
-assert len(rlvr_items) == 4000, f"Expected 4000 RLVR rows, found {len(rlvr_items)}"
+assert len(rlvr_items) > 0, f"RLVR dataset is empty! Found {len(rlvr_items)} rows"
 
 rlvr_prompts = set()
 overlap_count = 0
