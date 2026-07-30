@@ -250,11 +250,16 @@ def build_sft_trainer(
             base_model.config.text_config = base_model.config
         
         if config.instruction_base_model:
-            print(f"Loading SFT warm-up base adapter from Hugging Face ({config.instruction_base_model})...", flush=True)
-            model = PeftModel.from_pretrained(base_model, config.instruction_base_model, is_trainable=True)
+            print(f"Merging SOTA instruction base adapter ({config.instruction_base_model}) into base weights...", flush=True)
+            t06_peft = PeftModel.from_pretrained(base_model, config.instruction_base_model)
+            base_model = t06_peft.merge_and_unload()
+            print(f"Initializing fresh Rank-{config.lora_r} (alpha={config.lora_alpha}) LoRA adapter for SFT warm-up...", flush=True)
+            peft_config = config.build_peft_config()
+            model = get_peft_model(base_model, peft_config)
+            peft_config = None
         else:
             model = get_peft_model(base_model, peft_config)
-        peft_config = None
+            peft_config = None
 
     trainer = SFTTrainer(
         model=model,
@@ -319,8 +324,13 @@ def build_trainer(
             print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
             model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
         elif config.instruction_base_model:
-            print(f"Loading instruction base model adapter from Hugging Face ({config.instruction_base_model})...", flush=True)
-            model = PeftModel.from_pretrained(base_model, config.instruction_base_model, is_trainable=True)
+            print(f"Merging SOTA instruction base adapter ({config.instruction_base_model}) into base weights...", flush=True)
+            t06_peft = PeftModel.from_pretrained(base_model, config.instruction_base_model)
+            base_model = t06_peft.merge_and_unload()
+            print(f"Initializing fresh Rank-{config.lora_r} (alpha={config.lora_alpha}) LoRA adapter for GRPO training...", flush=True)
+            peft_config = config.build_peft_config()
+            model = get_peft_model(base_model, peft_config)
+            peft_config = None
         else:
             if config.sft_checkpoint_path:
                 print(f"Warning: Valid adapter_config.json not found in {config.sft_checkpoint_path}. Initializing new PEFT adapter on base model.", flush=True)
