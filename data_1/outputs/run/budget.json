@@ -1,18 +1,10 @@
 {
-  "spent_usd": 0.035463,
-  "tokens_in": 8587,
-  "tokens_out": 233556,
-  "calls": 57,
-  "qwen37_calls": 57,
-  "sft_samples_generated": 4000,
-  "rlvr_prompts_generated": 57,
-  "duplicates_rejected": 0,
-  "api_errors": 29,
-  "samples_per_second": 0.45,
-  "eta_minutes": 146.1,
-  "elapsed_minutes": 2.1,
-  "budget_usd": 20.0,
-  "cap_hit": false,
-  "workers": 30,
-  "updated_at": "2026-07-30T18:17:52.083711+00:00"
+  "spent_usd": 0.04194922500000001,
+  "tokens_in": 60515,
+  "tokens_out": 17960,
+  "calls": 66,
+  "pro_calls": 66,
+  "flash_calls": 0,
+  "budget_usd": 30.0,
+  "cap_hit": false
 }

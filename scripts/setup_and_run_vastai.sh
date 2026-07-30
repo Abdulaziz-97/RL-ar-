@@ -65,6 +65,7 @@ python3 "$REPO_ROOT/data_1/scripts/verify_master_v4_datasets_complete.py"
 
 CONFIG_FILE="$REPO_ROOT/configs/qwen_4b_2x5090_v4_sota.yaml"
 SFT_OUT="/workspace/outputs/sft_coldstart_v4"
+GRPO_OUT="/workspace/outputs/qwen_4b_2x5090_v4_run"
 
 # 4. Stage 1: Cold-Start SFT Warm-up (4,000 CoT Solutions)
 echo "================================================================="
@@ -72,9 +73,9 @@ echo "[3/5] STAGE 1: COLD-START CoT SFT WARM-UP (4,000 CoT Solutions)"
 echo "================================================================="
 if [ "$NUM_GPUS" -gt 1 ]; then
     echo "🚀 Running PyTorch DDP SFT Warm-up on $NUM_GPUS GPUs..."
-    torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100 || true
+    torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100
 else
-    CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100 || true
+    CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100
 fi
 
 # 5. Stage 2: GRPO V4 Parallel Multi-GPU Training Launch
@@ -109,14 +110,9 @@ echo "================================================================="
 echo "[5/5] STARTING PARALLEL GENERATIVE EVALUATION ($NUM_GPUS GPUs)"
 echo "================================================================="
 
-pkill -9 -f vllm 2>/dev/null || true
-pkill -9 -f python3 2>/dev/null || true
-rm -rf /dev/shm/vllm* /dev/shm/torch* /dev/shm/nccl* 2>/dev/null || true
-sleep 2
-
 GENERATIVE_SCRIPT="$REPO_ROOT/official_eval/run_araeval_generative.py"
 OUTPUT_DIR="/workspace/outputs/generative_eval_grpo_v4"
-TRAINED_CHECKPOINT=$(ls -d "$REPO_ROOT/outputs/qwen_4b_2x5090_v4_run/checkpoint-"* 2>/dev/null | tail -n 1 || echo "$REPO_ROOT/outputs/qwen_4b_2x5090_v4_run")
+TRAINED_CHECKPOINT=$(ls -d $GRPO_OUT/checkpoint-* 2>/dev/null | tail -n 1 || echo "$GRPO_OUT")
 
 echo ">>> Evaluating Final GRPO_V4 Checkpoint: $TRAINED_CHECKPOINT..."
 python3 "$GENERATIVE_SCRIPT" \
