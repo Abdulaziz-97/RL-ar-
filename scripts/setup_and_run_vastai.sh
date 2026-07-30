@@ -144,7 +144,7 @@ else
     echo "================================================================="
     nohup bash "$0" --fg > "$LOG_FILE" 2>&1 &
     sleep 2
-    echo "Process launched in background with PID: $!"
+    echo "Process launched in background."
     echo "Showing initial output:"
     echo "-----------------------------------------------------------------"
     tail -n 25 "$LOG_FILE"
