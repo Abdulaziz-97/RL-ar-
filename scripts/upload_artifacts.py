@@ -16,14 +16,31 @@ from pathlib import Path
 def upload_to_hf(repo_id: str, model_dir: str):
     print(f"\n[HuggingFace] Preparing to upload {model_dir} to {repo_id}...")
     token = os.environ.get("HF_TOKEN")
-    
+
+    # Copy master execution log and summary into model_dir so they get uploaded to HF
+    try:
+        model_path = Path(model_dir)
+        for log_src in [Path("/workspace/outputs/master_execution.log"), Path("/workspace/RL-ar-/master_execution.log")]:
+            if log_src.exists():
+                shutil.copy(log_src, model_path / "master_execution.log")
+                print("Added master_execution.log to HF model upload package!")
+                break
+
+        for eval_src in [Path("/workspace/outputs/generative_eval_grpo_v3/summary.json"), Path("/workspace/RL-ar-/outputs/generative_eval_grpo_v3/summary.json")]:
+            if eval_src.exists():
+                shutil.copy(eval_src, model_path / "generative_eval_summary.json")
+                print("Added generative_eval_summary.json to HF model upload package!")
+                break
+    except Exception as e:
+        print(f"Warning copying logs to model_dir: {e}")
+
     # Try using new 'hf' CLI tool first
     if shutil.which("hf"):
         try:
             if token:
                 subprocess.run(["hf", "auth", "login", "--token", token], check=True)
             subprocess.run(["hf", "upload", repo_id, model_dir, "."], check=True)
-            print(f"Successfully uploaded model adapters using 'hf' CLI to: https://huggingface.co/{repo_id}")
+            print(f"Successfully uploaded model adapters and logs using 'hf' CLI to: https://huggingface.co/{repo_id}")
             return
         except Exception as e:
             print(f"hf CLI upload failed ({e}), falling back to Python API...")
