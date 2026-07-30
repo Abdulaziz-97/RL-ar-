@@ -175,5 +175,78 @@ class TestArabicTerminalRenderer(unittest.TestCase):
         self.assertEqual(format_arabic_terminal_text(""), "")
 
 
+class TestMasterV44KDatasets(unittest.TestCase):
+    """Test 4,000 SFT + 4,000 RLVR master datasets structural integrity and zero overlap."""
+
+    def test_sft_dataset_4000_count_and_schema(self):
+        sft_path = Path("data/arabic_reasoning_coldstart_v4.jsonl")
+        self.assertTrue(sft_path.exists(), f"File missing: {sft_path}")
+        
+        samples = []
+        with open(sft_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    samples.append(json.loads(line))
+                    
+        self.assertEqual(len(samples), 4000, f"Expected 4000 SFT samples, got {len(samples)}")
+        
+        # Check first 50 sample schema & tags
+        for s in samples[:50]:
+            self.assertIn("prompt", s)
+            self.assertIn("solution", s)
+            self.assertIn("gold", s)
+            self.assertIn("<think>", s["solution"])
+            self.assertIn("</think>", s["solution"])
+            self.assertIn("<answer>", s["solution"])
+            self.assertIn("</answer>", s["solution"])
+
+    def test_rlvr_dataset_4000_count_and_schema(self):
+        rlvr_path = Path("data/arabic_reasoning_rlvr_v4.jsonl")
+        self.assertTrue(rlvr_path.exists(), f"File missing: {rlvr_path}")
+        
+        samples = []
+        with open(rlvr_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    samples.append(json.loads(line))
+                    
+        self.assertEqual(len(samples), 4000, f"Expected 4000 RLVR prompts, got {len(samples)}")
+        
+        # Check first 50 sample schema & verifiers
+        for s in samples[:50]:
+            self.assertIn("prompt", s)
+            self.assertIn("answer_spec", s)
+            self.assertIn("ground_truth", s["answer_spec"])
+            self.assertIn("verifier", s["answer_spec"])
+
+    def test_datasets_zero_duplicates_and_zero_overlap(self):
+        sft_path = Path("data/arabic_reasoning_coldstart_v4.jsonl")
+        rlvr_path = Path("data/arabic_reasoning_rlvr_v4.jsonl")
+        
+        sft_prompts = []
+        with open(sft_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    p = json.loads(line).get("prompt", "").strip()
+                    sft_prompts.append(" ".join(p.split()))
+                    
+        rlvr_prompts = []
+        with open(rlvr_path, "r", encoding="utf-8") as f:
+            for line in f:
+                if line.strip():
+                    p = json.loads(line).get("prompt", "").strip()
+                    rlvr_prompts.append(" ".join(p.split()))
+                    
+        set_sft = set(sft_prompts)
+        set_rlvr = set(rlvr_prompts)
+        
+        self.assertEqual(len(sft_prompts), len(set_sft), "SFT dataset contains internal duplicate prompts!")
+        self.assertEqual(len(rlvr_prompts), len(set_rlvr), "RLVR dataset contains internal duplicate prompts!")
+        
+        overlap = set_sft.intersection(set_rlvr)
+        self.assertEqual(len(overlap), 0, f"Found {len(overlap)} prompt overlaps between SFT and RLVR!")
+
+
 if __name__ == "__main__":
     unittest.main()
+
