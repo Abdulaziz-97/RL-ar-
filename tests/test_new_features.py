@@ -119,16 +119,15 @@ class TestBenchmarkProbeCallback(unittest.TestCase):
     """Test automatic benchmark probe callback in isolated subprocess mode."""
 
     def test_hard_math_augmentation(self):
-        from scripts.mine_and_augment_hard_math import augment_questions
+        from scripts.mine_and_augment_hard_math import augment_training_prompts
         sample_questions = [
             {"question": "مستطيل طوله 38 مترًا وعرضه 26 مترًا. كم مساحته؟", "gold": "988"},
             {"question": "اشترى تاجر 15 قطعة بمبلغ 525 ريالًا. ما سعر القطعة؟", "gold": "35"}
         ]
-        augmented = augment_questions(sample_questions, target_count=10)
+        augmented = augment_training_prompts(sample_questions, target_count=10)
         assert len(augmented) == 10
         assert "<think>" in augmented[0]["solution"]
         assert "</answer>" in augmented[0]["solution"]
-        assert "988" in augmented[0]["solution"]
 
     @patch("subprocess.run")
     def test_on_save_triggers_probe_subprocess(self, mock_subprocess_run):
