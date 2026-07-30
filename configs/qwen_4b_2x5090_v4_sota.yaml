@@ -6,9 +6,9 @@ instruction_base_model: "aziz9788/T06__qwen35-mixed-v6-lr1e5"
 load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
 
-# LoRA Configuration (High Capacity r=128, alpha=256)
-lora_r: 128
-lora_alpha: 256
+# LoRA Configuration Matched 1-to-1 with T06 SOTA Adapter (r=32, alpha=32, rsLoRA=true)
+lora_r: 32
+lora_alpha: 32
 lora_dropout: 0.05
 lora_target_modules:
   - "q_proj"
@@ -87,11 +87,11 @@ early_diag_steps: 30
 
 # Infrastructure & Evaluation Checkpointing Settings
 output_dir: "./outputs/qwen_4b_2x5090_v4_run"
-eval_strategy: "steps"           # ← Evaluation checkpointing active
-eval_steps: 50                   # ← Evaluates every 50 steps
-per_device_eval_batch_size: 2    # ← Eval batch size
+eval_strategy: "steps"
+eval_steps: 50
+per_device_eval_batch_size: 2
 logging_steps: 10
-save_strategy: "steps"           # ← Save checkpoint every 50 steps
+save_strategy: "steps"
 save_steps: 50
 save_total_limit: 5
 log_completions: true
