@@ -1,0 +1,63 @@
+# GRPO_V4 Master SOTA Recipe (2x RTX 5090 / 2x A100 / 2x H100)
+# Goal: 90%+ SOTA Reasoning Accuracy with 100% Clean Benchmark Isolation
+
+model_name: "unsloth/Qwen3.5-4B"
+load_in_4bit: false
+use_lora: true
+lora_r: 32
+lora_alpha: 64
+lora_dropout: 0.05
+lora_target_modules:
+  - "q_proj"
+  - "k_proj"
+  - "v_proj"
+  - "o_proj"
+  - "gate_proj"
+  - "up_proj"
+  - "down_proj"
+
+# Datasets (100% Clean Test-Set Isolation)
+coldstart_data_path: "data/arabic_reasoning_coldstart_hard_math_v4.jsonl"
+train_data_path: "data/arabic_reasoning_rlvr_hard_v3.jsonl"
+output_dir: "./outputs/qwen_4b_2x5090_v4_run"
+
+# V4 Key Upgrade #1: Token Extension to Prevent Truncation (6.25% -> 0%)
+max_completion_length: 2048
+max_prompt_length: 1024
+
+# V4 Key Upgrade #2: Expanded Rollouts for Hard Problem Exploration (16 -> 32)
+num_generations: 32
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 16  # (2 * 16 = 32 generation batch size, perfectly divisible by N=32)
+
+# V4 Key Upgrade #3: Training Duration & Step Schedule
+max_steps: 105
+learning_rate: 1.0e-5
+weight_decay: 0.01
+warmup_ratio: 0.1
+lr_scheduler_type: "cosine"
+
+# V4 Key Upgrade #4: Exploration & Stability Control
+beta: 0.001
+entropy_coef: 0.05
+epsilon: 0.2
+epsilon_high: 0.28
+temperature: 0.7
+top_p: 0.9
+top_k: 50
+
+# Loss & Rewards
+loss_type: "grpo"
+importance_sampling_level: "token"
+scale_rewards: "group_std"
+curriculum_schedule_type: "linear"
+zero_variance_strategy: "direct_scoring"
+enable_crps: false
+
+reward_weights:
+  correctness: 2.5
+  format: 1.0
+  language: 0.5
+  answer_leak: 1.0
+  structural_leak: 1.0
+  length_penalty: 0.2
