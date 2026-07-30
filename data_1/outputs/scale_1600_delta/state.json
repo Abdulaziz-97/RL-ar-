@@ -1,0 +1,16 @@
+{
+  "completed_stages": [
+    "family_partition",
+    "latent_spec",
+    "deterministic_solve",
+    "arabic_render",
+    "multi_trace",
+    "step_verify",
+    "concision",
+    "gates",
+    "select_quarantine",
+    "release_prep"
+  ],
+  "seed": 1600,
+  "config_fingerprint": "c0d74dd8f1086aa236acfadb6295692d65b180ac78cd2efe52afd5308be3ad99"
+}

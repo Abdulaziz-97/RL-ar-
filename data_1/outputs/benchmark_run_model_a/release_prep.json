@@ -1,0 +1,26 @@
+{
+  "sft_train": {
+    "path": "C:\\Users\\Azooo\\RL-ar--1\\data_1\\outputs\\benchmark_run_model_a\\release_corpora\\sft_train.jsonl",
+    "n": 3
+  },
+  "sft_eval": {
+    "path": "C:\\Users\\Azooo\\RL-ar--1\\data_1\\outputs\\benchmark_run_model_a\\release_corpora\\sft_eval.jsonl",
+    "n": 0
+  },
+  "rlvr_train": {
+    "path": "C:\\Users\\Azooo\\RL-ar--1\\data_1\\outputs\\benchmark_run_model_a\\release_corpora\\rlvr_train.jsonl",
+    "n": 5
+  },
+  "rlvr_eval": {
+    "path": "C:\\Users\\Azooo\\RL-ar--1\\data_1\\outputs\\benchmark_run_model_a\\release_corpora\\rlvr_eval.jsonl",
+    "n": 0
+  },
+  "private_eval": {
+    "path": "C:\\Users\\Azooo\\RL-ar--1\\data_1\\outputs\\benchmark_run_model_a\\release_corpora\\private_eval.jsonl",
+    "n": 0
+  },
+  "rejection_sft": {
+    "path": "C:\\Users\\Azooo\\RL-ar--1\\data_1\\outputs\\benchmark_run_model_a\\release_corpora\\rejection_sft.jsonl",
+    "n": 0
+  }
+}

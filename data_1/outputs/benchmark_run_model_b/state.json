@@ -1,0 +1,10 @@
+{
+  "completed_stages": [
+    "family_partition",
+    "latent_spec",
+    "deterministic_solve",
+    "arabic_render"
+  ],
+  "seed": 890,
+  "config_fingerprint": "a2f0460bc06d47d9d0d5401a5fac9c19deb6d1c4a0c573ce2c9f3594bbeb926c"
+}

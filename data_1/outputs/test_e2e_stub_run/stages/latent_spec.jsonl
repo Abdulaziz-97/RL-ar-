@@ -1,0 +1,1 @@
+{"family_id": "fam_gsm8k_00000_s999", "domain": "gsm8k", "partition": "sft_train", "answer_spec": {"type": "integer", "canonical": "1008", "ground_truth_structured": 1008}, "latent": {"kind": "sum", "a": 141, "b": 867, "seed": 999}, "seed": 999}

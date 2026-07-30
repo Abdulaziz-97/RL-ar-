@@ -1,0 +1,54 @@
+=== 1,707 RLVR DATASET QUALITY AUDIT REPORT ===
+Total Samples: 1707
+Domain Breakdown: {'gsm8k': 387, 'math': 983, 'math_comp': 291, 'logic': 46}
+Prompt Lengths (chars): Min=18, Max=456, Avg=71.5
+Duplicate Prompts Count: 92 (Total duplicated entries: 189)
+Low-Arabic / Suspicious Encoding Samples: 0
+Ground Truth Classification: {'pure_number': 1657, 'latex_expression': 4, 'mcq_letter': 0, 'text_phrase': 46, 'empty_or_invalid': 0}
+Missing / Invalid Ground Truth Indices: []
+
+=== SAMPLE INSPECTION BY DOMAIN ===
+
+--- DOMAIN: gsm8k ---
+[1] ID: prob_gsm8k_01364_33704185
+    Prompt: يُقسَم مبلغ 105 ريالًا بين شخصين بنسبة 4:3. كم ريالًا يحصل عليه صاحب النسبة 4؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '60', 'ground_truth_structured': 60}
+[2] ID: prob_gsm8k_01436_18423905
+    Prompt: راتبه الشهري 5696 ريالًا، ويدّخر 1/8 منه كل شهر. كم يدّخر خلال 4 أشهر؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '2848', 'ground_truth_structured': 2848}
+[3] ID: prob_gsm8k_01396_75536006
+    Prompt: يُقسَم مبلغ 60 ريالًا بين شخصين بنسبة 2:4. كم ريالًا يحصل عليه صاحب النسبة 2؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '20', 'ground_truth_structured': 20}
+
+--- DOMAIN: math ---
+[1] ID: prob_math_01257_93411941
+    Prompt: سعر سلعة 20 ريالًا، وعليها خصم بنسبة 20%. كم يصبح السعر بعد الخصم؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '16', 'ground_truth_structured': 16}
+[2] ID: prob_math_01349_65795418
+    Prompt: أُودع مبلغ 820 ريالًا بفائدة بسيطة سنوية 5% لمدة 2 سنوات. كم تبلغ الفائدة؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '82', 'ground_truth_structured': 82}
+[3] ID: prob_math_01317_51758609
+    Prompt: سيارة تسير بسرعة 113 كيلومترًا في الساعة لمدة 3 ساعات. كم كيلومترًا تقطع؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '339', 'ground_truth_structured': 339}
+
+--- DOMAIN: math_comp ---
+[1] ID: prob_math_comp_01274_35248097
+    Prompt: أحسب 35 modulo 17 (باقي القسمة)....
+    AnswerSpec: {'type': 'integer', 'canonical': '1', 'ground_truth_structured': 1}
+[2] ID: prob_math_comp_01222_83795114
+    Prompt: متتالية حسابية حدها الأول 10 والأساس 9. ما قيمة الحد رقم 8؟...
+    AnswerSpec: {'type': 'integer', 'canonical': '73', 'ground_truth_structured': 73}
+[3] ID: prob_math_comp_01406_57626678
+    Prompt: أحسب 130 modulo 7 (باقي القسمة)....
+    AnswerSpec: {'type': 'integer', 'canonical': '4', 'ground_truth_structured': 4}
+
+--- DOMAIN: logic ---
+[1] ID: prob_logic_01267_19134157
+    Prompt: ثلاثة أشخاص: يوسف وماجد وعمر. واحد صادق دائمًا وواحد كاذب دائمًا وواحد متقلب. قال يوسف: «ماجد هو الكاذب». قال ماجد: «عمر...
+    AnswerSpec: {'type': 'logic_json', 'canonical': '{"عمر":"متقلب","ماجد":"كاذب","يوسف":"صادق"}', 'ground_truth_structured': {'عمر': 'متقلب', 'ماجد': 'كاذب', 'يوسف': 'صادق'}}
+[2] ID: prob_logic_01459_08987184
+    Prompt: ثلاثة أشخاص: فيصل وماجد وتركي. واحد صادق دائمًا وواحد كاذب دائمًا وواحد متقلب. قال فيصل: «ماجد هو الكاذب». قال ماجد: «تر...
+    AnswerSpec: {'type': 'logic_json', 'canonical': '{"تركي":"متقلب","فيصل":"صادق","ماجد":"كاذب"}', 'ground_truth_structured': {'تركي': 'متقلب', 'فيصل': 'صادق', 'ماجد': 'كاذب'}}
+[3] ID: prob_logic_01363_07681485
+    Prompt: ثلاثة أشخاص: خالد وأحمد ويوسف. واحد صادق دائمًا وواحد كاذب دائمًا وواحد متقلب. قال خالد: «أحمد هو الكاذب». قال أحمد: «يو...
+    AnswerSpec: {'type': 'logic_json', 'canonical': '{"أحمد":"كاذب","خالد":"صادق","يوسف":"متقلب"}', 'ground_truth_structured': {'أحمد': 'كاذب', 'خالد': 'صادق', 'يوسف': 'متقلب'}}

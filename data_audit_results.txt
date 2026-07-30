@@ -1,0 +1,7 @@
+Total lines: 1707
+Keys in first item: ['id', 'domain', 'partition', 'prompt', 'response', 'answer_spec', 'metadata']
+Domains: {'gsm8k': 387, 'math': 983, 'math_comp': 291, 'logic': 46}
+Empty prompts: 0
+Empty targets: 0
+Extracted targets count: 1707
+Sample ground truths: ['60', '2848', '20', '4', '1653', '530', '45', '22', '147', '44']

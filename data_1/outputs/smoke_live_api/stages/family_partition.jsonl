@@ -1,0 +1,6 @@
+{"family_id": "fam_arapro_knowledge_00000_s777", "domain": "arapro_knowledge", "partition": "sft_train", "seed": 777}
+{"family_id": "fam_ifeval_multiconstraint_00001_s777", "domain": "ifeval_multiconstraint", "partition": "sft_train", "seed": 778}
+{"family_id": "fam_aratrust_truth_00002_s777", "domain": "aratrust_truth", "partition": "sft_train", "seed": 779}
+{"family_id": "fam_arapro_knowledge_00003_s777", "domain": "arapro_knowledge", "partition": "sft_train", "seed": 780}
+{"family_id": "fam_ifeval_multiconstraint_00004_s777", "domain": "ifeval_multiconstraint", "partition": "sft_train", "seed": 781}
+{"family_id": "fam_aratrust_truth_00005_s777", "domain": "aratrust_truth", "partition": "sft_train", "seed": 782}

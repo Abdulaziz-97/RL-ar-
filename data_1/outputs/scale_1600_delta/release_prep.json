@@ -1,0 +1,26 @@
+{
+  "sft_train": {
+    "path": "outputs\\scale_1600_delta\\release_corpora\\sft_train.jsonl",
+    "n": 1051
+  },
+  "sft_eval": {
+    "path": "outputs\\scale_1600_delta\\release_corpora\\sft_eval.jsonl",
+    "n": 0
+  },
+  "rlvr_train": {
+    "path": "outputs\\scale_1600_delta\\release_corpora\\rlvr_train.jsonl",
+    "n": 0
+  },
+  "rlvr_eval": {
+    "path": "outputs\\scale_1600_delta\\release_corpora\\rlvr_eval.jsonl",
+    "n": 0
+  },
+  "private_eval": {
+    "path": "outputs\\scale_1600_delta\\release_corpora\\private_eval.jsonl",
+    "n": 0
+  },
+  "rejection_sft": {
+    "path": "outputs\\scale_1600_delta\\release_corpora\\rejection_sft.jsonl",
+    "n": 0
+  }
+}
