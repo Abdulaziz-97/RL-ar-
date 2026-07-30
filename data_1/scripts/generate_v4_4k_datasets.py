@@ -14,42 +14,47 @@ def normalize_prompt(text: str) -> str:
 
 def main():
     rng = random.Random(890)
+    root_dir = PACK_ROOT.parent
     
-    # 1. Load Existing 1,700 SFT Samples
-    existing_sft_path = PACK_ROOT / "release_1600" / "sft_1600.jsonl"
+    # 1. Load Base V3 SFT Dataset (data/arabic_reasoning_coldstart_train.jsonl)
+    base_sft_path = root_dir / "data" / "arabic_reasoning_coldstart_train.jsonl"
     sft_samples = []
-    seen_prompts = set()
+    seen_sft = set()
     
-    if existing_sft_path.exists():
-        with open(existing_sft_path, "r", encoding="utf-8") as f:
+    if base_sft_path.exists():
+        with open(base_sft_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     item = json.loads(line)
-                    prompt_norm = normalize_prompt(item.get("prompt", ""))
-                    if prompt_norm and prompt_norm not in seen_prompts:
-                        seen_prompts.add(prompt_norm)
+                    prompt_norm = normalize_prompt(item.get("prompt", "") or item.get("question", ""))
+                    if prompt_norm and prompt_norm not in seen_sft:
+                        seen_sft.add(prompt_norm)
                         sft_samples.append(item)
-    print(f"[INFO] Loaded {len(sft_samples)} existing SFT samples.")
+    print(f"[INFO] Loaded {len(sft_samples)} base V3 SFT samples from {base_sft_path.name}.")
 
-    # 2. Load Existing 1,700 RLVR Samples
-    existing_rlvr_path = PACK_ROOT / "release_1600" / "rlvr_1600.jsonl"
+    # 2. Load Base V3 RLVR Dataset (data/arabic_reasoning_rlvr_hard_v3.jsonl or arabic_reasoning_rlvr_train.jsonl)
+    base_rlvr_path = root_dir / "data" / "arabic_reasoning_rlvr_hard_v3.jsonl"
+    if not base_rlvr_path.exists():
+        base_rlvr_path = root_dir / "data" / "arabic_reasoning_rlvr_train.jsonl"
+        
     rlvr_samples = []
+    seen_rlvr = set()
     
-    if existing_rlvr_path.exists():
-        with open(existing_rlvr_path, "r", encoding="utf-8") as f:
+    if base_rlvr_path.exists():
+        with open(base_rlvr_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     item = json.loads(line)
-                    prompt_norm = normalize_prompt(item.get("prompt", ""))
-                    if prompt_norm and prompt_norm not in seen_prompts:
-                        seen_prompts.add(prompt_norm)
+                    prompt_norm = normalize_prompt(item.get("prompt", "") or item.get("question", ""))
+                    if prompt_norm and prompt_norm not in seen_rlvr:
+                        seen_rlvr.add(prompt_norm)
                         rlvr_samples.append(item)
-    print(f"[INFO] Loaded {len(rlvr_samples)} existing RLVR samples.")
+    print(f"[INFO] Loaded {len(rlvr_samples)} base V3 RLVR samples from {base_rlvr_path.name}.")
 
     domains = ["gsm8k", "math", "math_comp", "logic", "arapro_knowledge", "ifeval_multiconstraint", "aratrust_truth"]
     domain_weights = [0.25, 0.20, 0.20, 0.15, 0.08, 0.06, 0.06]
 
-    # 3. Generate New Non-Duplicate SFT Samples to reach 4,000
+    # 3. Generate New Non-Duplicate SFT Samples to reach exactly 4,000
     target_total = 4000
     needed_sft = target_total - len(sft_samples)
     print(f"[INFO] Generating {needed_sft} new non-duplicate SFT samples...")
@@ -63,10 +68,10 @@ def main():
         sample = gen_func(rng)
         
         prompt_norm = normalize_prompt(sample.prompt)
-        if prompt_norm in seen_prompts:
+        if prompt_norm in seen_sft:
             continue
             
-        seen_prompts.add(prompt_norm)
+        seen_sft.add(prompt_norm)
         cot_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(sample.solution_steps)])
         response_text = f"<think>\n{cot_text}\n</think>\n<answer>{sample.ground_truth}</answer>"
         
@@ -85,9 +90,9 @@ def main():
         sft_samples.append(item)
         new_sft_count += 1
 
-    print(f"[SUCCESS] Generated {new_sft_count} new non-duplicate SFT samples. Total SFT: {len(sft_samples)}")
+    print(f"[SUCCESS] Added {new_sft_count} new SFT samples. Total SFT: {len(sft_samples)}")
 
-    # 4. Generate New Non-Duplicate RLVR Samples to reach 4,000
+    # 4. Generate New Non-Duplicate RLVR Samples to reach exactly 4,000
     needed_rlvr = target_total - len(rlvr_samples)
     print(f"[INFO] Generating {needed_rlvr} new non-duplicate RLVR samples...")
     
@@ -100,10 +105,10 @@ def main():
         sample = gen_func(rng)
         
         prompt_norm = normalize_prompt(sample.prompt)
-        if prompt_norm in seen_prompts:
+        if prompt_norm in seen_rlvr or prompt_norm in seen_sft:
             continue
             
-        seen_prompts.add(prompt_norm)
+        seen_rlvr.add(prompt_norm)
         item = {
             "id": f"rlvr_v4_{len(rlvr_samples)+1:04d}",
             "domain": dom,
@@ -123,25 +128,22 @@ def main():
         rlvr_samples.append(item)
         new_rlvr_count += 1
 
-    print(f"[SUCCESS] Generated {new_rlvr_count} new non-duplicate RLVR samples. Total RLVR: {len(rlvr_samples)}")
+    print(f"[SUCCESS] Added {new_rlvr_count} new RLVR samples. Total RLVR: {len(rlvr_samples)}")
 
     # 5. Save Master 4,000 Datasets
     out_dir = PACK_ROOT / "release_4000"
     out_dir.mkdir(exist_ok=True)
     
-    sft_out = out_dir / "sft_4000.jsonl"
-    rlvr_out = out_dir / "rlvr_4000.jsonl"
-    
-    with open(sft_out, "w", encoding="utf-8") as f:
+    with open(out_dir / "sft_4000.jsonl", "w", encoding="utf-8") as f:
         for item in sft_samples:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
             
-    with open(rlvr_out, "w", encoding="utf-8") as f:
+    with open(out_dir / "rlvr_4000.jsonl", "w", encoding="utf-8") as f:
         for item in rlvr_samples:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    # Also update pipeline root data/ directory
-    pipeline_data_dir = PACK_ROOT.parent / "data"
+    # Update pipeline data/ directory
+    pipeline_data_dir = root_dir / "data"
     pipeline_data_dir.mkdir(exist_ok=True)
     
     with open(pipeline_data_dir / "arabic_reasoning_coldstart_v4.jsonl", "w", encoding="utf-8") as f:
@@ -152,7 +154,7 @@ def main():
         for item in rlvr_samples:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    print(f"[COMPLETE] Master 4,000 SFT and 4,000 RLVR datasets saved to release_4000/ and data/")
+    print(f"[COMPLETE] Combined datasets saved to data/arabic_reasoning_coldstart_v4.jsonl (4,000) and data/arabic_reasoning_rlvr_v4.jsonl (4,000)!")
 
 if __name__ == "__main__":
     main()
