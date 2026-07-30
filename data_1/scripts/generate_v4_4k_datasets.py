@@ -19,37 +19,53 @@ def main():
     # 1. Load Base V3 SFT Dataset (data/arabic_reasoning_coldstart_train.jsonl)
     base_sft_path = root_dir / "data" / "arabic_reasoning_coldstart_train.jsonl"
     sft_samples = []
-    seen_sft = set()
+    seen_sft_prompts = set()
     
     if base_sft_path.exists():
         with open(base_sft_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     item = json.loads(line)
-                    prompt_norm = normalize_prompt(item.get("prompt", "") or item.get("question", ""))
-                    if prompt_norm and prompt_norm not in seen_sft:
-                        seen_sft.add(prompt_norm)
+                    prompt_raw = item.get("prompt", "") or item.get("question", "")
+                    prompt_norm = normalize_prompt(prompt_raw)
+                    if prompt_norm and prompt_norm not in seen_sft_prompts:
+                        seen_sft_prompts.add(prompt_norm)
+                        # Normalize schema fields
+                        resp = item.get("response", "") or item.get("solution", "")
+                        gold = str(item.get("gold", "") or item.get("metadata", {}).get("ground_truth", "") or item.get("answer_spec", {}).get("canonical", ""))
+                        item["prompt"] = prompt_raw
+                        item["response"] = resp
+                        item["solution"] = resp
+                        item["gold"] = gold
                         sft_samples.append(item)
     print(f"[INFO] Loaded {len(sft_samples)} base V3 SFT samples from {base_sft_path.name}.")
 
-    # 2. Load Base V3 RLVR Dataset (data/arabic_reasoning_rlvr_hard_v3.jsonl or arabic_reasoning_rlvr_train.jsonl)
+    # 2. Load Base V3 RLVR Dataset (data/arabic_reasoning_rlvr_hard_v3.jsonl) - EXCLUDE any prompts already in SFT
     base_rlvr_path = root_dir / "data" / "arabic_reasoning_rlvr_hard_v3.jsonl"
     if not base_rlvr_path.exists():
         base_rlvr_path = root_dir / "data" / "arabic_reasoning_rlvr_train.jsonl"
         
     rlvr_samples = []
-    seen_rlvr = set()
+    seen_rlvr_prompts = set()
     
     if base_rlvr_path.exists():
         with open(base_rlvr_path, "r", encoding="utf-8") as f:
             for line in f:
                 if line.strip():
                     item = json.loads(line)
-                    prompt_norm = normalize_prompt(item.get("prompt", "") or item.get("question", ""))
-                    if prompt_norm and prompt_norm not in seen_rlvr:
-                        seen_rlvr.add(prompt_norm)
+                    prompt_raw = item.get("prompt", "") or item.get("question", "")
+                    prompt_norm = normalize_prompt(prompt_raw)
+                    # CRITICAL ISOLATION RULE: Reject any prompt that is already in SFT!
+                    if prompt_norm and prompt_norm not in seen_sft_prompts and prompt_norm not in seen_rlvr_prompts:
+                        seen_rlvr_prompts.add(prompt_norm)
+                        gold = str(item.get("gold", "") or item.get("metadata", {}).get("ground_truth", "") or item.get("answer_spec", {}).get("canonical", ""))
+                        ans_spec = item.get("answer_spec", {})
+                        ans_spec["ground_truth"] = gold
+                        item["prompt"] = prompt_raw
+                        item["answer_spec"] = ans_spec
+                        item["gold"] = gold
                         rlvr_samples.append(item)
-    print(f"[INFO] Loaded {len(rlvr_samples)} base V3 RLVR samples from {base_rlvr_path.name}.")
+    print(f"[INFO] Loaded {len(rlvr_samples)} clean non-overlapping base RLVR samples.")
 
     domains = ["gsm8k", "math", "math_comp", "logic", "arapro_knowledge", "ifeval_multiconstraint", "aratrust_truth"]
     domain_weights = [0.25, 0.20, 0.20, 0.15, 0.08, 0.06, 0.06]
@@ -68,10 +84,10 @@ def main():
         sample = gen_func(rng)
         
         prompt_norm = normalize_prompt(sample.prompt)
-        if prompt_norm in seen_sft:
+        if prompt_norm in seen_sft_prompts or prompt_norm in seen_rlvr_prompts:
             continue
             
-        seen_sft.add(prompt_norm)
+        seen_sft_prompts.add(prompt_norm)
         cot_text = "\n".join([f"{i+1}. {step}" for i, step in enumerate(sample.solution_steps)])
         response_text = f"<think>\n{cot_text}\n</think>\n<answer>{sample.ground_truth}</answer>"
         
@@ -105,18 +121,20 @@ def main():
         sample = gen_func(rng)
         
         prompt_norm = normalize_prompt(sample.prompt)
-        if prompt_norm in seen_rlvr or prompt_norm in seen_sft:
+        if prompt_norm in seen_sft_prompts or prompt_norm in seen_rlvr_prompts:
             continue
             
-        seen_rlvr.add(prompt_norm)
+        seen_rlvr_prompts.add(prompt_norm)
         item = {
             "id": f"rlvr_v4_{len(rlvr_samples)+1:04d}",
             "domain": dom,
             "prompt": sample.prompt,
             "response": "",
+            "gold": str(sample.ground_truth),
             "answer_spec": {
                 "domain": dom,
-                "ground_truth": sample.ground_truth,
+                "ground_truth": str(sample.ground_truth),
+                "canonical": str(sample.ground_truth),
                 "verifier": "numeric" if isinstance(sample.ground_truth, (int, float)) else "logic_json"
             },
             "difficulty_tag": "medium" if len(sample.solution_steps) >= 3 else "easy",
