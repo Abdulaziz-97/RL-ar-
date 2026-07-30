@@ -25,10 +25,10 @@ output_dir: "./outputs/qwen_4b_2x5090_v4_run"
 max_completion_length: 2048
 max_prompt_length: 1024
 
-# V4 Key Upgrade #2: Expanded Rollouts for Hard Problem Exploration (16 -> 32)
-num_generations: 32
+# V4 Key Upgrade #2: Rollouts & Batching (N=16 Rollouts + RLVR-ZVP)
+num_generations: 16
 per_device_train_batch_size: 2
-gradient_accumulation_steps: 16  # (2 * 16 = 32 generation batch size, perfectly divisible by N=32)
+gradient_accumulation_steps: 8  # (2 * 8 = 16 generation batch size, perfectly divisible by N=16)
 
 # V4 Key Upgrade #3: Training Duration & Step Schedule
 max_steps: 105
