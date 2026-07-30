@@ -48,13 +48,26 @@ def commit_logs_to_github():
     logs_dir = Path("outputs_logs")
     logs_dir.mkdir(exist_ok=True)
 
+    # Set git author identity if not configured
+    try:
+        subprocess.run(["git", "config", "user.email", "abdulaziz@saudi-llm.ai"], check=False)
+        subprocess.run(["git", "config", "user.name", "Abdulaziz"], check=False)
+    except Exception:
+        pass
+
     # Copy key logs if they exist
     src_master = Path("/workspace/outputs/master_execution.log")
+    if not src_master.exists():
+        src_master = Path("/workspace/RL-ar-/master_execution.log")
+
     if src_master.exists():
         shutil.copy(src_master, logs_dir / "master_execution.log")
         print("Copied master_execution.log to outputs_logs/")
 
     src_eval = Path("/workspace/outputs/generative_eval_grpo_v3/summary.json")
+    if not src_eval.exists():
+        src_eval = Path("/workspace/RL-ar-/outputs/generative_eval_grpo_v3/summary.json")
+
     if src_eval.exists():
         shutil.copy(src_eval, logs_dir / "generative_eval_summary.json")
         print("Copied generative_eval_summary.json to outputs_logs/")
@@ -78,19 +91,20 @@ def main():
         candidates = [
             Path("/workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
             Path("/workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run"),
-            Path("/workspace/outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
-            Path("/workspace/outputs/qwen_4b_2x5090_v3_run"),
             Path("./outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
             Path("./outputs/qwen_4b_2x5090_v3_run"),
+            Path("/workspace/outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
+            Path("/workspace/outputs/qwen_4b_2x5090_v3_run"),
         ]
+        model_dir = None
         for c in candidates:
             if c.exists() and (c / "adapter_model.safetensors").exists():
                 model_dir = str(c.resolve())
                 break
-            elif c.exists() and not model_dir:
+            elif c.exists() and model_dir is None:
                 model_dir = str(c.resolve())
 
-    print(f"[INFO] Using model directory: {model_dir}")
+    print(f"[INFO] Using verified model directory: {model_dir}")
 
     if not model_dir or not Path(model_dir).exists():
         print(f"Error: Model directory not found in candidates!")
