@@ -38,6 +38,7 @@ ScaleRewards = Literal["group", "batch", "off"]
 class RLVRConfig:
     # Model
     model_name: str = "Qwen/Qwen3.5-2B"
+    instruction_base_model: Optional[str] = None
     load_in_4bit: bool = True
     bnb_4bit_compute_dtype: str = "float16"
     bnb_4bit_quant_type: str = "nf4"

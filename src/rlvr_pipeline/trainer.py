@@ -243,12 +243,17 @@ def build_sft_trainer(
 
     if model is None:
         from transformers import AutoModelForCausalLM
-        from peft import get_peft_model
+        from peft import PeftModel, get_peft_model
         init_kwargs = config.build_model_init_kwargs()
         base_model = AutoModelForCausalLM.from_pretrained(config.model_name, **init_kwargs)
         if not hasattr(base_model.config, "text_config"):
             base_model.config.text_config = base_model.config
-        model = get_peft_model(base_model, peft_config)
+        
+        if config.instruction_base_model:
+            print(f"Loading SFT warm-up base adapter from Hugging Face ({config.instruction_base_model})...", flush=True)
+            model = PeftModel.from_pretrained(base_model, config.instruction_base_model, is_trainable=True)
+        else:
+            model = get_peft_model(base_model, peft_config)
         peft_config = None
 
     trainer = SFTTrainer(
@@ -313,6 +318,9 @@ def build_trainer(
         if config.sft_checkpoint_path and os.path.exists(os.path.join(config.sft_checkpoint_path, "adapter_config.json")):
             print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
             model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
+        elif config.instruction_base_model:
+            print(f"Loading instruction base model adapter from Hugging Face ({config.instruction_base_model})...", flush=True)
+            model = PeftModel.from_pretrained(base_model, config.instruction_base_model, is_trainable=True)
         else:
             if config.sft_checkpoint_path:
                 print(f"Warning: Valid adapter_config.json not found in {config.sft_checkpoint_path}. Initializing new PEFT adapter on base model.", flush=True)
