@@ -16,9 +16,9 @@ lora_target_modules:
   - "up_proj"
   - "down_proj"
 
-# Datasets (100% Clean Test-Set Isolation)
+# Datasets (100% Clean Test-Set Isolation — 4,000 SFT + 4,000 RLVR)
 coldstart_data_path: "data/arabic_reasoning_coldstart_v4.jsonl"
-train_data_path: "data/arabic_reasoning_rlvr_hard_v3.jsonl"
+train_data_path: "data/arabic_reasoning_rlvr_v4.jsonl"
 output_dir: "./outputs/qwen_4b_2x5090_v4_run"
 
 # V4 Key Upgrade #1: Token Extension to Prevent Truncation (6.25% -> 0%)
@@ -30,8 +30,8 @@ num_generations: 16
 per_device_train_batch_size: 2
 gradient_accumulation_steps: 8  # (2 * 8 = 16 generation batch size, perfectly divisible by N=16)
 
-# V4 Key Upgrade #3: Training Duration & Step Schedule
-max_steps: 105
+# V4 Key Upgrade #3: Training Duration & Step Schedule (4,000 prompts / 32 per step = 125 steps = 1 full epoch)
+max_steps: 125
 learning_rate: 1.0e-5
 weight_decay: 0.01
 warmup_ratio: 0.1
