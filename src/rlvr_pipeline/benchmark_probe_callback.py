@@ -35,15 +35,25 @@ class BenchmarkProbeCallback(TrainerCallback):
 
         print(f"\n[AUTO-PROBE] Step {step}: Running benchmark probe on {ckpt_dir}...", flush=True)
         try:
-            from scripts.run_benchmark_probe import run_probe
-            metrics = run_probe(ckpt_dir, base_model=self.base_model)
-            if getattr(args, "report_to", None) and "wandb" in args.report_to:
-                try:
-                    import wandb
-                    if wandb.run is not None:
-                        log_dict = {f"probe/{k}": v for k, v in metrics.items()}
-                        wandb.log(log_dict, step=step)
-                except Exception:
-                    pass
+            import json
+            import sys
+            import subprocess
+
+            # Strip DDP env vars so vLLM initializes cleanly in subprocess
+            clean_env = os.environ.copy()
+            for key in ["MASTER_ADDR", "MASTER_PORT", "WORLD_SIZE", "RANK", "LOCAL_RANK"]:
+                clean_env.pop(key, None)
+
+            cmd = [
+                sys.executable,
+                "scripts/run_benchmark_probe.py",
+                "--model-dir", ckpt_dir,
+                "--base-model", self.base_model,
+            ]
+            res = subprocess.run(cmd, env=clean_env, capture_output=True, text=True, check=False)
+            if res.returncode == 0:
+                print(f"[AUTO-PROBE] Probe Output:\n{res.stdout}", flush=True)
+            else:
+                print(f"[AUTO-PROBE] Warning: Probe subprocess returned non-zero code {res.returncode}:\n{res.stderr}", flush=True)
         except Exception as e:
             print(f"[AUTO-PROBE] Warning: Probe skipped due to error: {e}", flush=True)
