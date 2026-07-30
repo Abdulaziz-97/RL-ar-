@@ -58,13 +58,14 @@ for item in rlvr_items:
 
 print(f"  • Unique RLVR Prompts: {len(rlvr_prompts)} (0 Internal Duplicates!)")
 print(f"  • Cross-Phase Overlapping Prompts with SFT: {overlap_count}")
-
 # 3. Final Summary
+assert overlap_count == 0, f"CONTAMINATION DETECTED! {overlap_count} overlapping prompts between SFT and RLVR!"
+
 print("\n" + "="*80)
-print(" 🏆 FINAL VERIFICATION RESULTS SUMMARY")
+print(" FINAL VERIFICATION RESULTS SUMMARY")
 print("="*80)
-print(f"  ✅ Phase 1 SFT Dataset:  4,000 / 4,000 Samples (100% Complete & Validated)")
-print(f"  ✅ Phase 2 RLVR Dataset: 4,000 / 4,000 Prompts (100% Complete & Validated)")
-print(f"  ✅ Zero-Overlap Guard:  {overlap_count} Overlapping Prompts (0.0% Overlap)")
-print(f"  ✅ Production Schema:   100% Validated for Vast.ai Training")
+print(f"  Phase 1 SFT Dataset:  {len(sft_items):,} / 4,000 Samples ({len(sft_items)/40:.1f}% Complete)")
+print(f"  Phase 2 RLVR Dataset: {len(rlvr_items):,} / 4,000 Prompts ({len(rlvr_items)/40:.1f}% Complete)")
+print(f"  Zero-Overlap Guard:  {overlap_count} Overlapping Prompts ({overlap_count/max(len(rlvr_items),1)*100:.1f}% Overlap)")
+print(f"  Production Schema:   Validated for Vast.ai Training")
 print("="*80)

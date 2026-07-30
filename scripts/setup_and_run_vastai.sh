@@ -10,7 +10,10 @@ mkdir -p /workspace/tmp /workspace/.hf_cache /workspace/outputs "$REPO_ROOT/outp
 
 # Function to run everything in background if --background or detached
 run_pipeline() {
-    exec > >(tee -a "$LOG_FILE") 2>&1
+    # Only tee to log when running in foreground directly; nohup already redirects
+    if [ -z "$_NOHUP_LAUNCHED" ]; then
+        exec > >(tee -a "$LOG_FILE") 2>&1
+    fi
 
     echo "================================================================="
     echo "INITIALIZING SAUDI-LLM GRPO V4 BACKGROUND PIPELINE"
@@ -92,7 +95,7 @@ run_pipeline() {
         SFT_ARG="--sft-checkpoint $SFT_OUT"
         echo "  * Chaining from Stage 1 SFT Checkpoint: $SFT_OUT"
     else
-        LATEST_SFT_CKPT=$(ls -d $SFT_OUT/checkpoint-* 2>/dev/null | tail -n 1 || echo "")
+        LATEST_SFT_CKPT=$(ls -d $SFT_OUT/checkpoint-* 2>/dev/null | sort -V | tail -n 1 || echo "")
         if [ -n "$LATEST_SFT_CKPT" ]; then
             SFT_ARG="--sft-checkpoint $LATEST_SFT_CKPT"
             echo "  * Chaining from Stage 1 SFT Checkpoint: $LATEST_SFT_CKPT"
@@ -116,7 +119,7 @@ run_pipeline() {
 
     GENERATIVE_SCRIPT="$REPO_ROOT/official_eval/run_araeval_generative.py"
     OUTPUT_DIR="/workspace/outputs/generative_eval_grpo_v4"
-    TRAINED_CHECKPOINT=$(ls -d $GRPO_OUT/checkpoint-* 2>/dev/null | tail -n 1 || echo "$GRPO_OUT")
+    TRAINED_CHECKPOINT=$(ls -d $GRPO_OUT/checkpoint-* 2>/dev/null | sort -V | tail -n 1 || echo "$GRPO_OUT")
 
     echo ">>> Evaluating Final GRPO_V4 Checkpoint: $TRAINED_CHECKPOINT..."
     python3 "$GENERATIVE_SCRIPT" \
@@ -142,7 +145,7 @@ else
     echo "Master Log Output File : $LOG_FILE"
     echo "To view live logs run  : tail -f $LOG_FILE"
     echo "================================================================="
-    nohup bash "$0" --fg > "$LOG_FILE" 2>&1 &
+    _NOHUP_LAUNCHED=1 nohup bash "$0" --fg > "$LOG_FILE" 2>&1 &
     sleep 2
     echo "Process launched in background."
     echo "Showing initial output:"

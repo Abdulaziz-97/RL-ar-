@@ -320,13 +320,18 @@ def build_trainer(
         if not hasattr(base_model.config, "text_config"):
             base_model.config.text_config = base_model.config
 
+        # Always merge instruction base model first if specified
+        if config.instruction_base_model:
+            print(f"Merging SOTA instruction base adapter ({config.instruction_base_model}) into base weights...", flush=True)
+            t06_peft = PeftModel.from_pretrained(base_model, config.instruction_base_model)
+            base_model = t06_peft.merge_and_unload()
+            del t06_peft
+            print(f"Instruction adapter merged successfully into base weights.", flush=True)
+
         if config.sft_checkpoint_path and os.path.exists(os.path.join(config.sft_checkpoint_path, "adapter_config.json")):
             print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
             model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
         elif config.instruction_base_model:
-            print(f"Merging SOTA instruction base adapter ({config.instruction_base_model}) into base weights...", flush=True)
-            t06_peft = PeftModel.from_pretrained(base_model, config.instruction_base_model)
-            base_model = t06_peft.merge_and_unload()
             print(f"Initializing fresh Rank-{config.lora_r} (alpha={config.lora_alpha}) LoRA adapter for GRPO training...", flush=True)
             peft_config = config.build_peft_config()
             model = get_peft_model(base_model, peft_config)
