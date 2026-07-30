@@ -76,14 +76,21 @@ def main():
     model_dir = args.model_dir
     if not model_dir or not Path(model_dir).exists():
         candidates = [
+            Path("/workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
             Path("/workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run"),
+            Path("/workspace/outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
             Path("/workspace/outputs/qwen_4b_2x5090_v3_run"),
+            Path("./outputs/qwen_4b_2x5090_v3_run/checkpoint-105"),
             Path("./outputs/qwen_4b_2x5090_v3_run"),
         ]
         for c in candidates:
-            if c.exists():
+            if c.exists() and (c / "adapter_model.safetensors").exists():
                 model_dir = str(c.resolve())
                 break
+            elif c.exists() and not model_dir:
+                model_dir = str(c.resolve())
+
+    print(f"[INFO] Using model directory: {model_dir}")
 
     if not model_dir or not Path(model_dir).exists():
         print(f"Error: Model directory not found in candidates!")
