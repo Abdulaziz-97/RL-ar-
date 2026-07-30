@@ -1,0 +1,70 @@
+"""
+Script to push model adapters to Hugging Face Hub and commit execution logs to GitHub.
+Usage:
+    python3 scripts/upload_artifacts.py --hf-repo Abdulaziz-97/Qwen3.5-4B-Arabic-RLVR-V3
+"""
+
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+def upload_to_hf(repo_id: str, model_dir: str):
+    print(f"\n[HuggingFace] Preparing to upload {model_dir} to {repo_id}...")
+    try:
+        from huggingface_hub import HfApi
+        api = HfApi()
+        token = os.environ.get("HF_TOKEN")
+        if token:
+            api.login(token=token)
+        
+        api.create_repo(repo_id=repo_id, exist_ok=True, private=False)
+        api.upload_folder(
+            folder_path=model_dir,
+            repo_id=repo_id,
+            repo_type="model",
+            commit_message="Upload GRPO_V3 SOTA Arabic Reasoning Model Adapters"
+        )
+        print(f"Successfully uploaded model adapters to: https://huggingface.co/{repo_id}")
+    except Exception as e:
+        print(f"Error uploading to HuggingFace: {e}")
+
+def commit_logs_to_github():
+    print("\n[GitHub] Committing training and evaluation logs...")
+    logs_dir = Path("outputs_logs")
+    logs_dir.mkdir(exist_ok=True)
+
+    # Copy key logs if they exist
+    src_master = Path("/workspace/outputs/master_execution.log")
+    if src_master.exists():
+        shutil.copy(src_master, logs_dir / "master_execution.log")
+        print("Copied master_execution.log to outputs_logs/")
+
+    src_eval = Path("/workspace/outputs/generative_eval_grpo_v3/summary.json")
+    if src_eval.exists():
+        shutil.copy(src_eval, logs_dir / "generative_eval_summary.json")
+        print("Copied generative_eval_summary.json to outputs_logs/")
+
+    try:
+        subprocess.run(["git", "add", "outputs_logs/"], check=True)
+        subprocess.run(["git", "commit", "-m", "docs(logs): add GRPO_V3 training and master evaluation execution logs"], check=True)
+        subprocess.run(["git", "push", "origin", "Efficient-Arabic-Reasnoning-Pipeline"], check=True)
+        print("Successfully committed and pushed logs to GitHub repository!")
+    except Exception as e:
+        print(f"Error pushing to GitHub: {e}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Upload Model to HuggingFace and Logs to GitHub")
+    parser.add_argument("--hf-repo", type=str, default="Abdulaziz-97/Qwen3.5-4B-Arabic-RLVR-V3", help="Hugging Face Repository ID")
+    parser.add_argument("--model-dir", type=str, default="/workspace/outputs/qwen_4b_2x5090_v3_run", help="Model directory path")
+    args = parser.parse_args()
+
+    upload_to_hf(args.hf_repo, args.model_dir)
+    commit_logs_to_github()
+
+if __name__ == "__main__":
+    main()
