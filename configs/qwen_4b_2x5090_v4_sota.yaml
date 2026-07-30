@@ -1,4 +1,4 @@
-# GRPO_V4 — Evidence-Backed SOTA Config for 2x NVIDIA RTX 5090 (32GB VRAM per GPU)
+# GRPO_V4 — High-Capacity Evidence-Backed SOTA Config for 2x NVIDIA RTX 5090 (32GB VRAM per GPU)
 # Sources: DAPO (Yu et al., 2025), Dr.GRPO (arXiv:2503.20783), GDPO (NVlabs, arXiv:2601.05242)
 
 model_name: "Qwen/Qwen3.5-4B"
@@ -6,9 +6,9 @@ instruction_base_model: "aziz9788/T06__qwen35-mixed-v6-lr1e5"
 load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
 
-# LoRA Configuration Matched 1-to-1 with T06 SOTA Adapter (r=32, alpha=32, rsLoRA=true)
-lora_r: 32
-lora_alpha: 32
+# High-Capacity LoRA Expansion (r=128, alpha=256) — Maximum Expressive Power
+lora_r: 128
+lora_alpha: 256
 lora_dropout: 0.05
 lora_target_modules:
   - "q_proj"
