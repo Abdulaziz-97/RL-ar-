@@ -15,13 +15,23 @@ from pathlib import Path
 
 def upload_to_hf(repo_id: str, model_dir: str):
     print(f"\n[HuggingFace] Preparing to upload {model_dir} to {repo_id}...")
+    token = os.environ.get("HF_TOKEN")
+    
+    # Try using new 'hf' CLI tool first
+    if shutil.which("hf"):
+        try:
+            if token:
+                subprocess.run(["hf", "auth", "login", "--token", token], check=True)
+            subprocess.run(["hf", "upload", repo_id, model_dir, "."], check=True)
+            print(f"Successfully uploaded model adapters using 'hf' CLI to: https://huggingface.co/{repo_id}")
+            return
+        except Exception as e:
+            print(f"hf CLI upload failed ({e}), falling back to Python API...")
+
+    # Fallback to Python API
     try:
         from huggingface_hub import HfApi
-        api = HfApi()
-        token = os.environ.get("HF_TOKEN")
-        if token:
-            api.login(token=token)
-        
+        api = HfApi(token=token)
         api.create_repo(repo_id=repo_id, exist_ok=True, private=False)
         api.upload_folder(
             folder_path=model_dir,
