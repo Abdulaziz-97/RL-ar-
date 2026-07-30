@@ -69,11 +69,27 @@ def commit_logs_to_github():
 
 def main():
     parser = argparse.ArgumentParser(description="Upload Model to HuggingFace and Logs to GitHub")
-    parser.add_argument("--hf-repo", type=str, default="Abdulaziz-97/Qwen3.5-4B-Arabic-RLVR-V3", help="Hugging Face Repository ID")
-    parser.add_argument("--model-dir", type=str, default="/workspace/outputs/qwen_4b_2x5090_v3_run", help="Model directory path")
+    parser.add_argument("--hf-repo", type=str, default="aziz9788/qwen3.5-4b-arabic-grpo-v3", help="Hugging Face Repository ID")
+    parser.add_argument("--model-dir", type=str, default=None, help="Model directory path")
     args = parser.parse_args()
 
-    upload_to_hf(args.hf_repo, args.model_dir)
+    model_dir = args.model_dir
+    if not model_dir or not Path(model_dir).exists():
+        candidates = [
+            Path("/workspace/RL-ar-/outputs/qwen_4b_2x5090_v3_run"),
+            Path("/workspace/outputs/qwen_4b_2x5090_v3_run"),
+            Path("./outputs/qwen_4b_2x5090_v3_run"),
+        ]
+        for c in candidates:
+            if c.exists():
+                model_dir = str(c.resolve())
+                break
+
+    if not model_dir or not Path(model_dir).exists():
+        print(f"Error: Model directory not found in candidates!")
+        return
+
+    upload_to_hf(args.hf_repo, model_dir)
     commit_logs_to_github()
 
 if __name__ == "__main__":
