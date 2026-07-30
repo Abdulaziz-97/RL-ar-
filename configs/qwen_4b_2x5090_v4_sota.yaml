@@ -17,7 +17,7 @@ lora_target_modules:
   - "down_proj"
 
 # Datasets (100% Clean Test-Set Isolation)
-coldstart_data_path: "data/arabic_reasoning_coldstart_hard_math_v4.jsonl"
+coldstart_data_path: "data/arabic_reasoning_coldstart_v4.jsonl"
 train_data_path: "data/arabic_reasoning_rlvr_hard_v3.jsonl"
 output_dir: "./outputs/qwen_4b_2x5090_v4_run"
 
