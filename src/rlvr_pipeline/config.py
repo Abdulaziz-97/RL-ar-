@@ -198,7 +198,25 @@ class RLVRConfig:
         # stop_strings are attached via StopStringCriteria in build_trainer (TRL generate path).
 
         num_generations_eval = self.num_generations
-        eval_batch_size = self.per_device_eval_batch_size or num_generations_eval
+
+        # Principal Engineer Fix: Ensure global eval batch size is divisible by num_generations_eval (16)
+        num_gpus = 1
+        if "WORLD_SIZE" in os.environ:
+            try:
+                num_gpus = max(1, int(os.environ["WORLD_SIZE"]))
+            except ValueError:
+                pass
+        elif "LOCAL_WORLD_SIZE" in os.environ:
+            try:
+                num_gpus = max(1, int(os.environ["LOCAL_WORLD_SIZE"]))
+            except ValueError:
+                pass
+
+        target_per_device = max(1, num_generations_eval // num_gpus)
+        while (target_per_device * num_gpus) % num_generations_eval != 0:
+            target_per_device += 1
+        
+        eval_batch_size = target_per_device
 
         kwargs: dict[str, Any] = dict(
             output_dir=self.output_dir,
