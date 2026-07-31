@@ -21,6 +21,11 @@ run_pipeline() {
     pkill -9 -f torchrun 2>/dev/null || true
     sleep 2
 
+    # Print VRAM Status
+    if [ -f "$REPO_ROOT/scripts/check_vram.py" ]; then
+        python3 "$REPO_ROOT/scripts/check_vram.py" || true
+    fi
+
     echo "================================================================="
     echo "INITIALIZING SAUDI-LLM GRPO V4 BACKGROUND PIPELINE"
     echo "Repository Root: $REPO_ROOT"
