@@ -95,9 +95,8 @@ save_strategy: "steps"
 save_steps: 50
 save_total_limit: 5
 log_completions: true
-use_vllm: true
-vllm_gpu_memory_utilization: 0.30
-torch_compile: true
+use_vllm: false
+torch_compile: false
 use_wandb: true
 wandb_project: "arabic-reasoning-rlvr-v4"
 
