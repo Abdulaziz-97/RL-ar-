@@ -15,6 +15,12 @@ run_pipeline() {
         exec > >(tee -a "$LOG_FILE") 2>&1
     fi
 
+    # Force-kill all zombie GPU processes to release VRAM completely
+    fuser -k -9 /dev/nvidia* 2>/dev/null || true
+    pkill -9 -f python 2>/dev/null || true
+    pkill -9 -f torchrun 2>/dev/null || true
+    sleep 2
+
     echo "================================================================="
     echo "INITIALIZING SAUDI-LLM GRPO V4 BACKGROUND PIPELINE"
     echo "Repository Root: $REPO_ROOT"
