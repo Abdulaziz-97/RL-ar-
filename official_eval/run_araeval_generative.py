@@ -185,11 +185,26 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         base = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16, device_map="cpu")
         peft = PeftModel.from_pretrained(base, args.adapter_path)
         merged = peft.merge_and_unload()
+        if hasattr(merged.config, "architectures") and merged.config.architectures == ["Qwen3_5ForCausalLM"]:
+            merged.config.architectures = ["Qwen2ForCausalLM"]
+            merged.config.model_type = "qwen2"
         merged.save_pretrained(merged_dir)
         tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
         tokenizer.save_pretrained(merged_dir)
-        print(f"Merged model saved successfully to {merged_dir}", flush=True)
+
+        # Patch saved config.json explicitly
+        cfg_path = os.path.join(merged_dir, "config.json")
+        if os.path.exists(cfg_path):
+            import json
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+            if cfg.get("architectures") == ["Qwen3_5ForCausalLM"] or cfg.get("model_type") == "qwen3_5":
+                cfg["architectures"] = ["Qwen2ForCausalLM"]
+                cfg["model_type"] = "qwen2"
+                with open(cfg_path, "w", encoding="utf-8") as f:
+                    json.dump(cfg, f, indent=2)
+        print(f"Merged model saved & patched successfully to {merged_dir}", flush=True)
 
     args.model = merged_dir
     args.adapter_path = None
