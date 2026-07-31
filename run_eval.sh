@@ -1,6 +1,7 @@
-#!/bin/bash
-# 1-Click Evaluation Script for Checkpoint 200
-set -e
+fuser -k -9 /dev/nvidia* 2>/dev/null || true
+pkill -9 -f python 2>/dev/null || true
+pkill -9 -f torchrun 2>/dev/null || true
+sleep 2
 
 rm -rf /workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run/merged_eval_checkpoint-200 2>/dev/null || true
 

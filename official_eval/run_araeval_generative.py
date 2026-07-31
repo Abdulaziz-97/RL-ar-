@@ -223,7 +223,7 @@ def build_vllm_engine(args: argparse.Namespace, task: str):
         "dtype": "bfloat16",
         "trust_remote_code": True,
         "max_model_len": args.max_length,
-        "gpu_memory_utilization": profile["gpu_memory_utilization"],
+        "gpu_memory_utilization": 0.70,
         "tensor_parallel_size": tp_size,
         "enforce_eager": True,
         "enable_prefix_caching": False,
