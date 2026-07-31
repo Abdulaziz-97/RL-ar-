@@ -79,25 +79,27 @@ def canonicalize_integer(value: Any) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
-        if not math.isfinite(value) or abs(value - round(value)) > 1e-9:
-            raise AnswerSpecError(f"non-integral float for integer: {value}")
-        return str(int(round(value)))
+        if not math.isfinite(value):
+            raise AnswerSpecError(f"non-finite float for integer: {value}")
+        if abs(value - round(value)) <= 1e-6:
+            return str(int(round(value)))
+        return str(value)
     text = _normalize_numeric_text(str(value))
     if "/" in text:
         try:
             frac = Fraction(text)
             if frac.denominator != 1:
-                raise AnswerSpecError(f"non-integer rational: {text}")
+                return str(float(frac))
             return str(frac.numerator)
         except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
             raise AnswerSpecError(f"invalid integer fraction: {text!r}") from exc
     if not _INT_RE.match(text):
-        # Allow 3.0 → 3
         if _DECIMAL_RE.match(text):
             try:
                 f = float(text)
-                if abs(f - round(f)) <= 1e-9:
+                if abs(f - round(f)) <= 1e-6:
                     return str(int(round(f)))
+                return str(f)
             except ValueError:
                 pass
         raise AnswerSpecError(f"invalid integer: {value!r}")
