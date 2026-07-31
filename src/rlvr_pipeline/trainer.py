@@ -307,10 +307,16 @@ def build_trainer(
         print(f"Loaded {len(train_dataset)} training samples", flush=True)
 
     if eval_dataset is None and config.eval_data_path:
-        eval_dataset = load_rlvr_dataset(
+        full_eval_ds = load_rlvr_dataset(
             config.eval_data_path,
             system_prompt=config.system_prompt,
         )
+        max_eval_samples = getattr(config, "max_eval_samples", 32)
+        if max_eval_samples and len(full_eval_ds) > max_eval_samples:
+            print(f"Limiting eval dataset from {len(full_eval_ds)} to {max_eval_samples} samples for fast mid-run evaluation (~15 min)...", flush=True)
+            eval_dataset = full_eval_ds.select(range(max_eval_samples))
+        else:
+            eval_dataset = full_eval_ds
 
     print("Building GRPO config...", flush=True)
 
