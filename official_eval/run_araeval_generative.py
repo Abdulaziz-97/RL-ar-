@@ -177,6 +177,20 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
     if not args.adapter_path or not os.path.exists(os.path.join(args.adapter_path, "adapter_config.json")):
         return
     merged_dir = os.path.join(os.path.dirname(args.adapter_path), f"merged_eval_{os.path.basename(args.adapter_path)}")
+
+    # Wipe stale unpatched directory if rope_scaling exists in config
+    cfg_path = os.path.join(merged_dir, "config.json")
+    if os.path.exists(cfg_path):
+        import json, shutil
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                c = json.load(f)
+            if "rope_scaling" in c or c.get("model_type") == "qwen3_5":
+                print(f"Wiping stale unpatched merge directory {merged_dir}...", flush=True)
+                shutil.rmtree(merged_dir, ignore_errors=True)
+        except Exception:
+            pass
+
     if not os.path.exists(os.path.join(merged_dir, "model.safetensors")) and not os.path.exists(os.path.join(merged_dir, "model-00001-of-00002.safetensors")):
         print(f"Merging LoRA adapter ({args.adapter_path}) into base model ({args.model}) for 100% vLLM compatibility...", flush=True)
         import torch
@@ -188,28 +202,30 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         if hasattr(merged.config, "architectures") and merged.config.architectures == ["Qwen3_5ForCausalLM"]:
             merged.config.architectures = ["Qwen2ForCausalLM"]
             merged.config.model_type = "qwen2"
+            num_layers = getattr(merged.config, "num_hidden_layers", 32)
+            merged.config.max_window_layers = num_layers
+            if hasattr(merged.config, "rope_scaling"):
+                delattr(merged.config, "rope_scaling")
         merged.save_pretrained(merged_dir)
         tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
         tokenizer.save_pretrained(merged_dir)
 
     # Always ensure saved config.json is patched to standard Qwen2 text model for vLLM
-    cfg_path = os.path.join(merged_dir, "config.json")
     if os.path.exists(cfg_path):
         import json
         with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
-        if cfg.get("architectures") == ["Qwen3_5ForCausalLM"] or cfg.get("model_type") == "qwen3_5" or "rope_scaling" in cfg:
-            cfg["architectures"] = ["Qwen2ForCausalLM"]
-            cfg["model_type"] = "qwen2"
-            num_layers = cfg.get("num_hidden_layers", 32)
-            cfg["max_window_layers"] = num_layers
-            cfg.pop("use_sliding_window", None)
-            cfg.pop("sliding_window", None)
-            cfg.pop("rope_scaling", None)
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                json.dump(cfg, f, indent=2)
-            print(f"Patched {cfg_path} to Qwen2ForCausalLM text config for 100% vLLM compatibility", flush=True)
+        cfg["architectures"] = ["Qwen2ForCausalLM"]
+        cfg["model_type"] = "qwen2"
+        num_layers = cfg.get("num_hidden_layers", 32)
+        cfg["max_window_layers"] = num_layers
+        cfg.pop("use_sliding_window", None)
+        cfg.pop("sliding_window", None)
+        cfg.pop("rope_scaling", None)
+        with open(cfg_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        print(f"Patched {cfg_path} to Qwen2ForCausalLM text config for 100% vLLM compatibility", flush=True)
 
     args.model = merged_dir
     args.adapter_path = None
