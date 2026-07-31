@@ -152,6 +152,7 @@ class RLVRConfig:
     use_vllm: bool = False
     vllm_gpu_memory_utilization: float = 0.40
     vllm_max_model_len: int = 4096
+    torch_compile: bool = False
     attn_implementation: str = "flash_attention_2"
     ddp_find_unused_parameters: bool = False
     report_to: str = "wandb"
@@ -261,8 +262,9 @@ class RLVRConfig:
             log_completions=self.log_completions,
             num_completions_to_print=self.num_completions_to_print,
             use_vllm=getattr(self, "use_vllm", False),
-            vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.40),
+            vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.30),
             vllm_max_model_len=getattr(self, "vllm_max_model_len", 4096),
+            torch_compile=getattr(self, "torch_compile", False),
             ddp_find_unused_parameters=getattr(self, "ddp_find_unused_parameters", False),
         )
 
