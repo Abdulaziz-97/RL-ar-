@@ -290,11 +290,26 @@ def main():
     registry.load_sft(sft_prompts)
     print(f"[Decontam] Loaded {len(sft_prompts)} SFT prompts into Content-Jaccard & 5-gram decontamination registry.", flush=True)
 
-    # 2. Overwrite OUT_RLVR with clean new file
-    with open(OUT_RLVR, "w", encoding="utf-8") as f:
-        pass
+    # 2. Check if OUT_RLVR already has 4000 valid samples
+    existing_samples = []
+    if OUT_RLVR.exists():
+        with open(OUT_RLVR, encoding="utf-8") as f:
+            existing_samples = [l for l in f if l.strip()]
+    
+    if len(existing_samples) >= RLVR_TARGET:
+        print(f"=================================================================", flush=True)
+        print(f" 🎯 FOUND {len(existing_samples)} EXISTING RLVR PROMPTS IN {OUT_RLVR}!", flush=True)
+        print(f" ⚡ SKIPPING GENERATION AND PROCEEDING IMMEDIATELY TO TRAINING!", flush=True)
+        print(f"=================================================================", flush=True)
+        return
 
-    counter = [0]
+    # If partial generation, keep existing samples and append
+    counter = [len(existing_samples)]
+    if len(existing_samples) > 0:
+        print(f"[Phase 2 RLVR] Resuming generation from sample #{counter[0] + 1}/{RLVR_TARGET}...", flush=True)
+    else:
+        with open(OUT_RLVR, "w", encoding="utf-8") as f:
+            pass
     write_lock = threading.Lock()
 
     print(f"[Phase 2 RLVR] Generating {RLVR_TARGET} LIVE Qwen 3.7 Flash RLVR prompts with {WORKERS} workers...", flush=True)
