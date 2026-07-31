@@ -178,14 +178,14 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         return
     merged_dir = os.path.join(os.path.dirname(args.adapter_path), f"merged_eval_{os.path.basename(args.adapter_path)}")
 
-    # Wipe stale unpatched directory if rope_scaling or rope_parameters exists in config
+    # Wipe stale unpatched directory if rope_scaling or rope_parameters or mrope_section exists in config
     cfg_path = os.path.join(merged_dir, "config.json")
     if os.path.exists(cfg_path):
         import json, shutil
         try:
             with open(cfg_path, "r", encoding="utf-8") as f:
-                c = json.load(f)
-            if "rope_scaling" in c or "rope_parameters" in c or c.get("model_type") == "qwen3_5":
+                raw_txt = f.read()
+            if "rope_scaling" in raw_txt or "rope_parameters" in raw_txt or "mrope_section" in raw_txt or "qwen3_5" in raw_txt or "Qwen3_5" in raw_txt:
                 print(f"Wiping stale unpatched merge directory {merged_dir}...", flush=True)
                 shutil.rmtree(merged_dir, ignore_errors=True)
         except Exception:
@@ -203,30 +203,29 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         merged.config.model_type = "qwen2"
         num_layers = getattr(merged.config, "num_hidden_layers", 32)
         merged.config.max_window_layers = num_layers
-        if hasattr(merged.config, "rope_scaling"):
-            merged.config.rope_scaling = None
-        if hasattr(merged.config, "rope_parameters"):
-            merged.config.rope_parameters = None
+        for attr in ["rope_scaling", "rope_parameters", "mrope_section"]:
+            if hasattr(merged.config, attr):
+                setattr(merged.config, attr, None)
         merged.save_pretrained(merged_dir)
         tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
         tokenizer.save_pretrained(merged_dir)
 
-    # Always ensure saved config.json is completely purged of mrope/rope_scaling for vLLM
+    # Always ensure saved config.json and generation_config.json are completely purged of mrope/rope_scaling for vLLM
+    def _recursive_purge_rope(d):
+        if isinstance(d, dict):
+            d.pop("rope_scaling", None)
+            d.pop("rope_parameters", None)
+            d.pop("mrope_section", None)
+            d.pop("use_sliding_window", None)
+            d.pop("sliding_window", None)
+            for v in list(d.values()):
+                _recursive_purge_rope(v)
+
     if os.path.exists(cfg_path):
         import json
         with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
-
-        def _recursive_purge_rope(d):
-            if isinstance(d, dict):
-                d.pop("rope_scaling", None)
-                d.pop("rope_parameters", None)
-                d.pop("mrope_section", None)
-                d.pop("use_sliding_window", None)
-                d.pop("sliding_window", None)
-                for v in d.values():
-                    _recursive_purge_rope(v)
 
         _recursive_purge_rope(cfg)
         cfg["architectures"] = ["Qwen2ForCausalLM"]
@@ -237,6 +236,18 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
         print(f"Recursively purged & patched {cfg_path} to Qwen2ForCausalLM text config", flush=True)
+
+    gen_cfg_path = os.path.join(merged_dir, "generation_config.json")
+    if os.path.exists(gen_cfg_path):
+        import json
+        try:
+            with open(gen_cfg_path, "r", encoding="utf-8") as f:
+                gen_cfg = json.load(f)
+            _recursive_purge_rope(gen_cfg)
+            with open(gen_cfg_path, "w", encoding="utf-8") as f:
+                json.dump(gen_cfg, f, indent=2)
+        except Exception:
+            pass
 
     args.model = merged_dir
     args.adapter_path = None
