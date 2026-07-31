@@ -95,7 +95,7 @@ logging_steps: 10
 save_strategy: "steps"
 save_steps: 100
 save_total_limit: 5
-log_completions: true
+log_completions: false
 use_vllm: false
 torch_compile: false
 use_wandb: true

@@ -36,12 +36,9 @@ run_pipeline() {
     # Environment Variables & Storage Redirection
     export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
     export HF_HUB_CACHE="${HF_HUB_CACHE:-/workspace/.hf_cache/hub}"
-    export TMPDIR="${TMPDIR:-/workspace/tmp}"
-    export VLLM_USE_FLASHINFER_SAMPLER="0"
-    export VLLM_ENFORCE_EAGER="1"
-    export VLLM_WORKER_MULTIPROC_METHOD="spawn"
-    export NCCL_IGNORE_DISABLED_P2P="1"
-    export NCCL_IB_DISABLE="1"
+    export WANDB_DIR="/workspace/outputs/wandb"
+    mkdir -p /workspace/outputs/wandb
+    rm -rf /root/.local/share/wandb/* /workspace/RL-ar-/wandb/* /tmp/* /workspace/tmp/* 2>/dev/null || true
     export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
     export WANDB_MODE="${WANDB_MODE:-offline}"
     export PYTHONPATH="$REPO_ROOT/src:$PYTHONPATH"
