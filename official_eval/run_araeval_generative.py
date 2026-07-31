@@ -173,10 +173,33 @@ def load_dataset_for_task(task: str) -> list[dict[str, Any]]:
     return normalized
 
 
+def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
+    if not args.adapter_path or not os.path.exists(os.path.join(args.adapter_path, "adapter_config.json")):
+        return
+    merged_dir = os.path.join(os.path.dirname(args.adapter_path), f"merged_eval_{os.path.basename(args.adapter_path)}")
+    if not os.path.exists(os.path.join(merged_dir, "model.safetensors")) and not os.path.exists(os.path.join(merged_dir, "model-00001-of-00002.safetensors")):
+        print(f"Merging LoRA adapter ({args.adapter_path}) into base model ({args.model}) for 100% vLLM compatibility...", flush=True)
+        import torch
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from peft import PeftModel
+        base = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16, device_map="cpu")
+        peft = PeftModel.from_pretrained(base, args.adapter_path)
+        merged = peft.merge_and_unload()
+        merged.save_pretrained(merged_dir)
+        tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
+        tokenizer = AutoTokenizer.from_pretrained(tok_source)
+        tokenizer.save_pretrained(merged_dir)
+        print(f"Merged model saved successfully to {merged_dir}", flush=True)
+
+    args.model = merged_dir
+    args.adapter_path = None
+
+
 def build_vllm_engine(args: argparse.Namespace, task: str):
     """Build a vLLM LLM engine for generation."""
     from vllm import LLM, SamplingParams
 
+    _auto_merge_adapter_if_needed(args)
     profile = get_generation_profile(task)
     tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else 1
 
