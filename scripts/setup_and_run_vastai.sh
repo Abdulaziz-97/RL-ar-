@@ -78,11 +78,18 @@ run_pipeline() {
     echo "================================================================="
     echo "[3/5] STAGE 1: COLD-START CoT SFT WARM-UP (4,000 CoT Solutions)"
     echo "================================================================="
-    if [ "$NUM_GPUS" -gt 1 ]; then
-        echo "🚀 Running PyTorch DDP SFT Warm-up on $NUM_GPUS GPUs (Full 4,000 CoT Dataset)..."
-        torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT"
+    if [ -f "$SFT_OUT/adapter_config.json" ] || [ -n "$(ls -d $SFT_OUT/checkpoint-* 2>/dev/null)" ]; then
+        echo "================================================================="
+        echo " 🎯 FOUND TRAINED STAGE 1 SFT CHECKPOINT IN $SFT_OUT!"
+        echo " ⚡ SKIPPING STAGE 1 SFT AND PROCEEDING DIRECTLY TO STAGE 2 GRPO!"
+        echo "================================================================="
     else
-        CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT"
+        if [ "$NUM_GPUS" -gt 1 ]; then
+            echo "🚀 Running PyTorch DDP SFT Warm-up on $NUM_GPUS GPUs (Full 4,000 CoT Dataset)..."
+            torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT"
+        else
+            CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT"
+        fi
     fi
 
     # 4. Stage 2: GRPO V4 Parallel Multi-GPU Training Launch
