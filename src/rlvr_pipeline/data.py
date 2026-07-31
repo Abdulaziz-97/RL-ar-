@@ -101,6 +101,22 @@ def _extract_answer_spec(raw: dict[str, Any]) -> dict[str, Any] | None:
     spec = raw.get("answer_spec") or metadata.get("answer_spec")
     if spec is None:
         return None
+    if isinstance(spec, dict) and spec.get("type") == "logic_json":
+        canon = spec.get("canonical")
+        if isinstance(canon, (int, float)):
+            spec["type"] = "integer"
+            spec["canonical"] = int(round(canon))
+        elif isinstance(canon, str):
+            c_str = canon.strip()
+            if c_str.isdigit():
+                spec["type"] = "integer"
+                spec["canonical"] = int(c_str)
+            elif not (c_str.startswith("{") or c_str.startswith("[")):
+                try:
+                    spec["type"] = "integer"
+                    spec["canonical"] = int(round(float(c_str)))
+                except ValueError:
+                    spec["canonical"] = json.dumps({"ans": c_str})
     parsed = parse_answer_spec(spec)
     reject_symbolic(parsed.type)
     return parsed.to_dict()
