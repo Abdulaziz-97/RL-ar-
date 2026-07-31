@@ -7,6 +7,7 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 LOG_FILE="/workspace/outputs/master_execution_v4.log"
 
 mkdir -p /workspace/tmp /workspace/.hf_cache /workspace/outputs "$REPO_ROOT/outputs"
+rm -rf /workspace/tmp/* /tmp/* ~/.cache/uv 2>/dev/null || true
 
 # Function to run everything in background if --background or detached
 run_pipeline() {
