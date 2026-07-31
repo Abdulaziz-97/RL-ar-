@@ -206,6 +206,7 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
                 cfg["max_window_layers"] = num_layers
                 cfg.pop("use_sliding_window", None)
                 cfg.pop("sliding_window", None)
+                cfg.pop("rope_scaling", None)
                 with open(cfg_path, "w", encoding="utf-8") as f:
                     json.dump(cfg, f, indent=2)
         print(f"Merged model saved & patched successfully to {merged_dir}", flush=True)
