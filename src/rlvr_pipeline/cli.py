@@ -257,16 +257,24 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  * trainer.args.per_device_train_batch_size     = {getattr(trainer.args, 'per_device_train_batch_size', 'N/A')}")
         print(f"  * scheduler info                              = {scheduler_info}")
         print("=================================================================", flush=True)
+        search_dirs = [
+            config.output_dir,
+            "/workspace/outputs/qwen_4b_2x5090_v4_run",
+            "/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run",
+            "./outputs/qwen_4b_2x5090_v4_run",
+        ]
         latest_checkpoint = None
-        if os.path.exists(config.output_dir):
-            ckpts = [
-                os.path.join(config.output_dir, d)
-                for d in os.listdir(config.output_dir)
-                if d.startswith("checkpoint-") and os.path.isdir(os.path.join(config.output_dir, d))
-            ]
-            if ckpts:
-                ckpts.sort(key=lambda x: int(x.split("-")[-1]))
-                latest_checkpoint = ckpts[-1]
+        for sdir in search_dirs:
+            if sdir and os.path.exists(sdir):
+                ckpts = [
+                    os.path.join(sdir, d)
+                    for d in os.listdir(sdir)
+                    if d.startswith("checkpoint-") and os.path.isdir(os.path.join(sdir, d))
+                ]
+                if ckpts:
+                    ckpts.sort(key=lambda x: int(x.split("-")[-1]))
+                    latest_checkpoint = ckpts[-1]
+                    break
 
         if latest_checkpoint:
             print(f"Resuming GRPO training from checkpoint: {latest_checkpoint}", flush=True)
