@@ -51,9 +51,22 @@ from tasks.araeval.utils import (
     normalize_etec,
     normalize_arapro,
     normalize_truthfulqa,
+    normalize_araifeval,
+    process_ifeval_results,
 )
 
 DEFAULT_MODEL = "unsloth/Qwen3.5-4B"
+
+
+def normalize_ifeval_wrapper(row: dict[str, Any]) -> dict[str, Any]:
+    norm = normalize_araifeval(row)
+    return {
+        "query": norm["prompt"],
+        "choices": [],
+        "gold": norm,
+        "is_ifeval": True,
+    }
+
 
 # Hugging Face dataset paths matching official YAML configs
 DATASET_CONFIGS = {
@@ -93,6 +106,12 @@ DATASET_CONFIGS = {
         "revision": "162744fbf0590606415eb0924f2b5bd680486e3a",
         "split": "test",
         "normalizer": normalize_truthfulqa,
+    },
+    "araeval_ifeval": {
+        "path": "humain-ai/AraIFEval",
+        "revision": "1adcaee4cbbd253f9fe5dcf85b2e98c566a7b738",
+        "split": "test",
+        "normalizer": normalize_ifeval_wrapper,
     },
 }
 
@@ -401,13 +420,18 @@ def evaluate_task(
     # Extract and grade answers
     correct = 0
     extraction_failures = 0
-    for output, gold_idx in zip(all_outputs, gold_indices):
+    for output, gold_idx, sample in zip(all_outputs, gold_indices, samples):
         generated_text = output.outputs[0].text
-        extracted = extract_answer(generated_text)
-        if extracted is None:
-            extraction_failures += 1
-        if grade_answer(extracted, gold_idx):
-            correct += 1
+        if sample.get("is_ifeval"):
+            ifeval_res = process_ifeval_results(gold_idx, [generated_text])
+            if ifeval_res.get("prompt_level_strict_acc"):
+                correct += 1
+        else:
+            extracted = extract_answer(generated_text)
+            if extracted is None:
+                extraction_failures += 1
+            if grade_answer(extracted, gold_idx):
+                correct += 1
 
     total = len(samples)
     accuracy = 100.0 * correct / total if total > 0 else 0.0

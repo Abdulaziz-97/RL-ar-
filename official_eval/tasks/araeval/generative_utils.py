@@ -23,6 +23,7 @@ GENERATIVE_TASKS = [
     "araeval_etec",
     "araeval_arapro",
     "araeval_truthfulqa",
+    "araeval_ifeval",
 ]
 
 _LABELS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
