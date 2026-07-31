@@ -175,7 +175,7 @@ def canonicalize_logic_json(value: Any) -> str:
         except (json.JSONDecodeError, ValueError) as exc:
             raise AnswerSpecError(f"logic_json must be valid JSON: {value!r}") from exc
         if not isinstance(parsed, (dict, list)):
-            raise AnswerSpecError("logic_json must be a JSON object or array")
+            parsed = {"ans": parsed}
         return json.dumps(
             parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
         )
@@ -190,6 +190,10 @@ def canonicalize_logic_json(value: Any) -> str:
             )
         except (TypeError, ValueError) as exc:
             raise AnswerSpecError("logic_json contains unsupported values") from exc
+    if isinstance(value, (int, float, bool)):
+        return json.dumps(
+            {"ans": value}, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+        )
     raise AnswerSpecError(f"invalid logic_json: {type(value).__name__}")
 
 
