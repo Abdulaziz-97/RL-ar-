@@ -442,7 +442,27 @@ def build_trainer(
             sch_info = sched.state_dict() if hasattr(sched, "state_dict") else "N/A"
             print(f"\n[ON_TRAIN_BEGIN] Verified LR Scheduler State: {sch_info}", flush=True)
 
-    trainer.add_callback(StepCheckCallback())
+    # Principal Engineer Fix: Integrate Arabic Terminal Reshaper directly into trainer._log_completions
+    if hasattr(trainer, "_log_completions"):
+        orig_log_comp = trainer._log_completions
+        def custom_log_completions(*args, **kwargs):
+            try:
+                import arabic_reshaper
+                from bidi.algorithm import get_display
+                completions = kwargs.get("completions") or (args[1] if len(args) > 1 else [])
+                if completions:
+                    print("\n" + "="*80, flush=True)
+                    print(" 📖 LIVE ARABIC GRPO COMPLETION ROLLOUT (RESHAPED & CONNECTED)", flush=True)
+                    print("="*80, flush=True)
+                    for i, comp in enumerate(completions[:2]):
+                        text = comp[0]["content"] if isinstance(comp, list) and len(comp) > 0 and isinstance(comp[0], dict) else str(comp)
+                        reshaped = get_display(arabic_reshaper.reshape(text))
+                        print(f"--- [Rollout #{i+1}] ---\n{reshaped}\n", flush=True)
+                    print("="*80 + "\n", flush=True)
+            except Exception:
+                pass
+            return orig_log_comp(*args, **kwargs)
+        trainer._log_completions = custom_log_completions
 
     return trainer
 
