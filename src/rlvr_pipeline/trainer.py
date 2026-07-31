@@ -235,6 +235,7 @@ def build_sft_trainer(
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         report_to=config.report_to if config.use_wandb else "none",
+        loss_type="nll",  # Use standard NLL loss when lm_head is wrapped by PEFT adapter
     )
     if config.max_steps is not None:
         sft_config.max_steps = config.max_steps
