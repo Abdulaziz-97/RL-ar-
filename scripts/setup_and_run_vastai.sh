@@ -79,10 +79,10 @@ run_pipeline() {
     echo "[3/5] STAGE 1: COLD-START CoT SFT WARM-UP (4,000 CoT Solutions)"
     echo "================================================================="
     if [ "$NUM_GPUS" -gt 1 ]; then
-        echo "🚀 Running PyTorch DDP SFT Warm-up on $NUM_GPUS GPUs..."
-        torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100
+        echo "🚀 Running PyTorch DDP SFT Warm-up on $NUM_GPUS GPUs (Full 4,000 CoT Dataset)..."
+        torchrun --nproc_per_node=$NUM_GPUS -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT"
     else
-        CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT" --max-steps 100
+        CUDA_VISIBLE_DEVICES=0 python3 -m rlvr_pipeline.cli sft --config "$CONFIG_FILE" --output "$SFT_OUT"
     fi
 
     # 4. Stage 2: GRPO V4 Parallel Multi-GPU Training Launch
