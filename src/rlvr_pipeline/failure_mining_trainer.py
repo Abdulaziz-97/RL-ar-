@@ -265,6 +265,12 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
                         local_end = overlap_end - process_start
                         advantages[local_start:local_end] = -1.0 if all_wrong else 1.0
 
+        # Refinement: Apply advantage clamping [-5.0, 5.0] to prevent low-sigma advantage amplification spikes
+        raw_advantages = advantages.clone()
+        advantages = torch.clamp(advantages, min=-5.0, max=5.0)
+        clamped_count = (advantages != raw_advantages).sum().item()
+        total_adv_elements = max(advantages.numel(), 1)
+
         output["advantages"] = advantages
 
         effective_count = num_groups - zero_var_count
@@ -273,6 +279,7 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         self._failure_mining_stats = {
             "effective_sample_ratio": effective_count / total_groups,
             "zero_variance_group_count": float(zero_var_count),
+            "frac_advantages_clamped": float(clamped_count / total_adv_elements),
         }
 
     def _maybe_record_success_traces(self, completion_ids, rewards_per_func, inputs):

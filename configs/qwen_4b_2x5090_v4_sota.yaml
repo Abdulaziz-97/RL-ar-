@@ -87,8 +87,8 @@ early_diag_steps: 30
 
 # Infrastructure & Evaluation Checkpointing Settings
 output_dir: "./outputs/qwen_4b_2x5090_v4_run"
-eval_strategy: "steps"
-eval_steps: 125
+eval_strategy: "no"
+# eval_steps: 125
 max_eval_samples: 32
 per_device_eval_batch_size: 8
 logging_steps: 10
