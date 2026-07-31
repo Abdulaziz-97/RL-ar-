@@ -47,7 +47,7 @@ class BenchmarkProbeCallback(TrainerCallback):
             cmd = [
                 sys.executable,
                 "scripts/run_benchmark_probe.py",
-                "--model-dir", ckpt_dir,
+                "--checkpoint", ckpt_dir,
                 "--base-model", self.base_model,
             ]
             res = subprocess.run(cmd, env=clean_env, capture_output=True, text=True, check=False)
