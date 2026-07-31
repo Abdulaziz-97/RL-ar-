@@ -193,23 +193,23 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
         tokenizer.save_pretrained(merged_dir)
 
-        # Patch saved config.json explicitly
-        cfg_path = os.path.join(merged_dir, "config.json")
-        if os.path.exists(cfg_path):
-            import json
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                cfg = json.load(f)
-            if cfg.get("architectures") == ["Qwen3_5ForCausalLM"] or cfg.get("model_type") == "qwen3_5":
-                cfg["architectures"] = ["Qwen2ForCausalLM"]
-                cfg["model_type"] = "qwen2"
-                num_layers = cfg.get("num_hidden_layers", 32)
-                cfg["max_window_layers"] = num_layers
-                cfg.pop("use_sliding_window", None)
-                cfg.pop("sliding_window", None)
-                cfg.pop("rope_scaling", None)
-                with open(cfg_path, "w", encoding="utf-8") as f:
-                    json.dump(cfg, f, indent=2)
-        print(f"Merged model saved & patched successfully to {merged_dir}", flush=True)
+    # Always ensure saved config.json is patched to standard Qwen2 text model for vLLM
+    cfg_path = os.path.join(merged_dir, "config.json")
+    if os.path.exists(cfg_path):
+        import json
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+        if cfg.get("architectures") == ["Qwen3_5ForCausalLM"] or cfg.get("model_type") == "qwen3_5" or "rope_scaling" in cfg:
+            cfg["architectures"] = ["Qwen2ForCausalLM"]
+            cfg["model_type"] = "qwen2"
+            num_layers = cfg.get("num_hidden_layers", 32)
+            cfg["max_window_layers"] = num_layers
+            cfg.pop("use_sliding_window", None)
+            cfg.pop("sliding_window", None)
+            cfg.pop("rope_scaling", None)
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+            print(f"Patched {cfg_path} to Qwen2ForCausalLM text config for 100% vLLM compatibility", flush=True)
 
     args.model = merged_dir
     args.adapter_path = None
