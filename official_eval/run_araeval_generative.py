@@ -202,6 +202,10 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
             if cfg.get("architectures") == ["Qwen3_5ForCausalLM"] or cfg.get("model_type") == "qwen3_5":
                 cfg["architectures"] = ["Qwen2ForCausalLM"]
                 cfg["model_type"] = "qwen2"
+                num_layers = cfg.get("num_hidden_layers", 32)
+                cfg["max_window_layers"] = num_layers
+                cfg.pop("use_sliding_window", None)
+                cfg.pop("sliding_window", None)
                 with open(cfg_path, "w", encoding="utf-8") as f:
                     json.dump(cfg, f, indent=2)
         print(f"Merged model saved & patched successfully to {merged_dir}", flush=True)
