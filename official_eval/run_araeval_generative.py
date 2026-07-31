@@ -178,14 +178,14 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         return
     merged_dir = os.path.join(os.path.dirname(args.adapter_path), f"merged_eval_{os.path.basename(args.adapter_path)}")
 
-    # Wipe stale unpatched directory if rope_scaling exists in config
+    # Wipe stale unpatched directory if rope_scaling or rope_parameters exists in config
     cfg_path = os.path.join(merged_dir, "config.json")
     if os.path.exists(cfg_path):
         import json, shutil
         try:
             with open(cfg_path, "r", encoding="utf-8") as f:
                 c = json.load(f)
-            if "rope_scaling" in c or c.get("model_type") == "qwen3_5":
+            if "rope_scaling" in c or "rope_parameters" in c or c.get("model_type") == "qwen3_5":
                 print(f"Wiping stale unpatched merge directory {merged_dir}...", flush=True)
                 shutil.rmtree(merged_dir, ignore_errors=True)
         except Exception:
@@ -206,6 +206,8 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
             merged.config.max_window_layers = num_layers
             if hasattr(merged.config, "rope_scaling"):
                 delattr(merged.config, "rope_scaling")
+            if hasattr(merged.config, "rope_parameters"):
+                delattr(merged.config, "rope_parameters")
         merged.save_pretrained(merged_dir)
         tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
@@ -223,6 +225,10 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         cfg.pop("use_sliding_window", None)
         cfg.pop("sliding_window", None)
         cfg.pop("rope_scaling", None)
+        cfg.pop("rope_parameters", None)
+        if "text_config" in cfg and isinstance(cfg["text_config"], dict):
+            cfg["text_config"].pop("rope_scaling", None)
+            cfg["text_config"].pop("rope_parameters", None)
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
         print(f"Patched {cfg_path} to Qwen2ForCausalLM text config for 100% vLLM compatibility", flush=True)
