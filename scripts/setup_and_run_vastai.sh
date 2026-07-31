@@ -152,9 +152,9 @@ else
     echo "Master Log Output File : $LOG_FILE"
     echo "To view live logs run  : tail -f $LOG_FILE"
     echo "================================================================="
-    > "$LOG_FILE"
+    rm -f "$LOG_FILE"
     _NOHUP_LAUNCHED=1 nohup bash "$0" --fg > "$LOG_FILE" 2>&1 &
-    sleep 3
+    sleep 4
     echo "Process launched in background."
     echo "Showing initial output:"
     echo "-----------------------------------------------------------------"
