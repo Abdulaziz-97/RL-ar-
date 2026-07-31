@@ -92,7 +92,7 @@ eval_strategy: "no"
 per_device_eval_batch_size: 8
 logging_steps: 10
 save_strategy: "steps"
-save_steps: 50
+save_steps: 100
 save_total_limit: 5
 log_completions: true
 use_vllm: false
