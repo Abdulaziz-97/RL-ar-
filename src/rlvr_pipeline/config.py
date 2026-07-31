@@ -12,6 +12,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+import os
 import yaml
 
 from trl import GRPOConfig
