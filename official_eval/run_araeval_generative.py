@@ -249,6 +249,44 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         except Exception:
             pass
 
+    # Remap safetensors weight keys if language_model. prefix is present
+    import glob
+    sf_files = glob.glob(os.path.join(merged_dir, "*.safetensors"))
+    if sf_files:
+        try:
+            from safetensors.torch import load_file, save_file
+            for sf_path in sf_files:
+                weights = load_file(sf_path)
+                new_weights = {}
+                changed = False
+                for k, v in weights.items():
+                    new_k = k
+                    if "language_model." in new_k:
+                        new_k = new_k.replace("language_model.", "")
+                        changed = True
+                    if new_k.startswith("model.model."):
+                        new_k = new_k[6:]  # strip duplicate model.
+                        changed = True
+                    new_weights[new_k] = v
+                if changed:
+                    print(f"Remapped safetensors weight keys in {os.path.basename(sf_path)} to standard Qwen2 format...", flush=True)
+                    save_file(new_weights, sf_path)
+
+            index_path = os.path.join(merged_dir, "model.safetensors.index.json")
+            if os.path.exists(index_path):
+                with open(index_path, "r", encoding="utf-8") as f:
+                    idx = json.load(f)
+                if "weight_map" in idx:
+                    new_wm = {}
+                    for k, v in idx["weight_map"].items():
+                        new_k = k.replace("language_model.", "").replace("model.model.", "model.")
+                        new_wm[new_k] = v
+                    idx["weight_map"] = new_wm
+                    with open(index_path, "w", encoding="utf-8") as f:
+                        json.dump(idx, f, indent=2)
+        except Exception as e:
+            print(f"Safetensors remapping warning: {e}", flush=True)
+
     args.model = merged_dir
     args.adapter_path = None
 
