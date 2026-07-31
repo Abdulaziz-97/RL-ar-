@@ -199,39 +199,44 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         base = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16, device_map="cpu")
         peft = PeftModel.from_pretrained(base, args.adapter_path)
         merged = peft.merge_and_unload()
-        if hasattr(merged.config, "architectures") and merged.config.architectures == ["Qwen3_5ForCausalLM"]:
-            merged.config.architectures = ["Qwen2ForCausalLM"]
-            merged.config.model_type = "qwen2"
-            num_layers = getattr(merged.config, "num_hidden_layers", 32)
-            merged.config.max_window_layers = num_layers
-            if hasattr(merged.config, "rope_scaling"):
-                delattr(merged.config, "rope_scaling")
-            if hasattr(merged.config, "rope_parameters"):
-                delattr(merged.config, "rope_parameters")
+        merged.config.architectures = ["Qwen2ForCausalLM"]
+        merged.config.model_type = "qwen2"
+        num_layers = getattr(merged.config, "num_hidden_layers", 32)
+        merged.config.max_window_layers = num_layers
+        if hasattr(merged.config, "rope_scaling"):
+            merged.config.rope_scaling = None
+        if hasattr(merged.config, "rope_parameters"):
+            merged.config.rope_parameters = None
         merged.save_pretrained(merged_dir)
         tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
         tokenizer.save_pretrained(merged_dir)
 
-    # Always ensure saved config.json is patched to standard Qwen2 text model for vLLM
+    # Always ensure saved config.json is completely purged of mrope/rope_scaling for vLLM
     if os.path.exists(cfg_path):
         import json
         with open(cfg_path, "r", encoding="utf-8") as f:
             cfg = json.load(f)
+
+        def _recursive_purge_rope(d):
+            if isinstance(d, dict):
+                d.pop("rope_scaling", None)
+                d.pop("rope_parameters", None)
+                d.pop("mrope_section", None)
+                d.pop("use_sliding_window", None)
+                d.pop("sliding_window", None)
+                for v in d.values():
+                    _recursive_purge_rope(v)
+
+        _recursive_purge_rope(cfg)
         cfg["architectures"] = ["Qwen2ForCausalLM"]
         cfg["model_type"] = "qwen2"
         num_layers = cfg.get("num_hidden_layers", 32)
         cfg["max_window_layers"] = num_layers
-        cfg.pop("use_sliding_window", None)
-        cfg.pop("sliding_window", None)
-        cfg.pop("rope_scaling", None)
-        cfg.pop("rope_parameters", None)
-        if "text_config" in cfg and isinstance(cfg["text_config"], dict):
-            cfg["text_config"].pop("rope_scaling", None)
-            cfg["text_config"].pop("rope_parameters", None)
+
         with open(cfg_path, "w", encoding="utf-8") as f:
             json.dump(cfg, f, indent=2)
-        print(f"Patched {cfg_path} to Qwen2ForCausalLM text config for 100% vLLM compatibility", flush=True)
+        print(f"Recursively purged & patched {cfg_path} to Qwen2ForCausalLM text config", flush=True)
 
     args.model = merged_dir
     args.adapter_path = None
