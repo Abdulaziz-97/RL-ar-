@@ -257,7 +257,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  * trainer.args.per_device_train_batch_size     = {getattr(trainer.args, 'per_device_train_batch_size', 'N/A')}")
         print(f"  * scheduler info                              = {scheduler_info}")
         print("=================================================================", flush=True)
-        trainer.train()
+        latest_checkpoint = None
+        if os.path.exists(config.output_dir):
+            ckpts = [
+                os.path.join(config.output_dir, d)
+                for d in os.listdir(config.output_dir)
+                if d.startswith("checkpoint-") and os.path.isdir(os.path.join(config.output_dir, d))
+            ]
+            if ckpts:
+                ckpts.sort(key=lambda x: int(x.split("-")[-1]))
+                latest_checkpoint = ckpts[-1]
+
+        if latest_checkpoint:
+            print(f"Resuming GRPO training from checkpoint: {latest_checkpoint}", flush=True)
+            trainer.train(resume_from_checkpoint=latest_checkpoint)
+        else:
+            trainer.train()
         trainer.save_model()
         return 0
 
