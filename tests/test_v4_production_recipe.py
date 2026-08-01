@@ -119,7 +119,7 @@ def test_v4_beta_anchored_and_adaptive_features_off():
     assert cfg.enable_adaptive_beta is False
     assert cfg.enable_adaptive_temperature is False
     assert cfg.enable_benchmark_probe is False
-    assert cfg.curriculum_schedule_type == "none"
+    assert cfg.curriculum_schedule_type == "gaussian"
     assert cfg.zero_variance_strategy == "discard"
 
 

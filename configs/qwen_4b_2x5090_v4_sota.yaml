@@ -115,9 +115,11 @@ use_wandb: true
 wandb_project: "arabic-reasoning-rlvr-v4"
 resume_policy: "fresh"
 
-# Curriculum disabled until RLVR rows have multi-bin difficulty labels
+# Gaussian curriculum uses pass@8 bins on promoted rlvr_v5.
+# E2E order is SFT → pass@8/curate/promote → GRPO; sampler attaches only in GRPO
+# (ignored by SFT / pass@8). Keep sigma_fraction=0.2 aligned with V3 production.
 zero_variance_strategy: "discard"
-curriculum_schedule_type: "none"
+curriculum_schedule_type: "gaussian"
 sigma_fraction: 0.2
 enable_crps: false
 crps_max_age_steps: 100

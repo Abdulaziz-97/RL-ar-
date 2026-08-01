@@ -146,10 +146,14 @@ def check_training(failures: list[str]) -> None:
             _fail(failures, f"beta={cfg.beta} expected >0 for SFT-anchored GRPO")
         else:
             _ok(f"beta={cfg.beta}")
-        if cfg.curriculum_schedule_type != "none":
-            _fail(failures, f"curriculum={cfg.curriculum_schedule_type} expected none until calibrated")
+        if cfg.curriculum_schedule_type != "gaussian":
+            _fail(
+                failures,
+                f"curriculum={cfg.curriculum_schedule_type} expected gaussian "
+                "(pass@8 bins exist before GRPO)",
+            )
         else:
-            _ok("curriculum=none")
+            _ok("curriculum=gaussian")
         report = diagnose_reward_weights(cfg.reward_weights)
         _ok(f"reward_weights ok keys={list(report) if isinstance(report, dict) else 'ok'}")
     except Exception as exc:  # noqa: BLE001
