@@ -92,10 +92,13 @@ PY
     export DATAGEN_RESUME_MULTI_TRACE="${DATAGEN_RESUME_MULTI_TRACE:-1}"
     export SFT_BUDGET_USD="${SFT_BUDGET_USD:-200}"
     export RLVR_BUDGET_USD="${RLVR_BUDGET_USD:-50}"
+    # Reverse-QA: LLM diversifies Arabic prompts; solver GT + verifier stay fixed.
+    export REVERSE_QA="${REVERSE_QA:-1}"
+    export REVERSE_QA_MODEL="${REVERSE_QA_MODEL:-deepseek-v4-flash}"
     if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -z "${DEEPSEEK_API_KEY:-}" ]; then
         export USE_OPENROUTER="${USE_OPENROUTER:-1}"
     fi
-    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0}"
+    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0} REVERSE_QA=${REVERSE_QA}"
 
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
     if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi

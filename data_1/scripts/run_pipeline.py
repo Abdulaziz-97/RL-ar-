@@ -68,6 +68,10 @@ def main() -> int:
         "teacher_workers": max(1, int(workers)),
         "teacher_retries": int(os.environ.get("TEACHER_RETRIES", "4")),
         "max_tokens": int(os.environ.get("TEACHER_MAX_TOKENS", "8192")),
+        "reverse_qa": os.environ.get("REVERSE_QA", "1").strip()
+        in {"1", "true", "True", "yes"},
+        "reverse_qa_model": os.environ.get("REVERSE_QA_MODEL")
+        or os.environ.get("TEACHER_MODEL", "deepseek-v4-flash"),
     }
     cfg.max_alternate_methods = 0
     print(

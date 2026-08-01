@@ -139,17 +139,40 @@ class LiveProblemGenerator:
 
     DOMAINS = ("gsm8k", "math", "math_comp", "logic")
 
-    def __init__(self):
+    def __init__(self, config: dict[str, Any] | None = None):
         from synth.programmatic import gen_gsm8k, gen_logic, gen_math, gen_math_comp
         import random
 
+        from rlvr_synth.roles.reverse_qa import (
+            make_openai_compatible_rewrite_fn,
+            reverse_qa_enabled,
+        )
+
         self._random = random
+        self._config = dict(config or {})
         self._gens = {
             "gsm8k": gen_gsm8k,
             "math": gen_math,
             "math_comp": gen_math_comp,
             "logic": gen_logic,
         }
+        self._reverse_qa = reverse_qa_enabled(self._config)
+        self._rewrite_fn = None
+        if self._reverse_qa:
+            # Allow tests / offline to inject a callable via config.
+            injected = self._config.get("reverse_qa_rewrite_fn")
+            if callable(injected):
+                self._rewrite_fn = injected
+            else:
+                self._rewrite_fn = make_openai_compatible_rewrite_fn(
+                    model=str(
+                        self._config.get("reverse_qa_model")
+                        or self._config.get("model")
+                        or "deepseek-v4-flash"
+                    ),
+                    temperature=float(self._config.get("reverse_qa_temperature") or 0.7),
+                    max_tokens=int(self._config.get("reverse_qa_max_tokens") or 800),
+                )
 
     def generate_family(self, domain: str, seed: int) -> LatentProblem:
         if domain not in self.DOMAINS:
@@ -192,7 +215,7 @@ class LiveProblemGenerator:
             partition=latent.partition,
             seed=seed,
         )
-        return RenderedProblem(
+        rendered = RenderedProblem(
             problem_id=problem_id,
             family_id=latent.family_id,
             domain=latent.domain,
@@ -205,8 +228,19 @@ class LiveProblemGenerator:
                 "num_steps": latent.latent.get("num_steps"),
                 "template_family": latent.latent.get("template_family"),
                 "oracle_ground_truth": latent.latent.get("ground_truth"),
+                "solution_steps": latent.latent.get("solution_steps"),
             },
         )
+        if self._reverse_qa and self._rewrite_fn is not None:
+            from rlvr_synth.roles.reverse_qa import diversify_rendered_problem
+
+            rendered = diversify_rendered_problem(
+                rendered,
+                rewrite_fn=self._rewrite_fn,
+                latent=dict(latent.latent or {}),
+                enabled=True,
+            )
+        return rendered
 
 
 class LiveTraceTeacher:
@@ -407,7 +441,7 @@ class DSPyRoleBackend:
             self.problem_generator = ReplayProblemGenerator(stages)
             self.trace_teacher = ReplayTraceTeacher(stages)
         else:
-            self.problem_generator = LiveProblemGenerator()
+            self.problem_generator = LiveProblemGenerator(cfg)
             self.trace_teacher = LiveTraceTeacher(cfg)
         self.verifier = ContractVerifier()
         self.arabic_editor = StubArabicEditor()

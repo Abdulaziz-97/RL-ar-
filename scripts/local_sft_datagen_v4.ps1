@@ -55,6 +55,8 @@ $canaryN = if ($env:DATAGEN_CANARY_N) { [int]$env:DATAGEN_CANARY_N } else { 20 }
 $canaryBudget = if ($env:DATAGEN_CANARY_BUDGET_USD) { $env:DATAGEN_CANARY_BUDGET_USD } else { "5" }
 $env:DATAGEN_RESUME_MULTI_TRACE = if ($env:DATAGEN_RESUME_MULTI_TRACE) { $env:DATAGEN_RESUME_MULTI_TRACE } else { "1" }
 $env:TEACHER_RETRIES = if ($env:TEACHER_RETRIES) { $env:TEACHER_RETRIES } else { "4" }
+$env:REVERSE_QA = if ($env:REVERSE_QA) { $env:REVERSE_QA } else { "1" }
+$env:REVERSE_QA_MODEL = if ($env:REVERSE_QA_MODEL) { $env:REVERSE_QA_MODEL } else { "deepseek-v4-flash" }
 $skipCanary = ($env:SKIP_CANARY -eq "1")
 $fresh = ($env:DATAGEN_FRESH -eq "1")
 
@@ -62,7 +64,7 @@ $SftCfg = Join-Path $Data1 "configs\full_sft_6500.yaml"
 $runPipeline = Join-Path $Data1 "scripts\run_pipeline.py"
 $selectScript = Join-Path $Data1 "scripts\select_sft_v4_release.py"
 
-Write-Log "START run_id=$RunId workers=$workers max_tokens=$($env:TEACHER_MAX_TOKENS) skip_canary=$skipCanary fresh=$fresh log=$LogFile"
+Write-Log "START run_id=$RunId workers=$workers max_tokens=$($env:TEACHER_MAX_TOKENS) reverse_qa=$($env:REVERSE_QA) skip_canary=$skipCanary fresh=$fresh log=$LogFile"
 Write-Log "WORK=$WorkRoot"
 
 try {
