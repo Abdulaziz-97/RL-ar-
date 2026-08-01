@@ -129,8 +129,8 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
     }
 
 def main():
-    parser = argparse.ArgumentParser(description="Fast AraMath Evaluation for Phase 1 SFT, checkpoint-100, and checkpoint-200")
-    parser.add_argument("--base-model", type=str, default="aziz9788/T06__qwen35-mixed-v6-lr1e5")
+    parser = argparse.ArgumentParser(description="Fast AraMath Evaluation for SFT, checkpoint-100, and checkpoint-200")
+    parser.add_argument("--base-model", type=str, default="Qwen/Qwen3.5-4B")
     parser.add_argument("--sft-model", type=str, default="aziz9788/T06__qwen35-mixed-v6-lr1e5")
     parser.add_argument("--checkpoints-dir", type=str, default="/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run")
     parser.add_argument("--limit", type=int, default=50)
@@ -142,16 +142,28 @@ def main():
 
     results = []
 
-    # 1. Evaluate Phase 1 SFT Model
+    # 1. Evaluate Instruction Base Model
+    print(f"\n[EVAL 1] Evaluating Instruction Base Model: {args.sft_model}...", flush=True)
     sft_res = evaluate_checkpoint(args.sft_model, None, samples)
     results.append(sft_res)
 
-    # 2. Evaluate GRPO checkpoint-100 and checkpoint-200
+    # 2. Evaluate Stage 1 CoT SFT Model if present in /workspace/outputs/sft_coldstart_v4
+    stage1_sft = "/workspace/outputs/sft_coldstart_v4"
+    if os.path.exists(stage1_sft) and os.path.exists(os.path.join(stage1_sft, "adapter_config.json")):
+        print(f"\n[EVAL 2] Evaluating Stage 1 CoT SFT (4,000 CoT Traces) from {stage1_sft}...", flush=True)
+        stage1_res = evaluate_checkpoint(args.base_model, stage1_sft, samples)
+        results.append(stage1_res)
+
+    # 3. Evaluate GRPO checkpoint-100 and checkpoint-200
     ckpt_dir = Path(args.checkpoints_dir)
+    if not ckpt_dir.exists():
+        ckpt_dir = Path("/workspace/outputs/qwen_4b_2x5090_v4_run")
+
     target_ckpts = ["checkpoint-100", "checkpoint-200"]
     for ckpt_name in target_ckpts:
         p = ckpt_dir / ckpt_name
         if p.exists() and (p / "adapter_config.json").exists():
+            print(f"\n[EVAL] Evaluating GRPO {ckpt_name} from {p}...", flush=True)
             res = evaluate_checkpoint(args.base_model, str(p), samples)
             results.append(res)
         else:
