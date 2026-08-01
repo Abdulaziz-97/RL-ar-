@@ -221,14 +221,30 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         peft = PeftModel.from_pretrained(base, args.adapter_path)
         merged = peft.merge_and_unload()
 
+        def is_valid_qwen2_param(k: str) -> bool:
+            if k in ("model.embed_tokens.weight", "model.norm.weight", "lm_head.weight"):
+                return True
+            if not k.startswith("model.layers."):
+                return False
+            parts = k.split(".")
+            if len(parts) < 4:
+                return False
+            sub = parts[3]
+            if sub in ("input_layernorm", "post_attention_layernorm"):
+                return True
+            if sub == "mlp" and len(parts) >= 5 and parts[4] in ("gate_up_proj", "gate_proj", "up_proj", "down_proj"):
+                return True
+            if sub == "self_attn" and len(parts) >= 5 and parts[4] in ("qkv_proj", "q_proj", "k_proj", "v_proj", "o_proj"):
+                return True
+            return False
+
         # Remap state dict keys in RAM before writing to disk once (prevents Errno 28 disk full)
         state_dict = merged.state_dict()
         new_state_dict = {}
         for k, v in state_dict.items():
             new_k = k.replace("language_model.", "").replace("model.model.", "model.")
-            if "linear_attn" in new_k or "visual" in new_k:
-                continue  # Skip hybrid Qwen3.5 linear_attn/vision weights not in standard Qwen2 text model
-            new_state_dict[new_k] = v.clone()
+            if is_valid_qwen2_param(new_k):
+                new_state_dict[new_k] = v.clone()
 
         os.makedirs(merged_dir, exist_ok=True)
         save_file(new_state_dict, os.path.join(merged_dir, "model.safetensors"))
