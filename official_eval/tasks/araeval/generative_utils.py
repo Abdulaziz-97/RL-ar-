@@ -144,29 +144,9 @@ _END_LETTER_RE = re.compile(_CHOICE_PATTERN + r"\s*[.。)]*\s*$")
 _ANY_LETTER_RE = re.compile(r"(?<!\w)" + _CHOICE_PATTERN + r"(?!\w)")
 
 
-def extract_answer(text: str) -> str | None:
-    """Extract the answer letter (A/B/C/D) from model-generated text.
-
-    Handles both Latin (A/B/C/D) and Arabic (أ/ب/ج/د) choice tokens,
-    markdown formatting (**A**, [B], (أ)), explicit statements, and unclosed <think> tags.
-
-    Uses a multi-layer fallback strategy:
-    1. Explicit answer statement (الإجابة: A or (أ)) — takes LAST match
-    2. Option/choice reference (الخيار الصحيح هو B) — takes LAST match
-    3. Markdown/bracketed patterns (**A**, [B], (أ)) — takes LAST match
-    4. Choice letter at the end of text
-    5. Last standalone choice letter in text
-
-    Returns uppercase Latin letter (A/B/C/D) or None if extraction fails.
-    """
-    if not text or not text.strip():
+def _extract_from_text(search_text: str) -> str | None:
+    if not search_text or not search_text.strip():
         return None
-
-    # Strip thinking tags first
-    clean = strip_thinking_tags(text).strip()
-    
-    # If stripping unclosed <think> left empty text, search inside the raw text
-    search_text = clean if clean else text
 
     # Layer 1: All explicit answer statements — take the LAST one
     matches = list(_EXPLICIT_ANSWER_RE.finditer(search_text))
@@ -199,6 +179,26 @@ def extract_answer(text: str) -> str | None:
         return _ARABIC_TO_LATIN.get(raw)
 
     return None
+
+
+def extract_answer(text: str) -> str | None:
+    """Extract the answer letter (A/B/C/D) from model-generated text.
+
+    First tries extracting outside <think> tags. If no answer is found (e.g.
+    the model put the answer inside <think> or <think> was unclosed), falls
+    back to extracting from the raw text.
+    """
+    if not text or not text.strip():
+        return None
+
+    # First pass: search outside <think> tags
+    clean = strip_thinking_tags(text).strip()
+    ans = _extract_from_text(clean)
+    if ans is not None:
+        return ans
+
+    # Fallback pass: search raw text (handles unclosed <think> or answers inside <think>)
+    return _extract_from_text(text)
 
 
 # ---------------------------------------------------------------------------
