@@ -41,12 +41,12 @@ def main() -> int:
     parser.add_argument(
         "--sft-dest",
         type=Path,
-        default=ROOT / "data" / "arabic_reasoning_coldstart_v4.jsonl",
+        default=ROOT / "data" / "arabic_reasoning_coldstart_v5.jsonl",
     )
     parser.add_argument(
         "--rlvr-dest",
         type=Path,
-        default=ROOT / "data" / "arabic_reasoning_rlvr_v4.jsonl",
+        default=ROOT / "data" / "arabic_reasoning_rlvr_v5.jsonl",
     )
     parser.add_argument("--skip-promote", action="store_true",
                         help="Run ship gate only; do not overwrite production")
@@ -65,8 +65,8 @@ def main() -> int:
     corpora = {"sft_train": args.sft, "rlvr_train": args.rlvr}
     schema_kinds = {"sft_train": "sft_trace", "rlvr_train": "rlvr_prompt"}
     artifacts = [
-        ("sft_train", "arabic_reasoning_coldstart_v4.jsonl", args.sft),
-        ("rlvr_train", "arabic_reasoning_rlvr_v4.jsonl", args.rlvr),
+        ("sft_train", "arabic_reasoning_coldstart_v5.jsonl", args.sft),
+        ("rlvr_train", "arabic_reasoning_rlvr_v5.jsonl", args.rlvr),
     ]
     manifest = build_manifest(
         args.release_id,

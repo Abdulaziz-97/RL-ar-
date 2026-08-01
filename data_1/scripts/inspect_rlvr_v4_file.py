@@ -9,7 +9,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 PACK_ROOT = Path(__file__).resolve().parents[1]
 root_dir = PACK_ROOT.parent
 
-rlvr_path = root_dir / "data" / "arabic_reasoning_rlvr_v4.jsonl"
+rlvr_path = root_dir / "data" / "arabic_reasoning_rlvr_v5.jsonl"
 
 print("="*80)
 print(f" INSPECTING RLVR V4 FILE: {rlvr_path}")

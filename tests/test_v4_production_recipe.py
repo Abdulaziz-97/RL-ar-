@@ -87,7 +87,7 @@ def test_build_sft_config_ignores_grpo_max_steps():
         mock_sft_cfg.return_value = MagicMock(max_steps=None)
         mock_trainer_cls.return_value = MagicMock(model=MagicMock(), processing_class=None)
         cfg.instruction_base_model = None
-        cfg.coldstart_data_path = str(REPO / "data" / "arabic_reasoning_coldstart_v4.jsonl")
+        cfg.coldstart_data_path = str(REPO / "data" / "arabic_reasoning_coldstart_v5.jsonl")
         try:
             build_sft_trainer(cfg)
         except Exception:

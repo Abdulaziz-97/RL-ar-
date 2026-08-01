@@ -146,15 +146,15 @@ def main():
     pipeline_data_dir = root_dir / "data"
     pipeline_data_dir.mkdir(exist_ok=True)
     
-    with open(pipeline_data_dir / "arabic_reasoning_coldstart_v4.jsonl", "w", encoding="utf-8") as f:
+    with open(pipeline_data_dir / "arabic_reasoning_coldstart_v5.jsonl", "w", encoding="utf-8") as f:
         for item in sft_samples:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
-            
-    with open(pipeline_data_dir / "arabic_reasoning_rlvr_v4.jsonl", "w", encoding="utf-8") as f:
+
+    with open(pipeline_data_dir / "arabic_reasoning_rlvr_v5.jsonl", "w", encoding="utf-8") as f:
         for item in rlvr_samples:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    print(f"[COMPLETE] Combined datasets saved to data/arabic_reasoning_coldstart_v4.jsonl (4,000) and data/arabic_reasoning_rlvr_v4.jsonl (4,000)!")
+    print(f"[COMPLETE] Combined datasets saved to data/arabic_reasoning_coldstart_v5.jsonl (4,000) and data/arabic_reasoning_rlvr_v5.jsonl (4,000)!")
 
 if __name__ == "__main__":
     main()

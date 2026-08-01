@@ -21,10 +21,10 @@ lora_target_modules:
   - "up_proj"
   - "down_proj"
 
-# Dataset: MASTER V4 DATASETS (4,000 SFT + 4,000 RLVR Prompts)
-train_data_path: "data/arabic_reasoning_rlvr_v4.jsonl"
+# Dataset: MASTER V5 DATASETS (4,000 SFT + 4,000 RLVR Prompts)
+train_data_path: "data/arabic_reasoning_rlvr_v5.jsonl"
 eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
-coldstart_data_path: "data/arabic_reasoning_coldstart_v4.jsonl"
+coldstart_data_path: "data/arabic_reasoning_coldstart_v5.jsonl"
 
 # Stage-separated SFT budget (must NOT inherit GRPO max_steps)
 sft_num_train_epochs: 1.0

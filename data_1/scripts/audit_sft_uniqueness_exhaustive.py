@@ -7,7 +7,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 PACK_ROOT = Path(__file__).resolve().parents[1]
 root_dir = PACK_ROOT.parent
 
-sft_path = root_dir / "data" / "arabic_reasoning_coldstart_v4.jsonl"
+sft_path = root_dir / "data" / "arabic_reasoning_coldstart_v5.jsonl"
 
 print("="*80)
 print(" 🔬 EXHAUSTIVE SFT DATASET UNIQUENESS AUDIT")

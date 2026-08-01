@@ -40,8 +40,8 @@ SCRIPT_DIR  = Path(__file__).resolve().parent
 PACK_ROOT   = SCRIPT_DIR.parent
 ROOT_DIR    = PACK_ROOT.parent
 
-OUT_SFT     = ROOT_DIR / "data" / "arabic_reasoning_coldstart_v4.jsonl"
-OUT_RLVR    = ROOT_DIR / "data" / "arabic_reasoning_rlvr_v4.jsonl"
+OUT_SFT     = ROOT_DIR / "data" / "arabic_reasoning_coldstart_v5.jsonl"
+OUT_RLVR    = ROOT_DIR / "data" / "arabic_reasoning_rlvr_v5.jsonl"
 BUDGET_FILE = PACK_ROOT / "outputs" / "run" / "budget_qwen37.json"
 BUDGET_FILE_MAIN = PACK_ROOT / "outputs" / "run" / "budget.json"
 

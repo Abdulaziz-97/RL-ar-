@@ -16,8 +16,8 @@ sys.path[:0] = [str(PACK_ROOT / "src"), str(ROOT / "src"), str(PACK_ROOT)]
 from rlvr_synth.release.manifest import ReleaseManifest
 from rlvr_synth.release.ship_gate import run_ship_gate, write_ship_report
 
-sft_path = ROOT / "data" / "arabic_reasoning_coldstart_v4.jsonl"
-rlvr_path = ROOT / "data" / "arabic_reasoning_rlvr_v4.jsonl"
+sft_path = ROOT / "data" / "arabic_reasoning_coldstart_v5.jsonl"
+rlvr_path = ROOT / "data" / "arabic_reasoning_rlvr_v5.jsonl"
 manifest_path = ROOT / "data" / "release_manifest_v4.json"
 
 

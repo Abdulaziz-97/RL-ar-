@@ -20,9 +20,9 @@ def print_arabic(text: str) -> str:
     return text
 
 def main():
-    jsonl_path = Path("/workspace/RL-ar-/data/arabic_reasoning_rlvr_v4.jsonl")
+    jsonl_path = Path("/workspace/RL-ar-/data/arabic_reasoning_rlvr_v5.jsonl")
     if not jsonl_path.exists():
-        jsonl_path = Path("data/arabic_reasoning_rlvr_v4.jsonl")
+        jsonl_path = Path("data/arabic_reasoning_rlvr_v5.jsonl")
     
     idx = int(sys.argv[1]) if len(sys.argv) > 1 else 1
     

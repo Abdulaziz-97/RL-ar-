@@ -84,8 +84,8 @@ class TestFullMasterGenerationPipeline(unittest.TestCase):
         self.assertTrue(cfg_path.exists(), "Master V4 config file missing!")
         
         cfg_data = yaml.safe_load(open(cfg_path, encoding="utf-8"))
-        self.assertEqual(cfg_data.get("coldstart_data_path"), "data/arabic_reasoning_coldstart_v4.jsonl")
-        self.assertEqual(cfg_data.get("train_data_path"), "data/arabic_reasoning_rlvr_v4.jsonl")
+        self.assertEqual(cfg_data.get("coldstart_data_path"), "data/arabic_reasoning_coldstart_v5.jsonl")
+        self.assertEqual(cfg_data.get("train_data_path"), "data/arabic_reasoning_rlvr_v5.jsonl")
         self.assertEqual(cfg_data.get("max_steps"), 125)
         self.assertEqual(cfg_data.get("max_completion_length"), 2048)
         print("  ✓ [COMPONENT 6 PASSED] Vast.ai Master V4 training configuration validated.")

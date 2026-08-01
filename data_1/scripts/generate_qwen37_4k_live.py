@@ -74,8 +74,8 @@ def main():
     rng = random.Random(890)
     print("[INFO] Starting LIVE Qwen 3.7 Flash Generation for Master 4K Datasets...")
     
-    out_sft = root_dir / "data" / "arabic_reasoning_coldstart_v4.jsonl"
-    out_rlvr = root_dir / "data" / "arabic_reasoning_rlvr_v4.jsonl"
+    out_sft = root_dir / "data" / "arabic_reasoning_coldstart_v5.jsonl"
+    out_rlvr = root_dir / "data" / "arabic_reasoning_rlvr_v5.jsonl"
     
     # 1. Load Base 1610 SFT Samples
     base_sft_path = root_dir / "data" / "arabic_reasoning_coldstart_train.jsonl"

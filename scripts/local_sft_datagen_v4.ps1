@@ -117,7 +117,7 @@ print(r'$CanaryCfg')
         $selectScript, "--candidates", $cand, "--out", $selected, "--allow-missing-decontam"
     )
 
-    $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v4.jsonl"
+    $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v5.jsonl"
     Copy-Item -Force $selected $dest
     $n = (Get-Content $dest | Measure-Object -Line).Lines
     Write-Log "WROTE $dest rows=$n"

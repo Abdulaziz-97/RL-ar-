@@ -185,7 +185,7 @@ class TestMasterV44KDatasets(unittest.TestCase):
     """Test 4,000 SFT + 4,000 RLVR master datasets structural integrity and zero overlap."""
 
     def test_sft_dataset_4000_count_and_schema(self):
-        sft_path = Path("data/arabic_reasoning_coldstart_v4.jsonl")
+        sft_path = Path("data/arabic_reasoning_coldstart_v5.jsonl")
         self.assertTrue(sft_path.exists(), f"File missing: {sft_path}")
         
         samples = []
@@ -207,7 +207,7 @@ class TestMasterV44KDatasets(unittest.TestCase):
             self.assertIn("</answer>", resp)
 
     def test_rlvr_dataset_4000_count_and_schema(self):
-        rlvr_path = Path("data/arabic_reasoning_rlvr_v4.jsonl")
+        rlvr_path = Path("data/arabic_reasoning_rlvr_v5.jsonl")
         self.assertTrue(rlvr_path.exists(), f"File missing: {rlvr_path}")
         
         samples = []
@@ -226,8 +226,8 @@ class TestMasterV44KDatasets(unittest.TestCase):
             self.assertTrue(has_gt, "Missing ground truth in RLVR prompt!")
 
     def test_datasets_zero_duplicates_and_zero_overlap(self):
-        sft_path = Path("data/arabic_reasoning_coldstart_v4.jsonl")
-        rlvr_path = Path("data/arabic_reasoning_rlvr_v4.jsonl")
+        sft_path = Path("data/arabic_reasoning_coldstart_v5.jsonl")
+        rlvr_path = Path("data/arabic_reasoning_rlvr_v5.jsonl")
         
         sft_prompts = []
         with open(sft_path, "r", encoding="utf-8") as f:

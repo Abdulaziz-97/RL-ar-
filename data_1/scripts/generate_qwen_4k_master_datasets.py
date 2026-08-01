@@ -59,8 +59,8 @@ def generate_qwen_llm_problem(domain: str, rng: random.Random) -> dict | None:
 def main():
     print("[INFO] Starting Full Qwen 3.7 Flash LLM Synthetic Data Generation for 4K SFT & 4K RLVR...")
     
-    out_sft = root_dir / "data" / "arabic_reasoning_coldstart_v4.jsonl"
-    out_rlvr = root_dir / "data" / "arabic_reasoning_rlvr_v4.jsonl"
+    out_sft = root_dir / "data" / "arabic_reasoning_coldstart_v5.jsonl"
+    out_rlvr = root_dir / "data" / "arabic_reasoning_rlvr_v5.jsonl"
     
     print(f"[SUCCESS] Prepared Qwen 3.7 Flash LLM Data Pipeline targeting {out_sft} and {out_rlvr}.")
 

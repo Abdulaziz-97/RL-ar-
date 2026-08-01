@@ -80,7 +80,7 @@ def main() -> int:
         mock_trainer_cls.return_value = MagicMock(model=MagicMock(), processing_class=None)
         cfg2 = RLVRConfig.from_yaml(REPO / "configs" / "qwen_4b_2x5090_v4_sota.yaml")
         cfg2.instruction_base_model = None
-        cfg2.coldstart_data_path = str(REPO / "data" / "arabic_reasoning_coldstart_v4.jsonl")
+        cfg2.coldstart_data_path = str(REPO / "data" / "arabic_reasoning_coldstart_v5.jsonl")
         try:
             build_sft_trainer(cfg2)
         except Exception as e:
@@ -212,8 +212,8 @@ def main() -> int:
         failures.append(f"H-D reward diagnose failed: {e}")
         _log("D", "prerun:rewards", "diagnose_reward_weights FAILED", {"error": str(e)})
 
-    sft_path = REPO / "data" / "arabic_reasoning_coldstart_v4.jsonl"
-    rlvr_path = REPO / "data" / "arabic_reasoning_rlvr_v4.jsonl"
+    sft_path = REPO / "data" / "arabic_reasoning_coldstart_v5.jsonl"
+    rlvr_path = REPO / "data" / "arabic_reasoning_rlvr_v5.jsonl"
     sft_n = sum(1 for _ in open(sft_path, encoding="utf-8")) if sft_path.exists() else -1
     rlvr_n = sum(1 for _ in open(rlvr_path, encoding="utf-8")) if rlvr_path.exists() else -1
     _log(

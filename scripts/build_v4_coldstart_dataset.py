@@ -4,7 +4,7 @@ from pathlib import Path
 def main():
     base_coldstart_path = Path("data/arabic_reasoning_coldstart_train.jsonl")
     hard_math_path = Path("data/arabic_reasoning_coldstart_hard_math_v4.jsonl")
-    output_path = Path("data/arabic_reasoning_coldstart_v4.jsonl")
+    output_path = Path("data/arabic_reasoning_coldstart_v5.jsonl")
 
     samples = []
     seen_prompts = set()
