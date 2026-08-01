@@ -65,46 +65,9 @@ def upload_to_hf(repo_id: str, model_dir: str, token: str | None = None):
     except Exception as e:
         print(f"Error uploading to HuggingFace: {e}")
 
-def commit_logs_to_github():
-    print("\n[GitHub] Committing training and evaluation logs...")
-    logs_dir = Path("outputs_logs")
-    logs_dir.mkdir(exist_ok=True)
-
-    # Set git author identity if not configured
-    try:
-        subprocess.run(["git", "config", "user.email", "abdulaziz@saudi-llm.ai"], check=False)
-        subprocess.run(["git", "config", "user.name", "Abdulaziz"], check=False)
-    except Exception:
-        pass
-
-    # Copy key logs if they exist
-    src_master = Path("/workspace/outputs/master_execution.log")
-    if not src_master.exists():
-        src_master = Path("/workspace/RL-ar-/master_execution.log")
-
-    if src_master.exists():
-        shutil.copy(src_master, logs_dir / "master_execution.log")
-        print("Copied master_execution.log to outputs_logs/")
-
-    src_eval = Path("/workspace/outputs/generative_eval_checkpoint_200/summary.json")
-    if not src_eval.exists():
-        src_eval = Path("/workspace/RL-ar-/outputs/generative_eval_checkpoint_200/summary.json")
-
-    if src_eval.exists():
-        shutil.copy(src_eval, logs_dir / "generative_eval_summary.json")
-        print("Copied generative_eval_summary.json to outputs_logs/")
-
-    try:
-        subprocess.run(["git", "add", "outputs_logs/"], check=True)
-        subprocess.run(["git", "commit", "-m", "docs(logs): add GRPO v4 training and evaluation logs"], check=True)
-        subprocess.run(["git", "push", "origin", "Efficient-Arabic-Reasnoning-Pipeline"], check=True)
-        print("Successfully committed and pushed logs to GitHub repository!")
-    except Exception as e:
-        print(f"Error pushing to GitHub: {e}")
-
 def main():
-    parser = argparse.ArgumentParser(description="Upload Model to HuggingFace and Logs to GitHub")
-    parser.add_argument("--hf-repo", type=str, default="Abdulaziz-97/qwen3.5-4b-arabic-grpo-v4-checkpoint-200-adapter", help="Hugging Face Repository ID")
+    parser = argparse.ArgumentParser(description="Upload Model to HuggingFace")
+    parser.add_argument("--hf-repo", type=str, default="aziz9788/qwen3.5-4b-arabic-grpo-v4-checkpoint-200-adapter", help="Hugging Face Repository ID")
     parser.add_argument("--model-dir", type=str, default=None, help="Model directory path")
     parser.add_argument("--token", type=str, default=None, help="HuggingFace API Token")
     args = parser.parse_args()
@@ -145,11 +108,6 @@ def main():
             print(f"\n[INFO] Found merged model directory: {mc}. Uploading to {merged_repo}...")
             upload_to_hf(merged_repo, str(mc.resolve()), token=args.token)
             break
-
-    commit_logs_to_github()
-
-if __name__ == "__main__":
-    main()
 
 if __name__ == "__main__":
     main()
