@@ -37,12 +37,13 @@ def main():
 
     inputs = tokenizer(formatted_prompt, return_tensors="pt").to("cuda:0")
 
-    print("[3/3] Generating response with greedy decoding (temperature=0.0)...", flush=True)
+    print("[3/3] Generating response with greedy decoding (repetition_penalty=1.10)...", flush=True)
     with torch.no_grad():
         output_ids = merged_model.generate(
             **inputs,
             max_new_tokens=512,
             do_sample=False,  # greedy
+            repetition_penalty=1.10,
             pad_token_id=tokenizer.eos_token_id,
         )
 
