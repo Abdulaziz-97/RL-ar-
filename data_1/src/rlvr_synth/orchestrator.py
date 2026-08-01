@@ -183,6 +183,7 @@ class SynthOrchestrator:
             "budget_path",
             "teacher_retries",
             "cache",
+            "max_tokens",
         ):
             ext.pop(volatile, None)
         payload_obj["external_config"] = ext
