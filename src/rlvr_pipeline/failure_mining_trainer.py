@@ -280,6 +280,27 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
                         local_start = overlap_start - process_start
                         local_end = overlap_end - process_start
                         advantages[local_start:local_end] = -1.0 if all_wrong else 1.0
+                        # #region agent log
+                        try:
+                            import json as _json, time as _time
+                            from pathlib import Path as _Path
+                            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
+                            with open(_log, "a", encoding="utf-8") as _f:
+                                _f.write(_json.dumps({
+                                    "sessionId": "a273d4", "hypothesisId": "C", "runId": "sanity",
+                                    "location": "failure_mining_trainer.py:zvp_apply",
+                                    "message": "ZVP direct_scoring applied",
+                                    "data": {
+                                        "group": g, "all_wrong": all_wrong, "all_correct": all_correct,
+                                        "process_start": process_start, "process_end": process_end,
+                                        "local_start": local_start, "local_end": local_end,
+                                        "adv_value": -1.0 if all_wrong else 1.0,
+                                    },
+                                    "timestamp": int(_time.time() * 1000),
+                                }, ensure_ascii=False) + "\n")
+                        except Exception:
+                            pass
+                        # #endregion
 
         # Refinement: Apply advantage clamping [-5.0, 5.0] to prevent low-sigma advantage amplification spikes
         raw_advantages = advantages.clone()

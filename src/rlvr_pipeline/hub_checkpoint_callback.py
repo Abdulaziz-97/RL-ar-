@@ -170,6 +170,33 @@ class HubCheckpointCallback(TrainerCallback):
             keep_n = 1
 
         checkpoints = _list_local_checkpoints(output_dir)
+        # #region agent log
+        try:
+            import json as _json, time as _time
+            from pathlib import Path as _Path
+            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
+            with open(_log, "a", encoding="utf-8") as _f:
+                _f.write(_json.dumps({
+                    "sessionId": "a273d4", "hypothesisId": "D", "runId": "sanity",
+                    "location": "hub_checkpoint_callback.py:_delete_older_local_checkpoints",
+                    "message": "delete-after-push decision",
+                    "data": {
+                        "keep_n": keep_n,
+                        "n_local": len(checkpoints),
+                        "local_steps": [s for s, _ in checkpoints],
+                        "pushed_steps": sorted(self._pushed_steps),
+                        "would_delete": [
+                            s for s, _ in checkpoints
+                            if s not in {x for x, _ in checkpoints[-keep_n:]}
+                            and s in self._pushed_steps
+                        ],
+                        "disk_relief_noop": len(checkpoints) <= keep_n,
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # #endregion
         if len(checkpoints) <= keep_n:
             return
 

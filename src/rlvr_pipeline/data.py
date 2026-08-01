@@ -66,7 +66,17 @@ def _derive_difficulty(metadata: dict[str, Any]) -> str:
     if isinstance(emp, dict):
         emp = emp.get("band")
     if isinstance(emp, str) and emp:
-        return emp
+        band = emp.strip().lower()
+        if band in {"trivial", "easy", "medium", "hard"}:
+            return band
+        # After pass@8 curate, mastered/deferred are dropped from train. If they
+        # leak through, map into curriculum buckets so gaussian sampling never
+        # silently orphans rows (runtime evidence: CurriculumSampler only knows
+        # trivial/easy/medium/hard).
+        if band == "mastered":
+            return "easy"
+        if band == "deferred":
+            return "hard"
     num_steps = metadata.get("num_steps")
     if isinstance(num_steps, (int, float)) and num_steps:
         if num_steps <= 2:

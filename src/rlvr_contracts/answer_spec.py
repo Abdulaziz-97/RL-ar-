@@ -1,6 +1,7 @@
 """Discriminated answer_spec canonicalization.
 
-Supported v1 types: integer, rational, decimal_exact, decimal_approx, logic_json.
+Supported types: integer, rational, decimal_exact, decimal_approx, logic_json,
+mcq_letter, constraint_set.
 Symbolic answers are explicitly rejected at every boundary.
 """
 
@@ -10,11 +11,20 @@ import json
 import math
 import re
 from dataclasses import dataclass, field
+from decimal import Decimal
 from fractions import Fraction
 from typing import Any, Mapping, Optional
 
 SUPPORTED_ANSWER_TYPES = frozenset(
-    {"integer", "rational", "decimal_exact", "decimal_approx", "logic_json"}
+    {
+        "integer",
+        "rational",
+        "decimal_exact",
+        "decimal_approx",
+        "logic_json",
+        "mcq_letter",
+        "constraint_set",
+    }
 )
 REJECTED_ANSWER_TYPES = frozenset({"symbolic", "sympy", "expression"})
 
@@ -22,6 +32,22 @@ _ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 _FRAC_RE = re.compile(r"^\s*(-?\d+)\s*/\s*(-?\d+)\s*$")
 _INT_RE = re.compile(r"^\s*-?\d+\s*$")
 _DECIMAL_RE = re.compile(r"^\s*-?\d+(?:\.\d+)?\s*$")
+_MCQ_LETTER_RE = re.compile(r"^\s*([A-Da-d]|[أاببججدد])\s*[).:\-،,]?\s*$")
+_MCQ_LETTER_MAP = {
+    "أ": "A",
+    "ا": "A",
+    "ب": "B",
+    "ج": "C",
+    "د": "D",
+    "a": "A",
+    "b": "B",
+    "c": "C",
+    "d": "D",
+    "A": "A",
+    "B": "B",
+    "C": "C",
+    "D": "D",
+}
 
 
 class AnswerSpecError(ValueError):
@@ -60,8 +86,8 @@ def reject_symbolic(type_name: str | None) -> None:
     key = str(type_name).strip().lower()
     if key in REJECTED_ANSWER_TYPES or key.startswith("symbolic"):
         raise AnswerSpecError(
-            f"answer type '{type_name}' is rejected in v1; "
-            "use integer|rational|decimal_exact|decimal_approx|logic_json"
+            f"answer type '{type_name}' is rejected; "
+            "use integer|rational|decimal_exact|decimal_approx|logic_json|mcq_letter|constraint_set"
         )
 
 
@@ -79,29 +105,21 @@ def canonicalize_integer(value: Any) -> str:
     if isinstance(value, int):
         return str(value)
     if isinstance(value, float):
-        if not math.isfinite(value):
-            raise AnswerSpecError(f"non-finite float for integer: {value}")
-        if abs(value - round(value)) <= 1e-6:
-            return str(int(round(value)))
-        return str(value)
+        if not math.isfinite(value) or abs(value - round(value)) > 1e-9:
+            raise AnswerSpecError(f"non-integral float for integer: {value}")
+        return str(int(round(value)))
     text = _normalize_numeric_text(str(value))
     if "/" in text:
-        try:
-            frac = Fraction(text)
-            if frac.denominator != 1:
-                return str(float(frac))
-            return str(frac.numerator)
-        except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
-            raise AnswerSpecError(f"invalid integer fraction: {text!r}") from exc
+        frac = Fraction(text)
+        if frac.denominator != 1:
+            raise AnswerSpecError(f"non-integer rational: {text}")
+        return str(frac.numerator)
     if not _INT_RE.match(text):
+        # Allow 3.0 → 3
         if _DECIMAL_RE.match(text):
-            try:
-                f = float(text)
-                if abs(f - round(f)) <= 1e-6:
-                    return str(int(round(f)))
-                return str(f)
-            except ValueError:
-                pass
+            f = float(text)
+            if abs(f - round(f)) <= 1e-9:
+                return str(int(round(f)))
         raise AnswerSpecError(f"invalid integer: {value!r}")
     return str(int(text))
 
@@ -112,18 +130,10 @@ def canonicalize_rational(value: Any) -> str:
     if isinstance(value, int) and not isinstance(value, bool):
         return f"{value}/1"
     if isinstance(value, float):
-        try:
-            frac = Fraction(value).limit_denominator(10_000)
-            return f"{frac.numerator}/{frac.denominator}"
-        except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
-            raise AnswerSpecError(f"invalid float for rational: {value!r}") from exc
+        frac = Fraction(value).limit_denominator(10_000)
+        return f"{frac.numerator}/{frac.denominator}"
     text = _normalize_numeric_text(str(value))
     if _FRAC_RE.match(text):
-        try:
-            frac = Fraction(text)
-            return f"{frac.numerator}/{frac.denominator}"
-        except (ValueError, ZeroDivisionError, ArithmeticError) as exc:
-            raise AnswerSpecError(f"invalid rational string: {text!r}") from exc
         frac = Fraction(text)
         return f"{frac.numerator}/{frac.denominator}"
     if _INT_RE.match(text):
@@ -138,7 +148,10 @@ def canonicalize_decimal_exact(value: Any) -> str:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if isinstance(value, float) and not math.isfinite(value):
             raise AnswerSpecError(f"non-finite decimal: {value}")
-        text = format(value, "f") if isinstance(value, float) else str(value)
+        # `format(float, "f")` defaults to six decimals and silently turns
+        # values such as 1e-7 into zero. Decimal(str(...)) preserves the
+        # user-visible float value while rendering without exponent notation.
+        text = format(Decimal(str(value)), "f")
     else:
         text = _normalize_numeric_text(str(value))
         if not _DECIMAL_RE.match(text) and not _INT_RE.match(text):
@@ -158,45 +171,88 @@ def canonicalize_decimal_approx(value: Any, tolerance: float | None = None) -> s
         return repr(float(value))
     text = _normalize_numeric_text(str(value))
     try:
-        parsed = float(text)
-        if not math.isfinite(parsed):
-            raise AnswerSpecError(f"non-finite decimal_approx: {value}")
-        return repr(parsed)
+        return repr(float(text))
     except ValueError as exc:
         raise AnswerSpecError(f"invalid decimal_approx: {value!r}") from exc
 
 
 def canonicalize_logic_json(value: Any) -> str:
-    def reject_constant(constant: str):
-        raise ValueError(f"non-standard JSON constant: {constant}")
-
     if isinstance(value, str):
         text = value.strip()
         try:
-            parsed = json.loads(text, parse_constant=reject_constant)
-        except (json.JSONDecodeError, ValueError) as exc:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
             raise AnswerSpecError(f"logic_json must be valid JSON: {value!r}") from exc
         if not isinstance(parsed, (dict, list)):
-            parsed = {"ans": parsed}
-        return json.dumps(
-            parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-        )
+            raise AnswerSpecError("logic_json must be a JSON object or array")
+        return json.dumps(parsed, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     if isinstance(value, (dict, list)):
-        try:
-            return json.dumps(
-                value,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-                allow_nan=False,
-            )
-        except (TypeError, ValueError) as exc:
-            raise AnswerSpecError("logic_json contains unsupported values") from exc
-    if isinstance(value, (int, float, bool)):
-        return json.dumps(
-            {"ans": value}, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
-        )
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     raise AnswerSpecError(f"invalid logic_json: {type(value).__name__}")
+
+
+def canonicalize_mcq_letter(value: Any) -> str:
+    text = str(value).strip()
+    # Accept "C" / "ج" / "الخيار C" / "الإجابة: B"
+    m = re.search(r"([A-Da-d]|[أاببججدد])\b", text)
+    if not m:
+        m = _MCQ_LETTER_RE.match(text)
+        if not m:
+            raise AnswerSpecError(f"invalid mcq_letter: {value!r}")
+        token = m.group(1)
+    else:
+        token = m.group(1)
+    letter = _MCQ_LETTER_MAP.get(token, token.upper())
+    if letter not in {"A", "B", "C", "D"}:
+        raise AnswerSpecError(f"mcq_letter out of range: {value!r}")
+    return letter
+
+
+def canonicalize_constraint_set(value: Any) -> str:
+    """Canonicalize a constraint_set answer_spec payload.
+
+    Expected structured form::
+        {"constraints": [{"id": "...", "category": "...", "params": {...}}, ...],
+         "pass_all": true}
+    ``canonical`` is a stable JSON digest used for equality checks of the spec
+    itself; verification of completions uses the structured constraints list.
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise AnswerSpecError(
+                f"constraint_set must be valid JSON: {value!r}"
+            ) from exc
+    elif isinstance(value, dict):
+        parsed = value
+    else:
+        raise AnswerSpecError(f"invalid constraint_set: {type(value).__name__}")
+    constraints = parsed.get("constraints")
+    if not isinstance(constraints, list) or not constraints:
+        raise AnswerSpecError("constraint_set.constraints must be a non-empty list")
+    normalized = []
+    for item in constraints:
+        if not isinstance(item, dict):
+            raise AnswerSpecError("each constraint must be an object")
+        cid = str(item.get("id") or item.get("category") or "").strip()
+        category = str(item.get("category") or "").strip()
+        if not cid or not category:
+            raise AnswerSpecError("constraint id and category are required")
+        normalized.append(
+            {
+                "id": cid,
+                "category": category,
+                "params": dict(item.get("params") or {}),
+            }
+        )
+    normalized.sort(key=lambda c: c["id"])
+    payload = {
+        "constraints": normalized,
+        "pass_all": bool(parsed.get("pass_all", True)),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
 def canonicalize_answer(type_name: str, value: Any, *, tolerance: float | None = None) -> str:
@@ -214,6 +270,10 @@ def canonicalize_answer(type_name: str, value: Any, *, tolerance: float | None =
         return canonicalize_decimal_approx(value, tolerance=tolerance)
     if key == "logic_json":
         return canonicalize_logic_json(value)
+    if key == "mcq_letter":
+        return canonicalize_mcq_letter(value)
+    if key == "constraint_set":
+        return canonicalize_constraint_set(value)
     raise AnswerSpecError(f"unsupported answer type: {type_name!r}")
 
 
@@ -221,7 +281,10 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     if raw is None:
         raise AnswerSpecError("answer_spec is required")
     if isinstance(raw, AnswerSpec):
-        raw = raw.to_dict()
+        reject_symbolic(raw.type)
+        if raw.type not in SUPPORTED_ANSWER_TYPES:
+            raise AnswerSpecError(f"unsupported answer type: {raw.type!r}")
+        return raw
     if not isinstance(raw, Mapping):
         raise AnswerSpecError(f"answer_spec must be a mapping, got {type(raw).__name__}")
 
@@ -236,19 +299,19 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     tolerance = raw.get("tolerance")
     if key == "decimal_approx" and tolerance is None:
         tolerance = 1e-6
-    if key == "decimal_approx":
+    if tolerance is not None:
         try:
-            tolerance_value = float(tolerance)
+            tolerance = float(tolerance)
         except (TypeError, ValueError) as exc:
-            raise AnswerSpecError(f"invalid decimal_approx tolerance: {tolerance!r}") from exc
-        if not math.isfinite(tolerance_value) or not (0.0 < tolerance_value <= 1.0):
+            raise AnswerSpecError("answer_spec.tolerance must be numeric") from exc
+        if not math.isfinite(tolerance) or tolerance < 0:
             raise AnswerSpecError(
-                "decimal_approx tolerance must be finite and in the interval (0, 1]"
+                "answer_spec.tolerance must be finite and non-negative"
             )
-        tolerance = tolerance_value
-    if key != "decimal_approx" and tolerance is not None and key not in {"decimal_exact"}:
-        # Allow unused tolerance fields only for approx; ignore elsewhere.
-        pass
+        if key != "decimal_approx":
+            raise AnswerSpecError(
+                "answer_spec.tolerance is only valid for decimal_approx"
+            )
 
     canonical_in = raw.get("canonical", raw.get("value", raw.get("ground_truth")))
     if canonical_in is None and "ground_truth_structured" in raw:
@@ -260,12 +323,8 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     structured = raw.get("ground_truth_structured")
     if structured is None and key == "logic_json":
         structured = json.loads(canonical)
-    elif key == "logic_json":
-        structured_canonical = canonicalize_logic_json(structured)
-        if structured_canonical != canonical:
-            raise AnswerSpecError(
-                "ground_truth_structured conflicts with answer_spec.canonical"
-            )
+    elif structured is None and key == "constraint_set":
+        structured = json.loads(canonical)
     elif structured is None and key == "rational":
         num, den = canonical.split("/", 1)
         structured = {"numerator": int(num), "denominator": int(den)}
@@ -307,6 +366,10 @@ def infer_answer_spec_from_legacy(ground_truth: Any, domain: str = "math") -> An
             {"type": "decimal_approx", "canonical": ground_truth, "tolerance": 1e-6}
         )
     text = str(ground_truth).strip()
+    # Strip optional variable assignment prefix e.g. "x = 26" -> "26"
+    eq_match = re.match(r"^[a-zA-Z\u0600-\u06ff\s]+=+\s*(-?\d+(?:\.\d+)?)$", text)
+    if eq_match:
+        text = eq_match.group(1).strip()
     if _FRAC_RE.match(text.translate(_ARABIC_DIGITS)):
         return parse_answer_spec({"type": "rational", "canonical": text})
     if _INT_RE.match(text.translate(_ARABIC_DIGITS).replace(",", "")):

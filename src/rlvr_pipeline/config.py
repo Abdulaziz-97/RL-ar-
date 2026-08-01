@@ -180,9 +180,11 @@ class RLVRConfig:
     push_checkpoints_to_hub: bool = False
     hub_model_id: Optional[str] = None
     hub_private: bool = True
-    # After a successful push, delete older local checkpoints (keep latest
-    # save_total_limit, or 1 if unset). Never delete if push failed.
+    # After a successful push, delete older local checkpoints. Default keep 1
+    # so Vast disk is freed (do NOT bind this to save_total_limit — that left
+    # 8 locals on disk and defeated the hub-push disk-relief goal).
     delete_local_checkpoint_after_hub_push: bool = True
+    hub_keep_local_last_n: int = 1
     torch_compile: bool = False
     attn_implementation: str = "flash_attention_2"
     ddp_find_unused_parameters: bool = False
@@ -416,6 +418,32 @@ class RLVRConfig:
                 f"entropy_* keys dropped by GRPOConfig filter: {dropped_entropy}. "
                 "This should have been caught by validate(); refusing silent no-op."
             )
+
+        # #region agent log
+        try:
+            import json as _json, time as _time
+            from pathlib import Path as _Path
+            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
+            _dropped = sorted(set(kwargs) - set(filtered_kwargs))
+            with open(_log, "a", encoding="utf-8") as _f:
+                _f.write(_json.dumps({
+                    "sessionId": "a273d4", "hypothesisId": "A", "runId": "sanity",
+                    "location": "config.py:build_grpo_config",
+                    "message": "GRPOConfig kwargs after filter",
+                    "data": {
+                        "top_entropy_quantile": filtered_kwargs.get("top_entropy_quantile"),
+                        "top_entropy_in_valid": "top_entropy_quantile" in valid_keys,
+                        "dropped_non_entropy": [k for k in _dropped if k not in _ENTROPY_GRPO_KEYS],
+                        "beta": filtered_kwargs.get("beta"),
+                        "multi_objective_aggregation": filtered_kwargs.get("multi_objective_aggregation"),
+                        "report_to": filtered_kwargs.get("report_to"),
+                        "WANDB_PROJECT": __import__("os").environ.get("WANDB_PROJECT"),
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # #endregion
 
         return GRPOConfig(**filtered_kwargs)
 

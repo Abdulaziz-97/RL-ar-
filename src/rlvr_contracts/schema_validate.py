@@ -48,7 +48,15 @@ def validate_record(kind: str, record: dict[str, Any]) -> list[str]:
         t = str(ans.get("type", "")).lower()
         if t == "symbolic" or t.startswith("symbolic"):
             errors.append("symbolic answer_spec rejected")
-        allowed = {"integer", "rational", "decimal_exact", "decimal_approx", "logic_json"}
+        allowed = {
+            "integer",
+            "rational",
+            "decimal_exact",
+            "decimal_approx",
+            "logic_json",
+            "mcq_letter",
+            "constraint_set",
+        }
         if t and t not in allowed:
             errors.append(f"unsupported answer type: {t}")
         if "canonical" not in ans:

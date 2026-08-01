@@ -298,7 +298,9 @@ def _maybe_attach_hub_checkpoint_callback(trainer, config: RLVRConfig) -> None:
     from rlvr_pipeline.hub_checkpoint_callback import HubCheckpointCallback
 
     hub_id = getattr(config, "hub_model_id", None) or ""
-    keep_n = getattr(config, "save_total_limit", None)
+    keep_n = getattr(config, "hub_keep_local_last_n", None)
+    if keep_n is None:
+        keep_n = 1
     cb = HubCheckpointCallback(
         hub_model_id=hub_id,
         enabled=True,
@@ -306,7 +308,7 @@ def _maybe_attach_hub_checkpoint_callback(trainer, config: RLVRConfig) -> None:
         delete_local_after_push=bool(
             getattr(config, "delete_local_checkpoint_after_hub_push", True)
         ),
-        keep_local_last_n=keep_n,
+        keep_local_last_n=int(keep_n),
     )
     trainer.add_callback(cb)
     print(
@@ -456,6 +458,57 @@ def build_trainer(
         and "difficulty_tag" in train_dataset.column_names
     ):
         trainer.attach_curriculum_sampler(config, train_dataset)
+        # #region agent log
+        try:
+            import json as _json, time as _time
+            from pathlib import Path as _Path
+            from collections import Counter as _Counter
+            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
+            _tags = list(train_dataset["difficulty_tag"]) if train_dataset is not None else []
+            _known = {"trivial", "easy", "medium", "hard"}
+            _counts = dict(_Counter(_tags))
+            _orphan = {t: c for t, c in _counts.items() if t not in _known}
+            with open(_log, "a", encoding="utf-8") as _f:
+                _f.write(_json.dumps({
+                    "sessionId": "a273d4", "hypothesisId": "B", "runId": "sanity",
+                    "location": "trainer.py:curriculum_attach",
+                    "message": "curriculum sampler attached",
+                    "data": {
+                        "attached": True,
+                        "n": len(_tags),
+                        "tag_counts": _counts,
+                        "orphan_tags": _orphan,
+                        "schedule": config.curriculum_schedule_type,
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # #endregion
+    elif config.curriculum_schedule_type != "none":
+        # #region agent log
+        try:
+            import json as _json, time as _time
+            from pathlib import Path as _Path
+            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
+            _cols = list(getattr(train_dataset, "column_names", []) or [])
+            with open(_log, "a", encoding="utf-8") as _f:
+                _f.write(_json.dumps({
+                    "sessionId": "a273d4", "hypothesisId": "B", "runId": "sanity",
+                    "location": "trainer.py:curriculum_skip",
+                    "message": "curriculum requested but NOT attached",
+                    "data": {
+                        "attached": False,
+                        "use_extended_trainer": use_extended_trainer,
+                        "has_difficulty_tag": "difficulty_tag" in _cols,
+                        "columns": _cols[:20],
+                        "schedule": config.curriculum_schedule_type,
+                    },
+                    "timestamp": int(_time.time() * 1000),
+                }, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # #endregion
 
     if config.enable_stability_callback:
         from rlvr_pipeline.stability_callback import StabilityCallback

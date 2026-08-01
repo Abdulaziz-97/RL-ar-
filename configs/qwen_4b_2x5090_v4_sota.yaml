@@ -120,6 +120,8 @@ push_checkpoints_to_hub: true
 hub_model_id: "aziz9788/qwen35-4b-arabic-rlvr-v5"
 hub_private: true
 delete_local_checkpoint_after_hub_push: true
+# Keep only the latest local checkpoint after a successful HF push (disk relief).
+hub_keep_local_last_n: 1
 torch_compile: false
 use_wandb: true
 wandb_project: "arabic-reasoning-rlvr-v4"

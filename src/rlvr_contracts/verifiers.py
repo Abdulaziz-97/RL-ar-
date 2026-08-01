@@ -14,6 +14,7 @@ from rlvr_contracts.answer_spec import (
     parse_answer_spec,
     reject_symbolic,
 )
+from rlvr_contracts.constraints import check_all_constraints, strip_think_answer_wrappers
 from rlvr_contracts.response import extract_answer
 
 VERIFIER_REGISTRY_VERSION = "rlvr-contracts-verifiers-v1"
@@ -31,10 +32,11 @@ class VerifierResult:
 
 
 def _flat_logic_equal(a: Any, b: Any) -> bool:
-    numeric_a = isinstance(a, (int, float)) and not isinstance(a, bool)
-    numeric_b = isinstance(b, (int, float)) and not isinstance(b, bool)
-    if type(a) is not type(b) and not (numeric_a and numeric_b):
-        return False
+    if type(a) is not type(b) and not (
+        isinstance(a, (int, float)) and isinstance(b, (int, float))
+    ):
+        # Allow JSON number int/float equivalence only for leaves.
+        pass
     if isinstance(a, dict) and isinstance(b, dict):
         if set(a.keys()) != set(b.keys()):
             return False
@@ -43,7 +45,7 @@ def _flat_logic_equal(a: Any, b: Any) -> bool:
         if len(a) != len(b):
             return False
         return all(_flat_logic_equal(x, y) for x, y in zip(a, b))
-    if numeric_a and numeric_b:
+    if isinstance(a, (int, float)) and isinstance(b, (int, float)):
         return abs(float(a) - float(b)) < 1e-12
     return a == b
 
@@ -167,12 +169,66 @@ def verify_logic_json(predicted: str, spec: AnswerSpec) -> VerifierResult:
         )
 
 
+def verify_mcq_letter(predicted: str, spec: AnswerSpec) -> VerifierResult:
+    try:
+        pred = canonicalize_answer("mcq_letter", predicted)
+        ok = pred == spec.canonical
+        return VerifierResult(
+            ok=ok,
+            score=1.0 if ok else 0.0,
+            reason="match" if ok else "mcq_letter_mismatch",
+            predicted_canonical=pred,
+            expected_canonical=spec.canonical,
+            verifier_id="mcq.letter",
+        )
+    except AnswerSpecError as exc:
+        return VerifierResult(
+            ok=False,
+            score=0.0,
+            reason=f"invalid_predicted_mcq_letter:{exc}",
+            expected_canonical=spec.canonical,
+            verifier_id="mcq.letter",
+        )
+
+
+def verify_constraint_set(predicted: str, spec: AnswerSpec) -> VerifierResult:
+    """Verify a free-form response against structured instruction constraints."""
+    try:
+        payload = (
+            spec.ground_truth_structured
+            if isinstance(spec.ground_truth_structured, dict)
+            else json.loads(spec.canonical)
+        )
+        constraints = list(payload.get("constraints") or [])
+        pass_all = bool(payload.get("pass_all", True))
+        body = strip_think_answer_wrappers(predicted)
+        ok, per = check_all_constraints(body, constraints, pass_all=pass_all)
+        return VerifierResult(
+            ok=ok,
+            score=1.0 if ok else 0.0,
+            reason="match" if ok else f"constraint_fail:{per}",
+            predicted_canonical=body[:200],
+            expected_canonical=spec.canonical,
+            verifier_id="instruction.constraint_set",
+        )
+    except (AnswerSpecError, json.JSONDecodeError, TypeError, KeyError, ValueError) as exc:
+        return VerifierResult(
+            ok=False,
+            score=0.0,
+            reason=f"invalid_constraint_set:{exc}",
+            expected_canonical=spec.canonical,
+            verifier_id="instruction.constraint_set",
+        )
+
+
 _REGISTRY: dict[str, Callable[[str, AnswerSpec], VerifierResult]] = {
     "integer": verify_integer,
     "rational": verify_rational,
     "decimal_exact": verify_decimal_exact,
     "decimal_approx": verify_decimal_approx,
     "logic_json": verify_logic_json,
+    "mcq_letter": verify_mcq_letter,
+    "constraint_set": verify_constraint_set,
 }
 
 
@@ -192,6 +248,9 @@ def verify_answer(
 ) -> VerifierResult:
     """Verify a predicted answer (or full completion) against answer_spec."""
     spec = parse_answer_spec(answer_spec)
+    if spec.type == "constraint_set":
+        # Constraint rows verify the full response body, not a short answer span.
+        return get_verifier(spec.type)(predicted_or_completion, spec)
     if from_completion:
         extracted = extract_answer(predicted_or_completion)
         if extracted is None:
