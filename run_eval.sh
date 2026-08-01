@@ -17,3 +17,8 @@ CUDA_VISIBLE_DEVICES=0 python3 official_eval/run_araeval_generative.py \
   --output-dir "/workspace/outputs/generative_eval_checkpoint_200" \
   --tasks araeval_aramath araeval_ifeval araeval_arapro \
   --limit 50
+
+# Safely upload checkpoint adapters, merged model, and evaluation logs to Hugging Face Hub
+export HF_TOKEN="${HF_TOKEN:-$(python3 -c 'from scripts.upload_artifacts import get_hf_token; print(get_hf_token())')}"
+python3 scripts/upload_artifacts.py \
+  --hf-repo "Abdulaziz-97/qwen3.5-4b-arabic-grpo-v4-checkpoint-200-adapter"
