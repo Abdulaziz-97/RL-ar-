@@ -175,6 +175,14 @@ class RLVRConfig:
     vllm_max_model_len: int = 4096
     # Mid-train Auto-Probe launches vLLM in a subprocess; keep off during GRPO.
     enable_benchmark_probe: bool = False
+    # After each save_steps checkpoint, push adapter/trainer_state to HF Hub
+    # under hub_model_id/checkpoint-{step}. Token from HF_TOKEN / HUGGING_FACE_HUB_TOKEN.
+    push_checkpoints_to_hub: bool = False
+    hub_model_id: Optional[str] = None
+    hub_private: bool = True
+    # After a successful push, delete older local checkpoints (keep latest
+    # save_total_limit, or 1 if unset). Never delete if push failed.
+    delete_local_checkpoint_after_hub_push: bool = True
     torch_compile: bool = False
     attn_implementation: str = "flash_attention_2"
     ddp_find_unused_parameters: bool = False

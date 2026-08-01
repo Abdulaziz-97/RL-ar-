@@ -110,6 +110,12 @@ save_total_limit: 8
 log_completions: false
 use_vllm: false
 enable_benchmark_probe: false
+# Push each checkpoint-{step} folder to HF Hub after save (token: HF_TOKEN env).
+# Subfolders: aziz9788/qwen35-4b-arabic-rlvr-v5/checkpoint-50, ...
+push_checkpoints_to_hub: true
+hub_model_id: "aziz9788/qwen35-4b-arabic-rlvr-v5"
+hub_private: true
+delete_local_checkpoint_after_hub_push: true
 torch_compile: false
 use_wandb: true
 wandb_project: "arabic-reasoning-rlvr-v4"

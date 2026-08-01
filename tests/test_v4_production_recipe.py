@@ -121,6 +121,74 @@ def test_v4_beta_anchored_and_adaptive_features_off():
     assert cfg.enable_benchmark_probe is False
     assert cfg.curriculum_schedule_type == "gaussian"
     assert cfg.zero_variance_strategy == "discard"
+    assert cfg.push_checkpoints_to_hub is True
+    assert cfg.hub_model_id == "aziz9788/qwen35-4b-arabic-rlvr-v5"
+    assert cfg.hub_private is True
+    assert cfg.delete_local_checkpoint_after_hub_push is True
+
+
+def test_hub_checkpoint_callback_pushes_and_deletes_older(tmp_path):
+    from rlvr_pipeline.hub_checkpoint_callback import HubCheckpointCallback
+
+    out = tmp_path / "run"
+    out.mkdir()
+    for step in (50, 100, 150):
+        d = out / f"checkpoint-{step}"
+        d.mkdir()
+        (d / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+    cb = HubCheckpointCallback(
+        hub_model_id="aziz9788/test-hub-ckpt",
+        enabled=True,
+        hub_private=True,
+        delete_local_after_push=True,
+        keep_local_last_n=2,
+        token="hf_test_token",
+    )
+
+    with patch.object(cb, "_push_checkpoint", return_value=True) as mock_push:
+        args = MagicMock(process_index=0, output_dir=str(out))
+        # Simulate three successful saves; track pushed steps via real on_save path.
+        for step in (50, 100, 150):
+            state = MagicMock(global_step=step)
+            cb.on_save(args, state, MagicMock())
+        assert mock_push.call_count == 3
+
+    # keep_local_last_n=2 → checkpoint-50 deleted; 100 and 150 remain.
+    assert not (out / "checkpoint-50").exists()
+    assert (out / "checkpoint-100").exists()
+    assert (out / "checkpoint-150").exists()
+
+
+def test_hub_checkpoint_callback_no_delete_on_push_failure(tmp_path):
+    from rlvr_pipeline.hub_checkpoint_callback import HubCheckpointCallback
+
+    out = tmp_path / "run"
+    out.mkdir()
+    d = out / "checkpoint-50"
+    d.mkdir()
+    (d / "adapter_config.json").write_text("{}", encoding="utf-8")
+
+    cb = HubCheckpointCallback(
+        hub_model_id="aziz9788/test-hub-ckpt",
+        delete_local_after_push=True,
+        keep_local_last_n=1,
+        token="hf_test_token",
+    )
+    with patch.object(cb, "_push_checkpoint", return_value=False):
+        cb.on_save(
+            MagicMock(process_index=0, output_dir=str(out)),
+            MagicMock(global_step=50),
+            MagicMock(),
+        )
+    assert d.exists()
+
+
+def test_trainer_wires_hub_callback_when_enabled():
+    src = (REPO / "src" / "rlvr_pipeline" / "trainer.py").read_text(encoding="utf-8")
+    assert "_maybe_attach_hub_checkpoint_callback" in src
+    assert "HubCheckpointCallback" in src
+
 
 
 def test_v4_reward_weights_length_six_correctness_dominant():

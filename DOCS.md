@@ -361,6 +361,14 @@ use_transformers_continuous_batching: true  # Faster generation on single GPU
 use_wandb: false                    # Set true to enable wandb dashboard
 wandb_project: "arabic-reasoning-rlvr"
 
+# Optional: push each save_steps checkpoint to HF Hub (HF_TOKEN / HUGGING_FACE_HUB_TOKEN).
+# Uploads under hub_model_id/checkpoint-{step}; on success may delete older local ckpts
+# (keeps latest save_total_limit). Push failures never delete local files.
+# push_checkpoints_to_hub: true
+# hub_model_id: "aziz9788/qwen35-4b-arabic-rlvr-v5"
+# hub_private: true
+# delete_local_checkpoint_after_hub_push: true
+
 log_completions: true              # Print sample completions in logs
 num_completions_to_print: 4        # How many completions to show
 ```

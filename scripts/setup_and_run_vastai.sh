@@ -84,6 +84,33 @@ PY
     export WANDB_MODE="${WANDB_MODE:-offline}"
     export PYTHONPATH="$REPO_ROOT/src:$REPO_ROOT/data_1/src:$REPO_ROOT/data_1/vendor:${PYTHONPATH:-}"
 
+    # HuggingFace auth for mid-train checkpoint pushes (never commit the token).
+    # Prefer already-exported HF_TOKEN; else root-only file or workspace .env.
+    if [ -z "${HF_TOKEN:-}" ]; then
+        if [ -f /root/.hf_token ]; then
+            HF_TOKEN="$(tr -d '\r\n' </root/.hf_token)"
+            export HF_TOKEN
+            echo "[Auth] Loaded HF_TOKEN from /root/.hf_token"
+        elif [ -f /workspace/.env ]; then
+            # shellcheck disable=SC1091
+            set -a
+            # Only pull HF-related keys; ignore other secrets already set.
+            # shellcheck disable=SC1090
+            . /workspace/.env
+            set +a
+            if [ -n "${HF_TOKEN:-}" ]; then
+                echo "[Auth] Loaded HF_TOKEN from /workspace/.env"
+            fi
+        fi
+    fi
+    if [ -n "${HF_TOKEN:-}" ]; then
+        export HUGGING_FACE_HUB_TOKEN="${HUGGING_FACE_HUB_TOKEN:-$HF_TOKEN}"
+    elif [ -n "${HUGGING_FACE_HUB_TOKEN:-}" ]; then
+        export HF_TOKEN="$HUGGING_FACE_HUB_TOKEN"
+    else
+        echo "[Auth] WARNING: HF_TOKEN unset — hub checkpoint push will fail soft and keep local ckpts."
+    fi
+
     # Frontier-lab datagen defaults (A/B winner: DeepSeek V4 Pro; max safe fan-out).
     export TEACHER_MODEL="${TEACHER_MODEL:-deepseek-v4-pro}"
     export TEACHER_WORKERS="${TEACHER_WORKERS:-96}"

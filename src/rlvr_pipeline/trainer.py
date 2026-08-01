@@ -287,7 +287,34 @@ def build_sft_trainer(
         print("Chat template fixed: removed empty <think> injection (SFT)", flush=True)
 
     _align_trainable_dtype_for_amp(trainer, fp16=config.fp16, bf16=config.bf16)
+    _maybe_attach_hub_checkpoint_callback(trainer, config)
     return trainer
+
+
+def _maybe_attach_hub_checkpoint_callback(trainer, config: RLVRConfig) -> None:
+    """Attach HubCheckpointCallback when push_checkpoints_to_hub is enabled."""
+    if not bool(getattr(config, "push_checkpoints_to_hub", False)):
+        return
+    from rlvr_pipeline.hub_checkpoint_callback import HubCheckpointCallback
+
+    hub_id = getattr(config, "hub_model_id", None) or ""
+    keep_n = getattr(config, "save_total_limit", None)
+    cb = HubCheckpointCallback(
+        hub_model_id=hub_id,
+        enabled=True,
+        hub_private=bool(getattr(config, "hub_private", True)),
+        delete_local_after_push=bool(
+            getattr(config, "delete_local_checkpoint_after_hub_push", True)
+        ),
+        keep_local_last_n=keep_n,
+    )
+    trainer.add_callback(cb)
+    print(
+        f"Hub checkpoint push ENABLED → {hub_id or '(missing hub_model_id)'} "
+        f"(private={cb.hub_private}, delete_local_after_push={cb.delete_local_after_push}, "
+        f"keep_local_last_n={keep_n}).",
+        flush=True,
+    )
 
 
 def build_trainer(
@@ -459,6 +486,8 @@ def build_trainer(
         print("Benchmark probe ENABLED (will spawn vLLM on each save — ensure free VRAM).", flush=True)
     else:
         print("Benchmark probe disabled (enable_benchmark_probe=false).", flush=True)
+
+    _maybe_attach_hub_checkpoint_callback(trainer, config)
 
     # Principal Engineer Fix: Integrate Arabic Terminal Reshaper directly into trainer._log_completions
     if hasattr(trainer, "_log_completions"):
