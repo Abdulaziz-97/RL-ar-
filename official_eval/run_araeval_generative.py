@@ -312,113 +312,84 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
     args.adapter_path = None
 
 
-def build_vllm_engine(args: argparse.Namespace, task: str):
-    """Build a vLLM LLM engine for generation."""
-    from vllm import LLM, SamplingParams
+def build_hf_engine(args: argparse.Namespace):
+    """Build a PyTorch HuggingFace Transformers engine with merged weights."""
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from peft import PeftModel
 
-    _auto_merge_adapter_if_needed(args)
-    profile = get_generation_profile(task)
-    tp_size = args.tensor_parallel_size if args.tensor_parallel_size is not None else 1
-
-    engine_kwargs = {
-        "model": args.model,
-        "dtype": "bfloat16",
-        "trust_remote_code": True,
-        "max_model_len": args.max_length,
-        "gpu_memory_utilization": 0.70,
-        "tensor_parallel_size": tp_size,
-        "enforce_eager": True,
-        "enable_prefix_caching": False,
-        "max_num_seqs": profile.get("max_num_seqs", 64),
-        "max_num_batched_tokens": 8192,
-    }
-
-    # Enable LoRA if adapter path is provided
-    if args.adapter_path is not None:
-        engine_kwargs["enable_lora"] = True
-        engine_kwargs["max_lora_rank"] = args.max_lora_rank
-
-    llm = LLM(**engine_kwargs)
-
-    max_tokens = (
-        args.max_new_tokens
-        if args.max_new_tokens is not None
-        else profile["max_new_tokens"]
+    print(f"[1/2] Loading base model ({args.model}) in bfloat16 on GPU...", flush=True)
+    base = AutoModelForCausalLM.from_pretrained(
+        args.model,
+        torch_dtype=torch.bfloat16,
+        device_map="cuda:0",
+        trust_remote_code=True,
     )
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    tokenizer.padding_side = "left"
+    if tokenizer.pad_token_id is None:
+        tokenizer.pad_token_id = tokenizer.eos_token_id
 
-    sampling_params = SamplingParams(
-        max_tokens=max_tokens,
-        temperature=profile["temperature"],
-        top_p=1.0,
-        repetition_penalty=1.05,
-    )
+    if args.adapter_path and os.path.exists(os.path.join(args.adapter_path, "adapter_config.json")):
+        print(f"[2/2] Loading GRPO LoRA adapter ({args.adapter_path}) and zeroing embedding deltas...", flush=True)
+        model = PeftModel.from_pretrained(base, args.adapter_path)
+        for name, param in model.named_parameters():
+            if "lora_" in name and ("embed_tokens" in name or "lm_head" in name):
+                param.data.zero_()
+        merged_model = model.merge_and_unload()
+    else:
+        merged_model = base
 
-    return llm, sampling_params, profile
-
-
-def apply_chat_template(tokenizer, prompt: str, enable_thinking: bool = False) -> str:
-    """Apply the model's standard chat template to a prompt (pure zero-system-prompt)."""
-    messages = [{"role": "user", "content": prompt}]
-    try:
-        formatted = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return formatted
-    except Exception:
-        # Fallback if tokenizer formatting fails
-        return f"User: {prompt}\nAssistant:"
+    merged_model.eval()
+    return merged_model, tokenizer
 
 
 def evaluate_task(
-    llm,
-    sampling_params,
+    model,
     tokenizer,
     task: str,
     samples: list[dict[str, Any]],
     enable_thinking: bool,
-    adapter_path: str | None,
 ) -> dict[str, Any]:
-    """Evaluate a single task using generation mode."""
-    from vllm import SamplingParams
-    from vllm.lora.request import LoRARequest
+    """Evaluate a single task using PyTorch HuggingFace batched generation."""
+    import torch
+
+    profile = get_generation_profile(task)
+    max_tokens = profile["max_new_tokens"]
 
     print(f"  Formatting {len(samples)} prompts...", flush=True)
-
-    # Build generation prompts
     prompts = []
     gold_indices = []
     for sample in samples:
         query = sample["query"]
         gold = sample["gold"]
-        prompts.append(
-            apply_chat_template(tokenizer, query, enable_thinking)
-        )
+        prompts.append(apply_chat_template(tokenizer, query, enable_thinking))
         gold_indices.append(gold)
 
-    print(f"  Running generation on {len(prompts)} prompts...", flush=True)
+    print(f"  Running PyTorch HF batched generation on {len(prompts)} prompts...", flush=True)
+    batch_size = 8
+    all_generated_texts = []
 
-    # Build LoRA request if adapter is provided
-    lora_request = None
-    if adapter_path is not None:
-        lora_request = LoRARequest("grpo_v2_adapter", 1, adapter_path)
-
-    # Generate all prompts with vLLM's native continuous batching engine
-    if lora_request is not None:
-        all_outputs = llm.generate(
-            prompts,
-            sampling_params,
-            lora_request=lora_request,
-        )
-    else:
-        all_outputs = llm.generate(prompts, sampling_params)
+    for b in range(0, len(prompts), batch_size):
+        batch_prompts = prompts[b : b + batch_size]
+        inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to("cuda:0")
+        with torch.no_grad():
+            output_ids = model.generate(
+                **inputs,
+                max_new_tokens=max_tokens,
+                do_sample=False,  # greedy
+                repetition_penalty=1.05,
+                pad_token_id=tokenizer.pad_token_id,
+            )
+        input_len = inputs["input_ids"].shape[1]
+        for out in output_ids:
+            gen_text = tokenizer.decode(out[input_len:], skip_special_tokens=True)
+            all_generated_texts.append(gen_text)
 
     # Extract and grade answers
     correct = 0
     extraction_failures = 0
-    for i, (output, gold_idx, sample) in enumerate(zip(all_outputs, gold_indices, samples)):
-        generated_text = output.outputs[0].text
+    for i, (generated_text, gold_idx, sample) in enumerate(zip(all_generated_texts, gold_indices, samples)):
         if i < 3:
             print(f"\n--- [DEBUG SAMPLE {i+1}] ---", flush=True)
             print(f"Generated text snippet: {repr(generated_text[:350])}", flush=True)
@@ -491,27 +462,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         print(f"  LoRA adapter: {args.adapter_path}", flush=True)
     print(f"  Thinking: {'ON' if args.enable_thinking else 'OFF'}", flush=True)
 
-    current_llm = None
-    current_profile_key = None
+    model, tokenizer = build_hf_engine(args)
 
     for task in pending:
         position = GENERATIVE_TASKS.index(task) + 1
         print(f"\n[{position}/{len(GENERATIVE_TASKS)}] {task}", flush=True)
-
-        profile = get_generation_profile(task)
-        profile_key = task if task in ("araeval_aramath", "araeval_arapro", "araeval_ifeval") else "gen_mcq"
-
-        # Reload engine if profile changed
-        if current_llm is None or current_profile_key != profile_key:
-            if current_llm is not None:
-                del current_llm
-                gc.collect()
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-
-            print(f"  Initializing vLLM engine with profile [{profile_key}]...", flush=True)
-            current_llm, sampling_params, _ = build_vllm_engine(args, task)
-            current_profile_key = profile_key
 
         # Load dataset
         print(f"  Loading dataset from HuggingFace...", flush=True)
@@ -520,19 +475,14 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             samples = samples[: args.limit]
         print(f"  Loaded {len(samples)} samples", flush=True)
 
-        # Get tokenizer for chat template
-        tokenizer = current_llm.get_tokenizer()
-
         # Run evaluation
         started = time.monotonic()
         result = evaluate_task(
-            llm=current_llm,
-            sampling_params=sampling_params,
+            model=model,
             tokenizer=tokenizer,
             task=task,
             samples=samples,
             enable_thinking=args.enable_thinking,
-            adapter_path=args.adapter_path,
         )
         result["seconds"] = round(time.monotonic() - started, 2)
 
