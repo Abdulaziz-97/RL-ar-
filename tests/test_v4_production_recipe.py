@@ -388,6 +388,23 @@ def test_build_grpo_config_passes_top_entropy_quantile():
     assert grpo.top_entropy_quantile == pytest.approx(0.2)
 
 
+def test_vllm_max_model_len_maps_to_trl_vllm_max_model_length():
+    """TRL GRPOConfig uses vllm_max_model_length; YAML keeps vllm_max_model_len."""
+    cfg = RLVRConfig.from_yaml(V4_YAML)
+    assert cfg.use_vllm is False
+    # Off: must not inject dead kwargs that get silently filtered.
+    grpo_off = cfg.build_grpo_config(include_model_init=False)
+    assert not hasattr(grpo_off, "vllm_max_model_len") or getattr(grpo_off, "vllm_max_model_len", None) in (None, 4096)
+
+    cfg.use_vllm = True
+    cfg.vllm_max_model_len = 8192
+    cfg.vllm_gpu_memory_utilization = 0.35
+    grpo = cfg.build_grpo_config(include_model_init=False)
+    assert grpo.vllm_max_model_length == 8192
+    assert grpo.vllm_gpu_memory_utilization == pytest.approx(0.35)
+    assert grpo.use_vllm is True
+
+
 # ---------------------------------------------------------------------------
 # Probe / eval API contracts
 # ---------------------------------------------------------------------------

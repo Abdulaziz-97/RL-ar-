@@ -373,11 +373,15 @@ class RLVRConfig:
             log_completions=self.log_completions,
             num_completions_to_print=self.num_completions_to_print,
             use_vllm=getattr(self, "use_vllm", False),
-            vllm_gpu_memory_utilization=getattr(self, "vllm_gpu_memory_utilization", 0.30),
-            vllm_max_model_len=getattr(self, "vllm_max_model_len", 4096),
             torch_compile=getattr(self, "torch_compile", False),
             ddp_find_unused_parameters=getattr(self, "ddp_find_unused_parameters", False),
         )
+        # vLLM knobs only when enabled. TRL's field is vllm_max_model_length
+        # (not vllm_max_model_len) — the old name was silently dropped by the
+        # GRPOConfig filter (sanity hyp A).
+        if self.use_vllm:
+            kwargs["vllm_gpu_memory_utilization"] = self.vllm_gpu_memory_utilization
+            kwargs["vllm_max_model_length"] = self.vllm_max_model_len
 
         # Pass entropy_* only when TRL accepts them (inactive defaults never reach here
         # as a "request"; active requests are rejected in _validate_entropy_trl_support).
@@ -418,32 +422,14 @@ class RLVRConfig:
                 f"entropy_* keys dropped by GRPOConfig filter: {dropped_entropy}. "
                 "This should have been caught by validate(); refusing silent no-op."
             )
-
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            from pathlib import Path as _Path
-            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
-            _dropped = sorted(set(kwargs) - set(filtered_kwargs))
-            with open(_log, "a", encoding="utf-8") as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "a273d4", "hypothesisId": "A", "runId": "sanity",
-                    "location": "config.py:build_grpo_config",
-                    "message": "GRPOConfig kwargs after filter",
-                    "data": {
-                        "top_entropy_quantile": filtered_kwargs.get("top_entropy_quantile"),
-                        "top_entropy_in_valid": "top_entropy_quantile" in valid_keys,
-                        "dropped_non_entropy": [k for k in _dropped if k not in _ENTROPY_GRPO_KEYS],
-                        "beta": filtered_kwargs.get("beta"),
-                        "multi_objective_aggregation": filtered_kwargs.get("multi_objective_aggregation"),
-                        "report_to": filtered_kwargs.get("report_to"),
-                        "WANDB_PROJECT": __import__("os").environ.get("WANDB_PROJECT"),
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                }, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-        # #endregion
+        if self.use_vllm:
+            required_vllm = ("use_vllm", "vllm_gpu_memory_utilization", "vllm_max_model_length")
+            dropped_vllm = [k for k in required_vllm if k in kwargs and k not in filtered_kwargs]
+            if dropped_vllm:
+                raise ValueError(
+                    f"use_vllm=true but GRPOConfig dropped: {dropped_vllm}. "
+                    "Check TRL version / field names (TRL uses vllm_max_model_length)."
+                )
 
         return GRPOConfig(**filtered_kwargs)
 
