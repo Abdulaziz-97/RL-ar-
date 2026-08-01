@@ -130,7 +130,7 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
 
 def main():
     parser = argparse.ArgumentParser(description="Fast AraMath Evaluation for GRPO checkpoint-100 and checkpoint-200")
-    parser.add_argument("--base-model", type=str, default="Qwen/Qwen3.5-4B")
+    parser.add_argument("--base-model", type=str, default="aziz9788/T06__qwen35-mixed-v6-lr1e5")
     parser.add_argument("--checkpoints-dir", type=str, default="/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run")
     parser.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()
