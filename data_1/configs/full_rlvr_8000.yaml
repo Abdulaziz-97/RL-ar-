@@ -2,7 +2,8 @@ mode: rlvr
 n_families: 8000
 domains: [gsm8k, math, math_comp, logic]
 traces_per_problem: 0
-seed: 2200
+# Distinct from SFT base (1200) and top-up default (2300) to reduce family-id collisions.
+seed: 3300
 work_dir: outputs/full_rlvr_8000
 backend: external
 external_module: backends/dspy_backend.py
