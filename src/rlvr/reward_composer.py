@@ -37,6 +37,8 @@ W_LENGTH = 0.15
 # Word-count policy: begin pressure at 80 words, full penalty at 160.
 THINK_LENGTH_SOFT_LIMIT = 80
 THINK_LENGTH_HARD_LIMIT = 160
+# Calibrated defaults for long CoT (750–900 tokens ≈ 150–250 Arabic words).
+# Keep reward weight 0 until operators set RLVR_LENGTH_* env or kwargs.
 
 # Back-compat aliases used by older tests / callers.
 _extract_think = extract_think

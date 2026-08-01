@@ -29,6 +29,21 @@ dependencies = [
     "wandb==0.28.0",
 ]
 
+[project.optional-dependencies]
+# Probe/eval extras intentionally exclude pinned vLLM — install in a separate
+# environment via requirements-eval.txt to avoid conflicting with transformers 5.x / numpy 2.4.
+eval = [
+    "lm-eval>=0.4.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+rlvr-preflight = "rlvr_pipeline.preflight:main"
+rlvr-checkpoint-integrity = "rlvr_pipeline.checkpoint_integrity:main"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

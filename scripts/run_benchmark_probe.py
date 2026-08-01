@@ -4,11 +4,8 @@ Fast Benchmark Telemetry Probe for GRPO RLVR.
 
 Evaluates:
   1. AraMath (Full 605 questions)
-  2. AraIFEval (Full 539 questions)
+  2. AraIFEval (Full 539 questions) — optional via truthfulqa/arapro configs below
   3. AraPro (Fixed seed=42 500-question sample)
-
-Total Probe Size: 1,644 questions
-Estimated Runtime: ~1.5 to 2.0 minutes per probe check using vLLM continuous batching.
 
 Usage:
   python scripts/run_benchmark_probe.py --checkpoint outputs/qwen_4b_2x5090_v3_run/checkpoint-50
@@ -17,15 +14,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import gc
-import json
 import random
 import sys
 import time
 from pathlib import Path
 from typing import Any
 
-# Import official AraEval utilities
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -33,7 +27,6 @@ if str(ROOT / "official_eval") not in sys.path:
     sys.path.insert(0, str(ROOT / "official_eval"))
 
 from official_eval.tasks.araeval.generative_utils import (
-    build_generative_prompt,
     extract_answer,
     grade_answer,
 )
@@ -49,7 +42,7 @@ PROBE_CONFIGS = {
         "revision": "b79e79b1b993d153613d1ce2357a1177f2cdcfa1",
         "split": "test",
         "normalizer": normalize_aramath,
-        "sample_size": None, # Full 605
+        "sample_size": None,
     },
     "araeval_arapro": {
         "path": "humain-ai/AraPro",
@@ -57,16 +50,17 @@ PROBE_CONFIGS = {
         "split": "test",
         "name": "AraPro",
         "normalizer": normalize_arapro,
-        "sample_size": 500, # Fixed 500 sample (seed=42)
+        "sample_size": 500,
     },
     "araeval_truthfulqa": {
         "path": "humain-ai/AraTruthfulQA",
         "revision": "162744fbf0590606415eb0924f2b5bd680486e3a",
         "split": "test",
         "normalizer": normalize_truthfulqa,
-        "sample_size": None, # Full 536
+        "sample_size": None,
     },
 }
+
 
 def load_probe_dataset(task_name: str, config: dict) -> list[dict[str, Any]]:
     from datasets import load_dataset
@@ -78,30 +72,30 @@ def load_probe_dataset(task_name: str, config: dict) -> list[dict[str, Any]]:
     ds = load_dataset(**kwargs)
     normalizer = config["normalizer"]
 
-    docs = []
-    for doc in ds:
-        docs.append(normalizer(doc))
+    docs = [normalizer(doc) for doc in ds]
 
     if config["sample_size"] is not None and len(docs) > config["sample_size"]:
-        rng = random.Random(42) # Fixed seed=42 for identical probe sample across all checks
+        rng = random.Random(42)
         indices = list(range(len(docs)))
         rng.shuffle(indices)
-        selected_indices = sorted(indices[:config["sample_size"]])
+        selected_indices = sorted(indices[: config["sample_size"]])
         docs = [docs[i] for i in selected_indices]
 
     return docs
+
 
 def run_probe(checkpoint_dir: str, base_model: str = "unsloth/Qwen3.5-4B") -> dict[str, float]:
     from vllm import LLM, SamplingParams
     from vllm.lora.request import LoRARequest
 
-    print(f"\n=================================================================")
-    print(f"🚀 FAST BENCHMARK TELEMETRY PROBE: {checkpoint_dir}")
-    print(f"=================================================================\n")
+    print("\n=================================================================")
+    print(f"FAST BENCHMARK TELEMETRY PROBE: {checkpoint_dir}")
+    print("=================================================================\n")
 
-    # Determine if checkpoint is LoRA adapter or full weights
     ckpt_path = Path(checkpoint_dir)
-    has_adapter = (ckpt_path / "adapter_model.safetensors").exists() or (ckpt_path / "adapter_config.json").exists()
+    has_adapter = (ckpt_path / "adapter_model.safetensors").exists() or (
+        ckpt_path / "adapter_config.json"
+    ).exists()
 
     llm_kwargs = {
         "model": base_model if has_adapter else str(ckpt_path),
@@ -126,7 +120,8 @@ def run_probe(checkpoint_dir: str, base_model: str = "unsloth/Qwen3.5-4B") -> di
     for task_name, cfg in PROBE_CONFIGS.items():
         print(f"Evaluating {task_name} (Probe size: {cfg['sample_size'] or 'Full'})...", flush=True)
         docs = load_probe_dataset(task_name, cfg)
-        prompts = [build_generative_prompt(doc, task_name, enable_thinking=True) for doc in docs]
+        # Use normalized query field (same contract as official generative eval).
+        prompts = [doc["query"] for doc in docs]
 
         t0 = time.time()
         outputs = llm.generate(prompts, sampling_params, lora_request=lora_request)
@@ -137,8 +132,7 @@ def run_probe(checkpoint_dir: str, base_model: str = "unsloth/Qwen3.5-4B") -> di
         for i, out in enumerate(outputs):
             gen_text = out.outputs[0].text
             extracted = extract_answer(gen_text)
-            is_correct = grade_answer(extracted, docs[i]["target"], task_name)
-            if is_correct:
+            if grade_answer(extracted, docs[i]["gold"]):
                 correct += 1
 
         acc = (correct / total) * 100 if total > 0 else 0.0
@@ -149,9 +143,10 @@ def run_probe(checkpoint_dir: str, base_model: str = "unsloth/Qwen3.5-4B") -> di
     print(f"PROBE COMPLETE in {time.time() - total_start:.1f}s")
     for k, v in metrics.items():
         print(f"  * {k}: {v:.2f}%")
-    print(f"=================================================================\n")
+    print("=================================================================\n")
 
     return metrics
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fast Benchmark Telemetry Probe")

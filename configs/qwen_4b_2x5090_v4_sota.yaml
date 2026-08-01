@@ -1,15 +1,17 @@
-# GRPO_V4 — High-Capacity Evidence-Backed SOTA Config for 2x NVIDIA RTX 5090 (32GB VRAM per GPU)
-# Sources: DAPO (Yu et al., 2025), Dr.GRPO (arXiv:2503.20783), GDPO (NVlabs, arXiv:2601.05242)
+# GRPO_V4 — Production Hardened Config for 2x NVIDIA RTX 5090 (32GB VRAM per GPU)
+# Fresh-run baseline: SFT-anchored GRPO with beta>0, no embed LoRA, no mid-train probe.
 
 model_name: "Qwen/Qwen3.5-4B"
 instruction_base_model: "aziz9788/T06__qwen35-mixed-v6-lr1e5"
 load_in_4bit: false
 bnb_4bit_compute_dtype: "bfloat16"
 
-# High-Capacity LoRA Expansion (r=128, alpha=256) — Maximum Expressive Power
+# High-Capacity LoRA Expansion (r=128, alpha=256) — linear modules only
 lora_r: 128
 lora_alpha: 256
 lora_dropout: 0.05
+# Do NOT target embed_tokens/lm_head: PEFT forces save_embedding_layers=True
+# (master_execution_v4.log: embedding save at step 200 → process Killed at 201).
 lora_target_modules:
   - "q_proj"
   - "k_proj"
@@ -18,27 +20,32 @@ lora_target_modules:
   - "gate_proj"
   - "up_proj"
   - "down_proj"
-  - "embed_tokens"
-  - "lm_head"
 
 # Dataset: MASTER V4 DATASETS (4,000 SFT + 4,000 RLVR Prompts)
 train_data_path: "data/arabic_reasoning_rlvr_v4.jsonl"
 eval_data_path: "data/arabic_reasoning_rlvr_eval.jsonl"
 coldstart_data_path: "data/arabic_reasoning_coldstart_v4.jsonl"
 
+# Stage-separated SFT budget (must NOT inherit GRPO max_steps)
+sft_num_train_epochs: 1.0
+sft_max_steps: null
+sft_per_device_train_batch_size: 4
+sft_gradient_accumulation_steps: 1
+sft_learning_rate: 2.0e-4
+
 # GRPO Generation Hyperparameters
-num_generations: 16              # 16 rollouts per prompt
-max_completion_length: 2048      # 2048 tokens — 0% truncation cutoff
+num_generations: 16
+max_completion_length: 2048
 temperature: 1.15
 top_p: 0.95
 top_k: 40
 stop_strings: ["</answer>"]
 
 # ── PROVEN V3 BATCH MATH (2 Prompts per GPU) ───────────────────────────
-per_device_train_batch_size: 2   # 2 prompts / GPU
-gradient_accumulation_steps: 8   # 8 accumulation steps (32 global batch)
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 8
 num_train_epochs: 2
-max_steps: 250                   # 250 steps (4,000 prompts * 2 epochs / 32 batch = 250 steps)
+max_steps: 250
 
 learning_rate: 3.0e-6
 ddp_find_unused_parameters: false
@@ -54,17 +61,18 @@ bf16: true
 fp16: false
 attn_implementation: "sdpa"
 
-# GRPO Loss — DAPO Recipe
+# GRPO Loss — SFT-anchored baseline (beta>0); zero-KL is a later ablation
 loss_type: "dr_grpo"
 scale_rewards: "batch"
-beta: 0.0                        # Remove KL penalty (DAPO recipe)
+beta: 0.02
 epsilon: 0.2
 epsilon_high: 0.28
 importance_sampling_level: "token"
 mask_truncated_completions: true
 
 # Multi-Reward Weights: [correctness, format, language, answer_leak, structural_leak, length]
-reward_weights: [0.85, 0.15, 0.0, 0.5, 0.3, 0.0]
+# Length weight stays 0 until calibrated to real CoT lengths.
+reward_weights: [0.85, 0.10, 0.05, 0.5, 0.3, 0.0]
 gdpo_decoupled_normalization: true
 
 # Entropy Collapse Prevention
@@ -73,12 +81,13 @@ use_adaptive_entropy: true
 entropy_target: 3.0
 entropy_coef_delta: 0.01
 
-# Stability Callbacks
+# Stability Callbacks — fixed temperature for reproducible baseline
 enable_stability_callback: true
 stability_consecutive: 2
 entropy_collapse_action: "reduce_lr"
 entropy_lr_reduction_factor: 0.5
-enable_adaptive_temperature: true
+enable_adaptive_beta: false
+enable_adaptive_temperature: false
 entropy_target_min: 2.0
 temp_bump: 0.15
 temp_max: 1.5
@@ -88,7 +97,6 @@ early_diag_steps: 30
 # Infrastructure & Evaluation Checkpointing Settings
 output_dir: "./outputs/qwen_4b_2x5090_v4_run"
 eval_strategy: "no"
-# eval_steps: 125
 max_eval_samples: 32
 per_device_eval_batch_size: 8
 logging_steps: 10
@@ -97,12 +105,15 @@ save_steps: 100
 save_total_limit: 5
 log_completions: false
 use_vllm: false
+enable_benchmark_probe: false
 torch_compile: false
 use_wandb: true
 wandb_project: "arabic-reasoning-rlvr-v4"
+resume_policy: "fresh"
 
-zero_variance_strategy: "direct_scoring"
-curriculum_schedule_type: "gaussian"
+# Curriculum disabled until RLVR rows have multi-bin difficulty labels
+zero_variance_strategy: "discard"
+curriculum_schedule_type: "none"
 sigma_fraction: 0.2
 enable_crps: false
 crps_max_age_steps: 100

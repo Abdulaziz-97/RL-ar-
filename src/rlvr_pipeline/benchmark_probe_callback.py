@@ -1,15 +1,14 @@
 """
 Automatic Benchmark Telemetry Probe Callback for HuggingFace Trainer.
 
-Fires on_save at every save_steps (e.g. step 50, 100, 150, 200).
-Evaluates AraMath (full), AraPro (fixed 500 sample), AraTruthfulQA (full) natively,
-logs accuracies to W&B under probe/aramath, probe/arapro, probe/truthfulqa.
+Fires on_save at every save_steps when enable_probe=True.
+Prefer running probes as a separate post-save stage with released GPUs.
 """
 
 from __future__ import annotations
 
 import os
-from pathlib import Path
+
 from transformers.trainer_callback import TrainerCallback
 
 
@@ -35,9 +34,8 @@ class BenchmarkProbeCallback(TrainerCallback):
 
         print(f"\n[AUTO-PROBE] Step {step}: Running benchmark probe on {ckpt_dir}...", flush=True)
         try:
-            import json
-            import sys
             import subprocess
+            import sys
 
             # Strip DDP env vars so vLLM initializes cleanly in subprocess
             clean_env = os.environ.copy()
@@ -47,13 +45,19 @@ class BenchmarkProbeCallback(TrainerCallback):
             cmd = [
                 sys.executable,
                 "scripts/run_benchmark_probe.py",
-                "--checkpoint", ckpt_dir,
-                "--base-model", self.base_model,
+                "--checkpoint",
+                ckpt_dir,
+                "--base-model",
+                self.base_model,
             ]
             res = subprocess.run(cmd, env=clean_env, capture_output=True, text=True, check=False)
             if res.returncode == 0:
                 print(f"[AUTO-PROBE] Probe Output:\n{res.stdout}", flush=True)
             else:
-                print(f"[AUTO-PROBE] Warning: Probe subprocess returned non-zero code {res.returncode}:\n{res.stderr}", flush=True)
+                print(
+                    f"[AUTO-PROBE] Warning: Probe subprocess returned non-zero code "
+                    f"{res.returncode}:\n{res.stderr}",
+                    flush=True,
+                )
         except Exception as e:
             print(f"[AUTO-PROBE] Warning: Probe skipped due to error: {e}", flush=True)

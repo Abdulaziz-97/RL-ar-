@@ -11,6 +11,7 @@ from rlvr_pipeline.rewards import ALL_REWARD_FUNCS, DEFAULT_REWARD_WEIGHTS
 import os
 import sys
 import re
+from pathlib import Path
 
 # Qwen3.5 injects a pre-closed empty <think></think> into generation prompts.
 # That makes reward_format unearnable; strip it so rollouts match SFT targets.
@@ -217,14 +218,19 @@ def build_sft_trainer(
     model_init_kwargs = config.build_model_init_kwargs() if model is None else None
 
     sft_lr = getattr(config, "sft_learning_rate", 2.0e-4)
+    sft_epochs = getattr(config, "sft_num_train_epochs", None)
+    if sft_epochs is None:
+        sft_epochs = config.num_train_epochs
+    sft_bs = getattr(config, "sft_per_device_train_batch_size", 4)
+    sft_accum = getattr(config, "sft_gradient_accumulation_steps", 1)
     sft_config = SFTConfig(
         output_dir=config.output_dir,
         learning_rate=sft_lr,
-        num_train_epochs=config.num_train_epochs,
-        per_device_train_batch_size=4,  # Increased from 2 to 4 on 32GB RTX 5090s (cuts steps from 1000 to 500)
-        gradient_accumulation_steps=1,  # 1 step for 4x FASTER SFT execution (~1s per step)
+        num_train_epochs=sft_epochs,
+        per_device_train_batch_size=sft_bs,
+        gradient_accumulation_steps=sft_accum,
         max_grad_norm=config.max_grad_norm,
-        lr_scheduler_type="cosine",     # Cosine LR scheduler for smooth high accuracy convergence
+        lr_scheduler_type="cosine",
         warmup_ratio=0.05,
         weight_decay=config.weight_decay,
         optim=config.optim,
@@ -232,15 +238,17 @@ def build_sft_trainer(
         bf16=config.bf16,
         fp16=config.fp16,
         gradient_checkpointing=config.gradient_checkpointing,
-        dataloader_num_workers=4,       # Prefetch batches asynchronously on CPU
-        dataset_num_proc=8,             # Multi-threaded dataset tokenization
+        dataloader_num_workers=4,
+        dataset_num_proc=8,
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
         report_to=config.report_to if config.use_wandb else "none",
-        loss_type="nll",  # Use standard NLL loss when lm_head is wrapped by PEFT adapter
+        loss_type="nll",
     )
-    if config.max_steps is not None:
-        sft_config.max_steps = config.max_steps
+    # Never inherit GRPO max_steps into SFT — use dedicated sft_max_steps only.
+    sft_max_steps = getattr(config, "sft_max_steps", None)
+    if sft_max_steps is not None and sft_max_steps > 0:
+        sft_config.max_steps = int(sft_max_steps)
     if model_init_kwargs:
         sft_config.model_init_kwargs = model_init_kwargs
 
@@ -338,8 +346,12 @@ def build_trainer(
             print(f"Instruction adapter merged successfully into base weights.", flush=True)
 
         if config.sft_checkpoint_path and os.path.exists(os.path.join(config.sft_checkpoint_path, "adapter_config.json")):
-            print(f"Loading SFT checkpoint natively via PEFT from {config.sft_checkpoint_path}...", flush=True)
-            model = PeftModel.from_pretrained(base_model, config.sft_checkpoint_path, is_trainable=True)
+            print(f"Loading SFT checkpoint strictly from {config.sft_checkpoint_path}...", flush=True)
+            peft_config = config.build_peft_config()
+            model = get_peft_model(base_model, peft_config)
+            load_sft_adapter_strict(model, config.sft_checkpoint_path)
+            model.train()
+            peft_config = None
         elif config.instruction_base_model:
             print(f"Initializing fresh Rank-{config.lora_r} (alpha={config.lora_alpha}) LoRA adapter for GRPO training...", flush=True)
             peft_config = config.build_peft_config()
@@ -435,18 +447,15 @@ def build_trainer(
         stability_cb.trainer = trainer
         trainer.add_callback(stability_cb)
 
-    # Attach automatic benchmark telemetry probe callback (runs on every checkpoint save)
+    # Attach automatic benchmark telemetry probe callback (opt-in; unsafe mid-GRPO on full GPUs)
     from rlvr_pipeline.benchmark_probe_callback import BenchmarkProbeCallback
-    probe_cb = BenchmarkProbeCallback(base_model=config.model_name, enable_probe=True)
+    _probe_enabled = bool(getattr(config, "enable_benchmark_probe", False))
+    probe_cb = BenchmarkProbeCallback(base_model=config.model_name, enable_probe=_probe_enabled)
     trainer.add_callback(probe_cb)
-
-    # Attach StepCheckCallback to verify LR Scheduler state at on_train_begin
-    from transformers.trainer_callback import TrainerCallback
-    class StepCheckCallback(TrainerCallback):
-        def on_train_begin(self, args, state, control, **kwargs):
-            sched = kwargs.get("lr_scheduler") or getattr(self, "lr_scheduler", None)
-            sch_info = sched.state_dict() if hasattr(sched, "state_dict") else "N/A"
-            print(f"\n[ON_TRAIN_BEGIN] Verified LR Scheduler State: {sch_info}", flush=True)
+    if _probe_enabled:
+        print("Benchmark probe ENABLED (will spawn vLLM on each save — ensure free VRAM).", flush=True)
+    else:
+        print("Benchmark probe disabled (enable_benchmark_probe=false).", flush=True)
 
     # Principal Engineer Fix: Integrate Arabic Terminal Reshaper directly into trainer._log_completions
     if hasattr(trainer, "_log_completions"):

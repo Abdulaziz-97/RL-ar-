@@ -90,9 +90,9 @@ def main():
     print(" 📌 STEP 3: STAGE 1 Cold-Start CoT SFT Warm-up (Torchrun DDP)", flush=True)
     print("=" * 85, flush=True)
     if num_gpus > 1:
-        sft_cmd = f"torchrun --nproc_per_node={num_gpus} -m rlvr_pipeline.cli sft --config {CONFIG_FILE} --output {SFT_OUT} --max-steps 100"
+        sft_cmd = f"torchrun --nproc_per_node={num_gpus} -m rlvr_pipeline.cli sft --config {CONFIG_FILE} --output {SFT_OUT}"
     else:
-        sft_cmd = f"python -m rlvr_pipeline.cli sft --config {CONFIG_FILE} --output {SFT_OUT} --max-steps 100"
+        sft_cmd = f"python -m rlvr_pipeline.cli sft --config {CONFIG_FILE} --output {SFT_OUT}"
     
     try:
         run_cmd(sft_cmd, check=False)

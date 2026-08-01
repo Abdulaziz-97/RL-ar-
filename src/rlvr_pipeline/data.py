@@ -150,6 +150,11 @@ def load_production_dataset(
     for raw in records:
         metadata = raw.get("metadata") or {}
         partition = str(raw.get("partition") or metadata.get("partition") or "")
+        # Normalize legacy partition labels used by shipped V4 corpora.
+        if partition in {"", "train", "rlvr"}:
+            partition = "rlvr_train"
+        elif partition == "sft":
+            partition = "sft_train"
         if allowed_partitions is not None and partition not in allowed_partitions:
             continue
         raw_domain = raw.get("domain", "math")
@@ -159,9 +164,11 @@ def load_production_dataset(
         try:
             spec = _extract_answer_spec(raw)
         except AnswerSpecError as exc:
-            raise AnswerSpecError(
-                f"rejecting record {raw.get('problem_id') or raw.get('id')}: {exc}"
-            ) from exc
+            if not allow_legacy_fallback:
+                raise AnswerSpecError(
+                    f"rejecting record {raw.get('problem_id') or raw.get('id')}: {exc}"
+                ) from exc
+            continue
 
         gt = None
         if spec is not None:
@@ -321,12 +328,22 @@ def load_rlvr_dataset(
     *,
     production: bool | None = None,
     allowed_partitions: set[str] | None = None,
+    fail_closed: bool | None = None,
 ) -> Dataset:
     """Load RLVR data.
 
     Auto-detects production records (answer_spec present). Set
     ``production=True`` to require answer_spec, or ``False`` to force legacy-v2.
+
+    When ``fail_closed`` is True (default when RLVR_V4_PRODUCTION=1), reject
+    majority-legacy fallback and require ``rlvr_train`` partition rows with
+    answer_spec / problem_id / family_id.
     """
+    import os
+
+    if fail_closed is None:
+        fail_closed = os.environ.get("RLVR_V4_PRODUCTION", "").strip() in {"1", "true", "TRUE"}
+
     records = _read_jsonl(path)
     if not records:
         return Dataset.from_dict(
@@ -340,12 +357,38 @@ def load_rlvr_dataset(
                 "answer_spec": [],
             }
         )
+
+    if fail_closed:
+        production = True
+        if allowed_partitions is None:
+            allowed_partitions = {"rlvr_train"}
+
     if production is True:
-        return load_production_dataset(
+        ds = load_production_dataset(
             path,
             system_prompt=system_prompt,
+            require_answer_spec=True,
+            allow_legacy_fallback=not fail_closed,
             allowed_partitions=allowed_partitions,
         )
+        if fail_closed and len(ds) == 0:
+            raise ValueError(
+                f"fail-closed V4 load produced 0 rows from {path}; "
+                "expected rlvr_train rows with answer_spec"
+            )
+        if fail_closed:
+            missing_ids = sum(1 for sid in ds["sample_id"] if not sid)
+            missing_fam = (
+                sum(1 for fid in ds["family_id"] if not fid)
+                if "family_id" in ds.column_names
+                else len(ds)
+            )
+            if missing_ids or missing_fam:
+                raise ValueError(
+                    f"fail-closed V4 data missing identifiers: "
+                    f"empty sample_id={missing_ids}, empty family_id={missing_fam}"
+                )
+        return ds
     if production is False:
         return load_rlvr_dataset_legacy_v2(
             path, domain=domain, system_prompt=system_prompt, validate=validate

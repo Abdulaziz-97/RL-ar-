@@ -10,6 +10,8 @@ Both methodologies are switchable via config flags.
 from __future__ import annotations
 
 import copy
+import json
+from pathlib import Path
 from typing import Any, Optional
 
 import torch
@@ -138,15 +140,29 @@ class GRPOTrainerWithFailureMining(GRPOTrainer):
         num_gen = self.num_generations
         num_groups = global_rewards.shape[0] // num_gen
 
-        # Explicitly log all rollouts & rewards to completions_log.jsonl file
+        # Explicitly log all rollouts & rewards to completions_log.jsonl (rank-safe, fail visible)
         try:
-            log_file = Path(self.args.output_dir) / "completions_log.jsonl"
-            log_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(log_file, "a", encoding="utf-8") as f:
-                for p, c, r in zip(prompts_text, completions_text, global_rewards.tolist()):
-                    f.write(json.dumps({"step": self.state.global_step, "prompt": p, "completion": c, "reward": r}, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
+            if self.accelerator.is_main_process:
+                log_file = Path(self.args.output_dir) / "completions_log.jsonl"
+                log_file.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_file, "a", encoding="utf-8") as f:
+                    for p, c, r in zip(prompts_text, completions_text, global_rewards.tolist()):
+                        f.write(
+                            json.dumps(
+                                {
+                                    "step": self.state.global_step,
+                                    "prompt": p,
+                                    "completion": c,
+                                    "reward": r,
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to write completions log under {self.args.output_dir}: {e}"
+            ) from e
 
         self._process_failure_mining(
             output,

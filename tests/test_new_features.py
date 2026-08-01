@@ -132,7 +132,9 @@ class TestBenchmarkProbeCallback(unittest.TestCase):
     @patch("subprocess.run")
     def test_on_save_triggers_probe_subprocess(self, mock_subprocess_run):
         from rlvr_pipeline.benchmark_probe_callback import BenchmarkProbeCallback
-        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="Probe Success")
+        # Importing transformers/trl may call subprocess.run; ignore those.
+        mock_subprocess_run.reset_mock()
+        mock_subprocess_run.return_value = MagicMock(returncode=0, stdout="Probe Success", stderr="")
 
         cb = BenchmarkProbeCallback(enable_probe=True)
 
@@ -146,7 +148,11 @@ class TestBenchmarkProbeCallback(unittest.TestCase):
 
         cb.on_save(mock_args, mock_state, MagicMock())
         mock_subprocess_run.assert_called_once()
-        
+
+        cmd = mock_subprocess_run.call_args[0][0]
+        self.assertIn("--checkpoint", cmd)
+        self.assertNotIn("--model-dir", cmd)
+
         # Verify DDP env vars were stripped from subprocess env
         _, kwargs = mock_subprocess_run.call_args
         env_used = kwargs.get("env", {})

@@ -119,10 +119,22 @@ DATASET_CONFIGS = {
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run generation-based AraEval evaluation with vLLM."
+        description="Run generation-based AraEval evaluation (HF-first; vLLM optional)."
     )
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--instruction-adapter",
+        type=str,
+        default=None,
+        help="T06 (or other) instruction LoRA to merge before trainable adapter",
+    )
     parser.add_argument("--adapter-path", type=str, default=None)
+    parser.add_argument(
+        "--engine",
+        choices=["hf", "vllm"],
+        default="hf",
+        help="Evaluation engine (default: hf for lineage fidelity)",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -140,7 +152,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--tensor-parallel-size",
         type=int,
         default=None,
-        help="Number of GPUs for tensor parallelism",
+        help="Number of GPUs for tensor parallelism (vLLM only)",
     )
     parser.add_argument(
         "--tasks",
@@ -159,6 +171,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Limit number of samples per task (for debugging)",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=8,
+        help="HF generation batch size",
     )
     return parser.parse_args(argv)
 
@@ -313,49 +331,66 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
 
 
 def build_hf_engine(args: argparse.Namespace):
-    """Build a PyTorch HuggingFace Transformers engine with merged weights."""
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer
-    from peft import PeftModel
+    """Build a PyTorch HuggingFace engine using the shared lineage loader."""
+    import sys
+    from pathlib import Path as _Path
 
-    print(f"[1/2] Loading base model ({args.model}) in bfloat16 on GPU...", flush=True)
-    base = AutoModelForCausalLM.from_pretrained(
-        args.model,
-        torch_dtype=torch.bfloat16,
-        device_map="cuda:0",
-        trust_remote_code=True,
+    repo_src = _Path(__file__).resolve().parents[1] / "src"
+    if str(repo_src) not in sys.path:
+        sys.path.insert(0, str(repo_src))
+
+    from rlvr_pipeline.config import DEFAULT_SYSTEM_PROMPT
+    from rlvr_pipeline.lineage import load_lineage_model
+    from rlvr_pipeline.trainer import fix_chat_template
+
+    print(
+        f"[lineage] base={args.model} instruction={getattr(args, 'instruction_adapter', None)} "
+        f"adapter={args.adapter_path}",
+        flush=True,
     )
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    model, tokenizer = load_lineage_model(
+        base_model=args.model,
+        instruction_adapter=getattr(args, "instruction_adapter", None),
+        trainable_adapter=args.adapter_path,
+        merge_instruction=True,
+        is_trainable=False,
+        device_map="cuda:0",
+    )
+    fix_chat_template(tokenizer)
     tokenizer.padding_side = "left"
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token_id = tokenizer.eos_token_id
-
-    if args.adapter_path and os.path.exists(os.path.join(args.adapter_path, "adapter_config.json")):
-        print(f"[2/2] Loading GRPO LoRA adapter ({args.adapter_path}) and zeroing embedding deltas...", flush=True)
-        model = PeftModel.from_pretrained(base, args.adapter_path)
-        for name, param in model.named_parameters():
-            if "lora_" in name and ("embed_tokens" in name or "lm_head" in name):
-                param.data.zero_()
-        merged_model = model.merge_and_unload()
-    else:
-        merged_model = base
-
-    merged_model.eval()
-    return merged_model, tokenizer
+    tokenizer._rlvr_system_prompt = DEFAULT_SYSTEM_PROMPT  # type: ignore[attr-defined]
+    model.eval()
+    return model, tokenizer
 
 
 def apply_chat_template(tokenizer, prompt: str, enable_thinking: bool = False) -> str:
-    """Apply the model's standard chat template to a prompt (pure zero-system-prompt)."""
-    messages = [{"role": "user", "content": prompt}]
+    """Apply chat template with the same system prompt used in training."""
+    import sys
+    from pathlib import Path as _Path
+
+    repo_src = _Path(__file__).resolve().parents[1] / "src"
+    if str(repo_src) not in sys.path:
+        sys.path.insert(0, str(repo_src))
+    from rlvr_pipeline.config import DEFAULT_SYSTEM_PROMPT
+    from rlvr_pipeline.trainer import fix_chat_template
+
+    fix_chat_template(tokenizer)
+    system = getattr(tokenizer, "_rlvr_system_prompt", DEFAULT_SYSTEM_PROMPT)
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": prompt},
+    ]
     try:
-        formatted = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return formatted
+        kwargs: dict[str, Any] = {"tokenize": False, "add_generation_prompt": True}
+        try:
+            return tokenizer.apply_chat_template(
+                messages, enable_thinking=enable_thinking, **kwargs
+            )
+        except TypeError:
+            return tokenizer.apply_chat_template(messages, **kwargs)
     except Exception:
-        # Fallback if tokenizer formatting fails
         return f"User: {prompt}\nAssistant:"
 
 
@@ -365,12 +400,14 @@ def evaluate_task(
     task: str,
     samples: list[dict[str, Any]],
     enable_thinking: bool,
+    max_new_tokens: int | None = None,
+    batch_size: int = 8,
 ) -> dict[str, Any]:
     """Evaluate a single task using PyTorch HuggingFace batched generation."""
     import torch
 
     profile = get_generation_profile(task)
-    max_tokens = profile["max_new_tokens"]
+    max_tokens = max_new_tokens if max_new_tokens is not None else profile["max_new_tokens"]
 
     print(f"  Formatting {len(samples)} prompts...", flush=True)
     prompts = []
@@ -382,17 +419,17 @@ def evaluate_task(
         gold_indices.append(gold)
 
     print(f"  Running PyTorch HF batched generation on {len(prompts)} prompts...", flush=True)
-    batch_size = 8
     all_generated_texts = []
+    bs = max(1, int(batch_size))
 
-    for b in range(0, len(prompts), batch_size):
-        batch_prompts = prompts[b : b + batch_size]
+    for b in range(0, len(prompts), bs):
+        batch_prompts = prompts[b : b + bs]
         inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to("cuda:0")
         with torch.no_grad():
             output_ids = model.generate(
                 **inputs,
                 max_new_tokens=max_tokens,
-                do_sample=False,  # greedy
+                do_sample=False,
                 repetition_penalty=1.05,
                 pad_token_id=tokenizer.pad_token_id,
             )
@@ -401,7 +438,6 @@ def evaluate_task(
             gen_text = tokenizer.decode(out[input_len:], skip_special_tokens=True)
             all_generated_texts.append(gen_text)
 
-    # Extract and grade answers
     correct = 0
     extraction_failures = 0
     for i, (generated_text, gold_idx, sample) in enumerate(zip(all_generated_texts, gold_indices, samples)):
@@ -446,14 +482,27 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     checkpoint_path = output_dir / "checkpoint.json"
     summary_path = output_dir / "summary.json"
 
-    # Load or create checkpoint
+    # Load or create checkpoint — keyed by lineage identity so stale results
+    # from a different model/adapter are not reused.
+    lineage_key = {
+        "model": args.model,
+        "instruction_adapter": getattr(args, "instruction_adapter", None),
+        "adapter_path": args.adapter_path,
+        "enable_thinking": args.enable_thinking,
+        "engine": getattr(args, "engine", "hf"),
+    }
     checkpoint = load_generative_checkpoint(checkpoint_path)
-    if checkpoint is None or checkpoint.get("version") != 1:
+    if (
+        checkpoint is None
+        or checkpoint.get("version") != 1
+        or checkpoint.get("lineage_key") != lineage_key
+    ):
         checkpoint = new_generative_checkpoint(
             model=args.model,
             adapter_path=args.adapter_path,
             enable_thinking=args.enable_thinking,
         )
+        checkpoint["lineage_key"] = lineage_key
         save_generative_checkpoint(checkpoint_path, checkpoint)
 
     all_tasks = args.tasks if args.tasks is not None else GENERATIVE_TASKS
@@ -498,6 +547,8 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             task=task,
             samples=samples,
             enable_thinking=args.enable_thinking,
+            max_new_tokens=args.max_new_tokens,
+            batch_size=getattr(args, "batch_size", 8),
         )
         result["seconds"] = round(time.monotonic() - started, 2)
 

@@ -144,7 +144,11 @@ class RLVRConfig:
     output_dir: str = "./outputs"
     logging_steps: int = 10
     save_steps: int = 500
+    save_strategy: str = "steps"
+    save_total_limit: Optional[int] = None
+    eval_strategy: str = "no"
     eval_steps: Optional[int] = None
+    max_eval_samples: Optional[int] = 32
     bf16: bool = False
     fp16: bool = True
     gradient_checkpointing: bool = True
@@ -152,6 +156,8 @@ class RLVRConfig:
     use_vllm: bool = False
     vllm_gpu_memory_utilization: float = 0.40
     vllm_max_model_len: int = 4096
+    # Mid-train Auto-Probe launches vLLM in a subprocess; keep off during GRPO.
+    enable_benchmark_probe: bool = False
     torch_compile: bool = False
     attn_implementation: str = "flash_attention_2"
     ddp_find_unused_parameters: bool = False
@@ -164,7 +170,13 @@ class RLVRConfig:
     num_completions_to_print: int = 4
 
     sft_learning_rate: float = 2.0e-4
+    sft_num_train_epochs: float = 1.0
+    sft_max_steps: Optional[int] = None
+    sft_per_device_train_batch_size: int = 4
+    sft_gradient_accumulation_steps: int = 1
     max_steps: Optional[int] = None
+    # fresh | resume | fail-if-output-exists
+    resume_policy: Literal["fresh", "resume", "fail-if-output-exists"] = "fresh"
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "RLVRConfig":
@@ -183,8 +195,40 @@ class RLVRConfig:
                 data[key] = str((base_dir / value).resolve())
 
         valid_fields = {f.name for f in dataclasses.fields(cls)}
-        filtered_data = {k: v for k, v in data.items() if k in valid_fields}
-        return cls(**filtered_data)
+        unknown = sorted(k for k in data.keys() if k not in valid_fields)
+        if unknown:
+            raise ValueError(f"Unknown config keys: {unknown}")
+        cfg = cls(**{k: v for k, v in data.items() if k in valid_fields})
+        cfg.validate()
+        return cfg
+
+    def validate(self) -> None:
+        """Fail closed on recipe invariants that previously caused silent failures."""
+        forbidden = {"embed_tokens", "lm_head"}
+        hit = forbidden.intersection(self.lora_target_modules or [])
+        if hit:
+            raise ValueError(
+                f"LoRA target_modules must not include {sorted(hit)} "
+                "(forces save_embedding_layers and risks OOM / merge breakage)"
+            )
+        if len(self.reward_weights) != 6:
+            raise ValueError(
+                f"reward_weights must have 6 entries "
+                f"[correctness, format, language, answer_leak, structural_leak, length]; "
+                f"got {len(self.reward_weights)}"
+            )
+        if self.beta <= 0 and self.enable_adaptive_beta:
+            # Adaptive beta is meaningless at beta=0; coerce rather than break legacy YAMLs.
+            self.enable_adaptive_beta = False
+            print(
+                "Config: enable_adaptive_beta disabled because beta<=0",
+                flush=True,
+            )
+        if self.enable_crps and self.curriculum_schedule_type != "none":
+            # Allowed singly; multi-GPU CRPS is rejected in the trainer.
+            pass
+        if self.resume_policy not in {"fresh", "resume", "fail-if-output-exists"}:
+            raise ValueError(f"Invalid resume_policy: {self.resume_policy}")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -218,7 +262,11 @@ class RLVRConfig:
         while (target_per_device * num_gpus) % num_generations_eval != 0:
             target_per_device += 1
         
-        eval_batch_size = target_per_device
+        # Honor explicit per_device_eval_batch_size when provided.
+        if self.per_device_eval_batch_size is not None:
+            eval_batch_size = self.per_device_eval_batch_size
+        else:
+            eval_batch_size = target_per_device
 
         kwargs: dict[str, Any] = dict(
             output_dir=self.output_dir,
@@ -258,6 +306,9 @@ class RLVRConfig:
             use_transformers_continuous_batching=self.use_transformers_continuous_batching,
             logging_steps=self.logging_steps,
             save_steps=self.save_steps,
+            save_strategy=self.save_strategy,
+            save_total_limit=self.save_total_limit,
+            eval_strategy=self.eval_strategy,
             report_to=self.report_to if self.use_wandb else "none",
             log_completions=self.log_completions,
             num_completions_to_print=self.num_completions_to_print,
@@ -277,9 +328,13 @@ class RLVRConfig:
 
         if self.max_steps is not None:
             kwargs["max_steps"] = self.max_steps
-        else:
-            # Explicitly set max_steps to 210 so TRL and the LR scheduler decay over 210 steps
-            kwargs["max_steps"] = 210
+        # Do not inject a mystery default max_steps (previously hardcoded 210).
+
+        # Do NOT force generation_batch_size = per_device * num_generations.
+        # TRL default is: steps_per_generation = gradient_accumulation_steps,
+        # generation_batch_size = per_device * num_processes * steps_per_generation.
+        # Forcing per_device*G breaks steps_per_generation on non-2-GPU layouts
+        # (runtime evidence: forced → steps=16 vs default steps=8).
 
         # Safely filter kwargs against GRPOConfig signature for cross-version compatibility
         import inspect

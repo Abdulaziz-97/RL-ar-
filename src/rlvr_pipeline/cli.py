@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+from pathlib import Path
 
 from rlvr_pipeline.config import RLVRConfig
 from rlvr_pipeline.trainer import build_trainer, build_sft_trainer
@@ -69,6 +70,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                               help="Disable CRPS")
     train_parser.add_argument("--sft-checkpoint", dest="sft_checkpoint_path",
                               help="Path to LoRA adapters from SFT stage")
+    train_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume GRPO from the latest checkpoint under output_dir (opt-in)",
+    )
 
     # Hyperparameter overrides
     train_parser.add_argument("--temperature", type=float, help="Override generation temperature")
@@ -193,6 +199,18 @@ def main(argv: list[str] | None = None) -> int:
         if not config.coldstart_data_path:
             print("Error: --data or config.coldstart_data_path is required", file=sys.stderr)
             return 1
+        # SFT CLI --max-steps must set sft_max_steps, never GRPO max_steps.
+        if getattr(args, "max_steps", None) is not None:
+            config.sft_max_steps = args.max_steps
+            config.max_steps = None
+        if getattr(args, "num_train_epochs", None) is not None:
+            config.sft_num_train_epochs = args.num_train_epochs
+        if getattr(args, "learning_rate", None) is not None:
+            config.sft_learning_rate = args.learning_rate
+        if getattr(args, "per_device_train_batch_size", None) is not None:
+            config.sft_per_device_train_batch_size = args.per_device_train_batch_size
+        if getattr(args, "gradient_accumulation_steps", None) is not None:
+            config.sft_gradient_accumulation_steps = args.gradient_accumulation_steps
 
         print(f"Stage 1: Cold-start SFT")
         print(f"Model:    {config.model_name}")
@@ -204,6 +222,22 @@ def main(argv: list[str] | None = None) -> int:
         trainer = build_sft_trainer(config)
         trainer.train()
         trainer.save_model()
+        try:
+            from rlvr_pipeline.lineage import LineageMeta, write_lineage
+
+            write_lineage(
+                config.output_dir,
+                LineageMeta(
+                    base_model=config.model_name,
+                    instruction_adapter=config.instruction_base_model,
+                    stage="sft",
+                    adapter_path=config.output_dir,
+                    config_hash=None,
+                    dataset_hash=None,
+                ),
+            )
+        except Exception as e:
+            print(f"Warning: failed to write lineage.json: {e}", flush=True)
         print(f"Adapters saved to {config.output_dir}")
         return 0
 
@@ -231,6 +265,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Weights:  {config.reward_weights}")
         print()
 
+        try:
+            from rlvr_pipeline.rewards import diagnose_reward_weights
+
+            diagnose_reward_weights(config.reward_weights)
+        except Exception as e:
+            print(f"Reward diagnostics failed: {e}", file=sys.stderr)
+            return 1
+
         trainer = build_trainer(config)
         ds_len = len(trainer.train_dataset) if hasattr(trainer, "train_dataset") and trainer.train_dataset is not None else "N/A"
         train_dl_len = len(trainer.get_train_dataloader()) if hasattr(trainer, "get_train_dataloader") else "N/A"
@@ -257,14 +299,22 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  * trainer.args.per_device_train_batch_size     = {getattr(trainer.args, 'per_device_train_batch_size', 'N/A')}")
         print(f"  * scheduler info                              = {scheduler_info}")
         print("=================================================================", flush=True)
-        search_dirs = [
-            config.output_dir,
-            "/workspace/outputs/qwen_4b_2x5090_v4_run",
-            "/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run",
-            "./outputs/qwen_4b_2x5090_v4_run",
-        ]
+
+        resume_requested = bool(getattr(args, "resume", False)) or (
+            getattr(config, "resume_policy", "fresh") == "resume"
+        )
+        if getattr(config, "resume_policy", "fresh") == "fail-if-output-exists":
+            out = Path(config.output_dir)
+            if out.exists() and any(out.glob("checkpoint-*")):
+                print(
+                    f"Error: resume_policy=fail-if-output-exists and checkpoints exist in {out}",
+                    file=sys.stderr,
+                )
+                return 1
+
         latest_checkpoint = None
-        for sdir in search_dirs:
+        if resume_requested:
+            sdir = config.output_dir
             if sdir and os.path.exists(sdir):
                 ckpts = [
                     os.path.join(sdir, d)
@@ -274,14 +324,36 @@ def main(argv: list[str] | None = None) -> int:
                 if ckpts:
                     ckpts.sort(key=lambda x: int(x.split("-")[-1]))
                     latest_checkpoint = ckpts[-1]
-                    break
 
         if latest_checkpoint:
             print(f"Resuming GRPO training from checkpoint: {latest_checkpoint}", flush=True)
             trainer.train(resume_from_checkpoint=latest_checkpoint)
         else:
+            if resume_requested:
+                print("Resume requested but no checkpoint found; starting fresh.", flush=True)
+            else:
+                print(
+                    f"Fresh run (resume_policy={getattr(config, 'resume_policy', 'fresh')}); "
+                    "ignoring any existing checkpoints.",
+                    flush=True,
+                )
             trainer.train()
         trainer.save_model()
+        try:
+            from rlvr_pipeline.lineage import LineageMeta, write_lineage
+
+            write_lineage(
+                config.output_dir,
+                LineageMeta(
+                    base_model=config.model_name,
+                    instruction_adapter=config.instruction_base_model,
+                    sft_parent=config.sft_checkpoint_path or None,
+                    stage="grpo",
+                    adapter_path=config.output_dir,
+                ),
+            )
+        except Exception as e:
+            print(f"Warning: failed to write lineage.json: {e}", flush=True)
         return 0
 
     elif args.command == "eval":

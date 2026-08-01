@@ -1,0 +1,13 @@
+# Optional evaluation / probe environment (separate from training lock).
+# Do NOT install into the same env as the locked transformers==5.13 / TRL stack
+# unless you have verified prompt/score parity with the HF engine.
+#
+# Recommended:
+#   python -m venv .venv-eval && .venv-eval/Scripts/activate  # or source bin/activate
+#   pip install -r requirements-eval.txt
+#
+lm-eval>=0.4.0
+# Pin vLLM only after HF↔vLLM parity tests pass on a fixed sample.
+# vllm>=0.8.0,<0.26
+python-bidi
+arabic-reshaper

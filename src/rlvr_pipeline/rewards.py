@@ -174,8 +174,64 @@ def structural_leak_penalty_func(prompts, completions, **kwargs) -> list[float]:
 
 
 def length_penalty_func(prompts, completions, **kwargs) -> list[float]:
-    """Penalize runaway <think> length (thinking-loop pressure)."""
-    return [-float(penalty_length(_extract_completion_text(c))) for c in completions]
+    """Penalize runaway <think> length (thinking-loop pressure).
+
+    Limits are configurable via kwargs or env:
+      soft_limit / LENGTH_SOFT_LIMIT (default from reward_composer)
+      hard_limit / LENGTH_HARD_LIMIT
+    Keep length weight at 0 until calibrated to the SFT CoT distribution.
+    """
+    import os
+
+    soft = kwargs.get("soft_limit")
+    hard = kwargs.get("hard_limit")
+    if soft is None:
+        soft = os.environ.get("RLVR_LENGTH_SOFT_LIMIT")
+        soft = int(soft) if soft else None
+    if hard is None:
+        hard = os.environ.get("RLVR_LENGTH_HARD_LIMIT")
+        hard = int(hard) if hard else None
+    out = []
+    for c in completions:
+        text = _extract_completion_text(c)
+        if soft is not None and hard is not None:
+            out.append(-float(penalty_length(text, soft_limit=int(soft), hard_limit=int(hard))))
+        else:
+            out.append(-float(penalty_length(text)))
+    return out
+
+
+def diagnose_reward_weights(weights: list[float] | None = None) -> dict[str, Any]:
+    """Print expected contribution ranges and reject saturated/zero contradictions."""
+    w = list(weights or DEFAULT_REWARD_WEIGHTS)
+    if len(w) != 6:
+        raise ValueError(f"expected 6 reward weights, got {len(w)}")
+    names = list(REWARD_FUNCS_ORDER)
+    report = {
+        "weights": dict(zip(names, w)),
+        "expected_contribution_ranges": {
+            names[i]: [0.0 if i < 3 else -float(w[i]), float(w[i]) if i < 3 else 0.0]
+            for i in range(6)
+        },
+    }
+    # Length weight must be 0 until calibrated (V4 baseline).
+    if w[5] != 0.0:
+        print(
+            f"[reward-diag] WARNING: length weight={w[5]} is nonzero; "
+            "calibrate soft/hard limits before enabling",
+            flush=True,
+        )
+    if w[0] < w[1]:
+        raise ValueError(
+            f"correctness weight ({w[0]}) must dominate format weight ({w[1]}) for V4 baseline"
+        )
+    print("[reward-diag] component weights:", report["weights"], flush=True)
+    print(
+        "[reward-diag] expected contribution ranges:",
+        report["expected_contribution_ranges"],
+        flush=True,
+    )
+    return report
 
 
 ALL_REWARD_FUNCS = [
