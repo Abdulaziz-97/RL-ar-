@@ -44,6 +44,17 @@ run_pipeline() {
     export WANDB_MODE="${WANDB_MODE:-offline}"
     export PYTHONPATH="$REPO_ROOT/src:$REPO_ROOT/data_1/src:$REPO_ROOT/data_1/vendor:${PYTHONPATH:-}"
 
+    # Frontier-lab datagen defaults (A/B winner: DeepSeek V4 Pro; high fan-out).
+    export TEACHER_MODEL="${TEACHER_MODEL:-deepseek-v4-pro}"
+    export TEACHER_WORKERS="${TEACHER_WORKERS:-48}"
+    export TEACHER_RETRIES="${TEACHER_RETRIES:-4}"
+    export SFT_BUDGET_USD="${SFT_BUDGET_USD:-200}"
+    export RLVR_BUDGET_USD="${RLVR_BUDGET_USD:-50}"
+    if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -z "${DEEPSEEK_API_KEY:-}" ]; then
+        export USE_OPENROUTER="${USE_OPENROUTER:-1}"
+    fi
+    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0}"
+
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
     if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi
     echo "[System Diagnostic] Detected $NUM_GPUS active NVIDIA GPU(s)."
@@ -87,11 +98,40 @@ run_pipeline() {
 
     if [ "${REGENERATE_DATA:-0}" = "1" ]; then
         echo "================================================================="
-        echo "[2a/N] REGENERATE SFT CANDIDATES (verifier-first orchestrator)"
+        echo "[2a/N] REGENERATE SFT CANDIDATES (lightning-fast parallel teacher)"
         echo "================================================================="
         if [ -z "${DEEPSEEK_API_KEY:-}${OPENROUTER_API_KEY:-}" ]; then
             echo "ERROR: REGENERATE_DATA=1 requires DEEPSEEK_API_KEY or OPENROUTER_API_KEY" >&2
             exit 2
+        fi
+        # Optional micro-canary before burning the full 6500 budget.
+        if [ "${DATAGEN_CANARY:-1}" = "1" ]; then
+            echo "[2a0/N] DATAGEN CANARY (20 families, ${TEACHER_WORKERS} workers)"
+            CANARY_CFG="$DATAGEN_ROOT/canary_sft_20.yaml"
+            python3 - <<PY
+from pathlib import Path
+import yaml
+cfg = yaml.safe_load(Path(r"$SFT_CFG").read_text(encoding="utf-8"))
+cfg["n_families"] = int("${DATAGEN_CANARY_N:-20}")
+cfg["work_dir"] = r"$DATAGEN_ROOT/canary_sft"
+Path(r"$CANARY_CFG").write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding="utf-8")
+print(r"$CANARY_CFG")
+PY
+            python3 "$REPO_ROOT/data_1/scripts/run_pipeline.py" \
+                --mode live \
+                --config "$CANARY_CFG" \
+                --work-dir "$DATAGEN_ROOT/canary_sft" \
+                --track sft \
+                --model "$TEACHER_MODEL" \
+                --workers "$TEACHER_WORKERS" \
+                --budget-usd "${DATAGEN_CANARY_BUDGET_USD:-5}" \
+                --no-resume
+            CANARY_N=$(wc -l < "$DATAGEN_ROOT/canary_sft/release_corpora/sft_train.jsonl" | tr -d ' ')
+            if [ "${CANARY_N:-0}" -lt 1 ]; then
+                echo "ERROR: datagen canary produced 0 SFT rows — aborting full regen" >&2
+                exit 2
+            fi
+            echo "Canary OK: ${CANARY_N} SFT candidates"
         fi
         SFT_WORK="$DATAGEN_ROOT/sft_candidates"
         python3 "$REPO_ROOT/data_1/scripts/run_pipeline.py" \
@@ -99,8 +139,9 @@ run_pipeline() {
             --config "$SFT_CFG" \
             --work-dir "$SFT_WORK" \
             --track sft \
-            --model "${TEACHER_MODEL:-deepseek-v4-pro}" \
-            --budget-usd "${SFT_BUDGET_USD:-200}" \
+            --model "$TEACHER_MODEL" \
+            --workers "$TEACHER_WORKERS" \
+            --budget-usd "$SFT_BUDGET_USD" \
             --no-resume
 
         python3 "$REPO_ROOT/data_1/scripts/select_sft_v4_release.py" \
@@ -163,8 +204,9 @@ PY
             --config "$DATAGEN_ROOT/full_rlvr_8000.runtime.yaml" \
             --work-dir "$RLVR_WORK" \
             --track rlvr \
-            --model "${TEACHER_MODEL:-deepseek-v4-pro}" \
-            --budget-usd "${RLVR_BUDGET_USD:-50}" \
+            --model "$TEACHER_MODEL" \
+            --workers 1 \
+            --budget-usd "$RLVR_BUDGET_USD" \
             --no-resume
 
         echo "================================================================="

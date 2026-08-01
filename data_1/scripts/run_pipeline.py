@@ -33,6 +33,12 @@ def main() -> int:
     parser.add_argument("--track", choices=["auto", "sft", "rlvr"], default="auto",
                         help="Optional partition override; default keeps YAML partitions.")
     parser.add_argument("--budget-usd", type=float, default=None)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=None,
+        help="Parallel teacher workers for SFT multi_trace (env TEACHER_WORKERS).",
+    )
     parser.add_argument("--no-resume", action="store_true")
     args = parser.parse_args()
 
@@ -45,6 +51,12 @@ def main() -> int:
     cfg.backend = "external"
     cfg.external_module = str(PACK_ROOT / "backends" / "dspy_backend.py")
     budget = float(args.budget_usd) if args.budget_usd is not None else 30.0
+    workers = args.workers
+    if workers is None:
+        workers = int(os.environ.get("TEACHER_WORKERS", "32" if args.track == "sft" else "1"))
+    # RLVR is prompt-only; keep workers=1 to avoid pointless teacher spin-up fanout.
+    if args.track == "rlvr":
+        workers = 1
     cfg.external_config = {
         "mode": args.mode,
         "model": args.model,
@@ -53,8 +65,23 @@ def main() -> int:
         "budget_path": str(work_dir / "budget.json"),
         "budget_usd": budget,
         "cache": True,
+        "teacher_workers": max(1, int(workers)),
+        "teacher_retries": int(os.environ.get("TEACHER_RETRIES", "4")),
     }
     cfg.max_alternate_methods = 0
+    print(
+        json.dumps(
+            {
+                "mode": args.mode,
+                "track": args.track,
+                "model": args.model,
+                "teacher_workers": cfg.external_config["teacher_workers"],
+                "budget_usd": budget,
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
 
     if args.track == "sft":
         cfg.partitions = {"sft_train": 1.0}

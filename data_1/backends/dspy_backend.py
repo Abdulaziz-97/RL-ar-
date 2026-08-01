@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -209,7 +210,11 @@ class LiveProblemGenerator:
 
 
 class LiveTraceTeacher:
-    """Call the GEPA ArabicTeacher (DeepSeek) to produce SFT-style <think>/<answer> traces."""
+    """Call the GEPA ArabicTeacher (DeepSeek) to produce SFT-style <think>/<answer> traces.
+
+    Thread-safe for high-throughput fan-out: shared BudgetState + per-thread LM/teacher
+    via ``dspy.context`` so frontier-lab worker pools do not share mutable LM history.
+    """
 
     def __init__(self, config: dict[str, Any]):
         from dotenv import load_dotenv
@@ -217,21 +222,48 @@ class LiveTraceTeacher:
         from synth.dspy_teacher import BudgetState, load_teacher, make_deepseek_lm, ArabicTeacher
 
         load_dotenv(PACK_ROOT / ".env")
-        model = str(config.get("model") or "deepseek-v4-flash")
-        budget = BudgetState(
-            Path(config.get("budget_path") or PACK_ROOT / "outputs" / "budget.json"),
-            float(config.get("budget_usd") or 30.0),
+        self._config = dict(config or {})
+        self._model = str(self._config.get("model") or "deepseek-v4-pro")
+        if self._model == "deepseek-chat":
+            self._model = "deepseek-v4-flash"
+        self._budget = BudgetState(
+            Path(self._config.get("budget_path") or PACK_ROOT / "outputs" / "budget.json"),
+            float(self._config.get("budget_usd") or 30.0),
         )
-        lm = make_deepseek_lm(
-            model=model if model != "deepseek-chat" else "deepseek-v4-flash",
-            temperature=float(config.get("temperature") or 0.35),
-            max_tokens=int(config.get("max_tokens") or 3200),
-            budget=budget,
-            cache=bool(config.get("cache", True)),
-        )
+        self._temperature = float(self._config.get("temperature") or 0.35)
+        self._max_tokens = int(self._config.get("max_tokens") or 3200)
+        self._cache = bool(self._config.get("cache", True))
+        self._max_retries = int(self._config.get("teacher_retries") or os.environ.get("TEACHER_RETRIES", 4))
+        self._gepa = Path(self._config.get("gepa_path") or PACK_ROOT / "assets" / "arabic_teacher_gepa_v2.json")
+        self._local = threading.local()
+        self._make_deepseek_lm = make_deepseek_lm
+        self._load_teacher = load_teacher
+        self._ArabicTeacher = ArabicTeacher
+        self._dspy = dspy
+        # Warm primary LM for sequential / single-worker path.
+        teacher, lm = self._bind_thread_teacher()
+        self.teacher = teacher
         dspy.configure(lm=lm, adapter=dspy.ChatAdapter())
-        gepa = Path(config.get("gepa_path") or PACK_ROOT / "assets" / "arabic_teacher_gepa_v2.json")
-        self.teacher = load_teacher(gepa) if gepa.exists() else ArabicTeacher()
+
+    def _bind_thread_teacher(self):
+        lm = self._make_deepseek_lm(
+            model=self._model,
+            temperature=self._temperature,
+            max_tokens=self._max_tokens,
+            budget=self._budget,
+            cache=self._cache,
+        )
+        teacher = self._load_teacher(self._gepa) if self._gepa.exists() else self._ArabicTeacher()
+        self._local.lm = lm
+        self._local.teacher = teacher
+        return teacher, lm
+
+    def _teacher_for_thread(self):
+        teacher = getattr(self._local, "teacher", None)
+        lm = getattr(self._local, "lm", None)
+        if teacher is None or lm is None:
+            return self._bind_thread_teacher()
+        return teacher, lm
 
     def sample_traces(self, problem: RenderedProblem, n: int, seed: int) -> list[TraceCandidate]:
         if n <= 0:
@@ -241,8 +273,39 @@ class LiveTraceTeacher:
             gt = problem.answer_spec.get("ground_truth_structured") or problem.answer_spec.get("canonical")
         gts = json.dumps(gt, ensure_ascii=False) if isinstance(gt, (dict, list)) else str(gt)
         out = []
+        teacher, lm = self._teacher_for_thread()
         for i in range(n):
-            pred = self.teacher(domain=problem.domain, problem=problem.prompt, ground_truth=gts)
+            pred = None
+            last_err: Exception | None = None
+            for attempt in range(max(1, self._max_retries)):
+                try:
+                    with self._dspy.context(lm=lm, adapter=self._dspy.ChatAdapter()):
+                        pred = teacher(
+                            domain=problem.domain,
+                            problem=problem.prompt,
+                            ground_truth=gts,
+                        )
+                    last_err = None
+                    break
+                except Exception as exc:  # noqa: BLE001 — rate limits / transient API faults
+                    last_err = exc
+                    msg = str(exc).lower()
+                    retryable = any(
+                        tok in msg
+                        for tok in ("rate", "429", "timeout", "temporar", "overloaded", "503", "502")
+                    )
+                    if (not retryable) or attempt + 1 >= self._max_retries:
+                        break
+                    import time
+
+                    time.sleep(min(2 ** attempt, 20) + (0.05 * (seed % 17)))
+            if last_err is not None and pred is None:
+                # Soft-fail: empty response is quarantined by later gates.
+                print(
+                    f"[LiveTraceTeacher] fail {problem.problem_id}: "
+                    f"{type(last_err).__name__}: {str(last_err)[:160]}",
+                    flush=True,
+                )
             response = (getattr(pred, "response", None) or "").strip() or "<think>\n\n</think>\n<answer></answer>"
             parsed = parse_response(response)
             out.append(
@@ -252,7 +315,7 @@ class LiveTraceTeacher:
                     method_id=f"dspy_{i}",
                     teacher="arabic_teacher_gepa_v2",
                     concision_tokens=len((parsed.think or "").split()),
-                    metadata={"seed": seed + i},
+                    metadata={"seed": seed + i, "model": self._model},
                 )
             )
         return out

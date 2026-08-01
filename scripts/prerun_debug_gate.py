@@ -222,14 +222,20 @@ def main() -> int:
         "dataset row counts",
         {"sft_exists": sft_path.exists(), "sft_n": sft_n, "rlvr_exists": rlvr_path.exists(), "rlvr_n": rlvr_n},
     )
-    if sft_n != 4000:
-        failures.append(f"H-D SFT rows={sft_n} expected 4000")
-    if rlvr_n <= 0:
-        failures.append(f"H-D RLVR rows={rlvr_n}")
+    # During full regen the on-disk release is intentionally invalid until promote.
+    import os
+
+    skip_row_check = os.environ.get("SKIP_DATA_ROW_CHECK", "0") == "1"
+    if not skip_row_check:
+        if sft_n != 4000:
+            failures.append(f"H-D SFT rows={sft_n} expected 4000")
+        if rlvr_n <= 0:
+            failures.append(f"H-D RLVR rows={rlvr_n}")
+    else:
+        _log("D", "prerun:data_counts", "SKIP_DATA_ROW_CHECK=1", {"sft_n": sft_n, "rlvr_n": rlvr_n})
 
     # Sample load without fail_closed first; then with env
     from rlvr_pipeline.data import load_rlvr_dataset
-    import os
 
     try:
         ds = load_rlvr_dataset(rlvr_path, system_prompt=cfg.system_prompt, production=True)
@@ -251,6 +257,9 @@ def main() -> int:
         "eval_raw_qwen_only": "Qwen/Qwen3.5-4B" in eval_sh and "T06" not in eval_sh,
         "forbidden_lora": bool({"embed_tokens", "lm_head"} & set(cfg.lora_target_modules)),
         "probe_off": cfg.enable_benchmark_probe is False,
+        "has_teacher_workers": "TEACHER_WORKERS" in vast and "--workers" in vast,
+        "has_datagen_canary": "DATAGEN_CANARY" in vast,
+        "default_teacher_pro": "deepseek-v4-pro" in vast,
     }
     _log("E", "prerun:orchestration", "shell/orchestrator contracts", e_data)
     if e_data["has_pkill_python"]:
@@ -265,6 +274,12 @@ def main() -> int:
         failures.append("H-E embed/lm_head still in targets")
     if not e_data["probe_off"]:
         failures.append("H-E benchmark probe still enabled")
+    if not e_data["has_teacher_workers"]:
+        failures.append("H-E vastai missing lightning TEACHER_WORKERS/--workers")
+    if not e_data["has_datagen_canary"]:
+        failures.append("H-E vastai missing DATAGEN_CANARY")
+    if not e_data["default_teacher_pro"]:
+        failures.append("H-E vastai not defaulting DeepSeek V4 Pro teacher")
 
     # ── H-F: preflight module / integrity import ─────────────────────────
     try:

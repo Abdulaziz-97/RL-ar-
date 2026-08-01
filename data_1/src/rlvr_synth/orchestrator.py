@@ -5,7 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 import random
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -332,47 +336,130 @@ class SynthOrchestrator:
             out.append(payload)
         _write_jsonl(self.stages_dir / "arabic_render.jsonl", out)
 
+    def _teacher_workers(self) -> int:
+        """Frontier-lab throughput: parallel teacher calls across problems."""
+        ext = self.config.external_config or {}
+        raw = ext.get("teacher_workers")
+        if raw is None:
+            raw = os.environ.get("TEACHER_WORKERS", "1")
+        try:
+            n = int(raw)
+        except (TypeError, ValueError):
+            n = 1
+        return max(1, n)
+
+    def _pack_trace_candidates(
+        self, problem: RenderedProblem, traces: list[TraceCandidate]
+    ) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for tr in traces:
+            cand = asdict(tr)
+            cand["family_id"] = problem.family_id
+            cand["partition"] = problem.partition
+            cand["domain"] = problem.domain
+            cand["prompt"] = problem.prompt
+            cand["answer_spec"] = problem.answer_spec
+            cand["metadata"] = {
+                **dict(problem.metadata or {}),
+                **dict(tr.metadata or {}),
+            }
+            cand["provenance"] = dict(problem.provenance or {})
+            rows.append(cand)
+        return rows
+
     def stage_multi_trace(self) -> None:
         problems = _read_jsonl(self.stages_dir / "arabic_render.jsonl")
-        out = []
+        out: list[dict[str, Any]] = []
         # Clear candidate archive for this run stage (resume-safe rewrite).
         if self.candidates_path.exists():
             self.candidates_path.unlink()
-        for p in problems:
-            problem = RenderedProblem(**{
-                k: p[k]
-                for k in RenderedProblem.__dataclass_fields__
-                if k in p
-            })
+
+        prompt_only: list[tuple[int, RenderedProblem]] = []
+        need_teacher: list[tuple[int, RenderedProblem]] = []
+        for idx, p in enumerate(problems):
+            problem = RenderedProblem(
+                **{k: p[k] for k in RenderedProblem.__dataclass_fields__ if k in p}
+            )
             if problem.partition in PROMPT_ONLY_PARTITIONS:
-                traces = [
-                    TraceCandidate(
-                        problem_id=problem.problem_id,
-                        response="",
-                        method_id="none",
-                        teacher="none",
-                        concision_tokens=0,
-                    )
-                ]
+                prompt_only.append((idx, problem))
             else:
-                traces = self.backend.trace_teacher.sample_traces(
-                    problem, self.config.traces_per_problem, self.config.seed
+                need_teacher.append((idx, problem))
+
+        # Prompt-only partitions (RLVR) stay local and instantaneous.
+        by_idx: dict[int, list[dict[str, Any]]] = {}
+        for idx, problem in prompt_only:
+            traces = [
+                TraceCandidate(
+                    problem_id=problem.problem_id,
+                    response="",
+                    method_id="none",
+                    teacher="none",
+                    concision_tokens=0,
                 )
-            for tr in traces:
-                cand = asdict(tr)
-                cand["family_id"] = problem.family_id
-                cand["partition"] = problem.partition
-                cand["domain"] = problem.domain
-                cand["prompt"] = problem.prompt
-                cand["answer_spec"] = problem.answer_spec
-                cand["metadata"] = {
-                    **dict(problem.metadata or {}),
-                    **dict(tr.metadata or {}),
-                }
-                cand["provenance"] = dict(problem.provenance or {})
-                _append_jsonl(self.candidates_path, cand)
-                out.append(cand)
+            ]
+            by_idx[idx] = self._pack_trace_candidates(problem, traces)
+
+        workers = self._teacher_workers() if need_teacher else 1
+        write_lock = threading.Lock()
+        done = 0
+        t0 = time.perf_counter()
+        if need_teacher:
+            print(
+                f"[multi_trace] teacher problems={len(need_teacher)} "
+                f"workers={workers} traces_per={self.config.traces_per_problem}",
+                flush=True,
+            )
+
+        def _teach_one(item: tuple[int, RenderedProblem]) -> tuple[int, list[dict[str, Any]]]:
+            idx, problem = item
+            traces = self.backend.trace_teacher.sample_traces(
+                problem, self.config.traces_per_problem, self.config.seed
+            )
+            return idx, self._pack_trace_candidates(problem, traces)
+
+        if need_teacher and workers <= 1:
+            for item in need_teacher:
+                idx, rows = _teach_one(item)
+                by_idx[idx] = rows
+                done += 1
+                if done == 1 or done % 25 == 0 or done == len(need_teacher):
+                    elapsed = max(time.perf_counter() - t0, 1e-6)
+                    print(
+                        f"[multi_trace] {done}/{len(need_teacher)} "
+                        f"({done / elapsed:.2f} problems/s)",
+                        flush=True,
+                    )
+        elif need_teacher:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(_teach_one, item) for item in need_teacher]
+                for fut in as_completed(futures):
+                    idx, rows = fut.result()
+                    by_idx[idx] = rows
+                    done += 1
+                    if done == 1 or done % 25 == 0 or done == len(need_teacher):
+                        elapsed = max(time.perf_counter() - t0, 1e-6)
+                        print(
+                            f"[multi_trace] {done}/{len(need_teacher)} "
+                            f"({done / elapsed:.2f} problems/s)",
+                            flush=True,
+                        )
+
+        # Stable order matching arabic_render.jsonl; lock around appends.
+        for idx in range(len(problems)):
+            rows = by_idx.get(idx) or []
+            with write_lock:
+                for cand in rows:
+                    _append_jsonl(self.candidates_path, cand)
+                    out.append(cand)
         _write_jsonl(self.stages_dir / "multi_trace.jsonl", out)
+        if need_teacher:
+            elapsed = max(time.perf_counter() - t0, 1e-6)
+            print(
+                f"[multi_trace] done taught={len(need_teacher)} "
+                f"prompt_only={len(prompt_only)} in {elapsed:.1f}s "
+                f"({len(need_teacher) / elapsed:.2f} problems/s)",
+                flush=True,
+            )
 
     def stage_step_verify(self) -> None:
         rows = _read_jsonl(self.stages_dir / "multi_trace.jsonl")

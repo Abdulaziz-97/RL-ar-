@@ -339,6 +339,7 @@ class BudgetCallback(BaseCallback):
         self.budget = budget
         self.model_hint = model_hint
         self._seen: set[int] = set()
+        self._seen_lock = threading.Lock()
 
     def on_lm_end(self, call_id: str, outputs: Any, exception: Exception | None = None) -> None:
         if exception is not None:
@@ -348,9 +349,10 @@ class BudgetCallback(BaseCallback):
             return
         entry = lm.history[-1]
         eid = id(entry)
-        if eid in self._seen:
-            return
-        self._seen.add(eid)
+        with self._seen_lock:
+            if eid in self._seen:
+                return
+            self._seen.add(eid)
         usage = entry.get("usage") or {}
         tin = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
         tout = int(usage.get("completion_tokens") or usage.get("output_tokens") or 0)
@@ -446,6 +448,7 @@ def configure_teacher_lm(
 
 
 _PREDICT_FAIL_N = 0
+_PREDICT_FAIL_LOCK = threading.Lock()
 
 
 def _safe_predict(predictor, **kwargs):
@@ -453,10 +456,12 @@ def _safe_predict(predictor, **kwargs):
     try:
         return predictor(**kwargs)
     except Exception as e:
-        _PREDICT_FAIL_N += 1
-        if _PREDICT_FAIL_N <= 5 or _PREDICT_FAIL_N % 25 == 0:
+        with _PREDICT_FAIL_LOCK:
+            _PREDICT_FAIL_N += 1
+            n = _PREDICT_FAIL_N
+        if n <= 5 or n % 25 == 0:
             print(
-                f"[dspy_teacher] predict_fail#{_PREDICT_FAIL_N} {type(e).__name__}: {str(e)[:120]}",
+                f"[dspy_teacher] predict_fail#{n} {type(e).__name__}: {str(e)[:120]}",
                 flush=True,
             )
         return None
