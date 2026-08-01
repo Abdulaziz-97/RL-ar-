@@ -169,6 +169,7 @@ def _apply_overrides(config: RLVRConfig, args: argparse.Namespace) -> RLVRConfig
     if hasattr(args, "wandb_group") and args.wandb_group:
         os.environ["WANDB_RUN_GROUP"] = args.wandb_group
 
+    config.sync_wandb_env()
     return config
 
 

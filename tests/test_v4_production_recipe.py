@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import os
 import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -147,6 +148,27 @@ def test_build_grpo_config_passes_save_total_limit():
     )
     grpo = cfg.build_grpo_config(include_model_init=False)
     assert getattr(grpo, "save_total_limit", None) == 5
+
+
+def test_entropy_regularization_fails_closed_when_trl_lacks_fields():
+    cfg = RLVRConfig(entropy_coef=0.05, use_adaptive_entropy=True)
+    with pytest.raises(ValueError, match="entropy regularization|does not accept"):
+        cfg.validate()
+
+
+def test_v4_yaml_entropy_disabled_for_installed_trl():
+    cfg = RLVRConfig.from_yaml(V4_YAML)
+    assert cfg.entropy_coef == 0
+    assert cfg.use_adaptive_entropy is False
+
+
+def test_wandb_project_sets_env_when_use_wandb(monkeypatch):
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    cfg = RLVRConfig(use_wandb=True, wandb_project="arabic-reasoning-rlvr-v4")
+    cfg.sync_wandb_env()
+    assert os.environ["WANDB_PROJECT"] == "arabic-reasoning-rlvr-v4"
+    grpo = cfg.build_grpo_config(include_model_init=False)
+    assert "wandb" in grpo.report_to
 
 
 # ---------------------------------------------------------------------------

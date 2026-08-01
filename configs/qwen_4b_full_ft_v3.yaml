@@ -47,11 +47,11 @@ mask_truncated_completions: true
 reward_weights: [0.85, 0.15, 0.0, 0.5, 0.3, 0.0]
 gdpo_decoupled_normalization: true
 
-# Entropy Regularization
-entropy_coef: 0.05
-use_adaptive_entropy: true
-entropy_target: 3.0
-entropy_coef_delta: 0.01
+# Entropy Regularization — disabled: TRL GRPOConfig lacks these fields (was silent no-op)
+entropy_coef: 0
+use_adaptive_entropy: false
+# entropy_target: 3.0
+# entropy_coef_delta: 0.01
 
 # Stability Guards
 enable_stability_callback: true

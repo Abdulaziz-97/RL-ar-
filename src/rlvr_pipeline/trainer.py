@@ -223,6 +223,7 @@ def build_sft_trainer(
         sft_epochs = config.num_train_epochs
     sft_bs = getattr(config, "sft_per_device_train_batch_size", 4)
     sft_accum = getattr(config, "sft_gradient_accumulation_steps", 1)
+    config.sync_wandb_env()
     sft_config = SFTConfig(
         output_dir=config.output_dir,
         learning_rate=sft_lr,
@@ -242,6 +243,8 @@ def build_sft_trainer(
         dataset_num_proc=8,
         logging_steps=config.logging_steps,
         save_steps=config.save_steps,
+        save_strategy=config.save_strategy,
+        save_total_limit=config.save_total_limit,
         report_to=config.report_to if config.use_wandb else "none",
         loss_type="nll",
     )

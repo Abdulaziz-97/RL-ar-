@@ -65,13 +65,15 @@ reward_weights: [0.85, 0.15, 0.0, 0.5, 0.3, 0.0]
 # GDPO: Normalize each reward independently before weighted sum (NVlabs arXiv:2601.05242)
 gdpo_decoupled_normalization: true
 
-# CRITICAL: Entropy Collapse Prevention (fixed from V2)
-# V2 used entropy_coef=0.01, entropy_target=2.0 → entropy collapsed to 0.034
-# Research (Cui et al., 2026): recommends 0.03–0.10 range for 4B models
-entropy_coef: 0.05               # ← CRITICAL: 5x stronger (was 0.01)
-use_adaptive_entropy: true
-entropy_target: 3.0              # ← CRITICAL: Higher floor (was 2.0)
-entropy_coef_delta: 0.01         # ← Faster adaptation (was 0.005)
+# Entropy Collapse Prevention — DISABLED for installed TRL
+# Non-zero entropy_coef / use_adaptive_entropy were silently dropped by
+# build_grpo_config (TRL GRPOConfig has no such fields). validate() now
+# fails closed if these are re-enabled without TRL support.
+# Prior intent (for when TRL adds the fields): coef=0.05, target=3.0, delta=0.01
+entropy_coef: 0
+use_adaptive_entropy: false
+# entropy_target: 3.0
+# entropy_coef_delta: 0.01
 
 # Stability — Actually Intervene When Entropy Collapses
 enable_stability_callback: true

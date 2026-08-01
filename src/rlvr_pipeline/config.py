@@ -18,6 +18,23 @@ import yaml
 from trl import GRPOConfig
 
 
+# Keys we may pass through to TRL GRPOConfig for entropy regularization.
+# Older/current TRL builds often lack these (only top_entropy_quantile exists);
+# requesting them must fail closed rather than silently drop.
+_ENTROPY_GRPO_KEYS = (
+    "entropy_coef",
+    "use_adaptive_entropy",
+    "entropy_target",
+    "entropy_coef_delta",
+)
+
+
+def _grpo_config_init_keys() -> set[str]:
+    import inspect
+
+    return set(inspect.signature(GRPOConfig.__init__).parameters.keys())
+
+
 DEFAULT_SYSTEM_PROMPT = (
     "قواعد التنسيق - يجب الالتزام بها بالضبط:\n"
     "1. ابدأ بـ: <think>\n"
@@ -202,6 +219,15 @@ class RLVRConfig:
         cfg.validate()
         return cfg
 
+    def entropy_regularization_requested(self) -> bool:
+        """True when YAML/API asks for TRL entropy bonus / adaptive entropy."""
+        return bool(self.entropy_coef) or bool(self.use_adaptive_entropy)
+
+    def sync_wandb_env(self) -> None:
+        """Wire WANDB_PROJECT when wandb reporting is enabled."""
+        if self.use_wandb:
+            os.environ["WANDB_PROJECT"] = self.wandb_project
+
     def validate(self) -> None:
         """Fail closed on recipe invariants that previously caused silent failures."""
         forbidden = {"embed_tokens", "lm_head"}
@@ -229,11 +255,39 @@ class RLVRConfig:
             pass
         if self.resume_policy not in {"fresh", "resume", "fail-if-output-exists"}:
             raise ValueError(f"Invalid resume_policy: {self.resume_policy}")
+        self._validate_entropy_trl_support()
+
+    def _validate_entropy_trl_support(self) -> None:
+        """Reject active entropy_* when installed TRL GRPOConfig cannot accept them."""
+        if not self.entropy_regularization_requested():
+            return
+        valid = _grpo_config_init_keys()
+        unsupported = [k for k in _ENTROPY_GRPO_KEYS if k not in valid]
+        if not unsupported:
+            return
+        active = []
+        if self.entropy_coef:
+            active.append(f"entropy_coef={self.entropy_coef}")
+        if self.use_adaptive_entropy:
+            active.append("use_adaptive_entropy=true")
+            active.append(f"entropy_target={self.entropy_target}")
+            active.append(f"entropy_coef_delta={self.entropy_coef_delta}")
+        raise ValueError(
+            "Config requests entropy regularization "
+            f"({', '.join(active)}) but installed TRL GRPOConfig does not accept: "
+            f"{unsupported}. Previously these were silently dropped from GRPOConfig. "
+            "Set entropy_coef: 0 and use_adaptive_entropy: false, or upgrade TRL "
+            "if it adds these fields."
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def build_grpo_config(self, include_model_init: bool = True) -> GRPOConfig:
+        # Fail closed before silent kwargs filtering can drop entropy_* again.
+        self._validate_entropy_trl_support()
+        self.sync_wandb_env()
+
         scale_rewards_val: Any
         if self.scale_rewards == "off":
             scale_rewards_val = False
@@ -295,11 +349,6 @@ class RLVRConfig:
             mask_truncated_completions=self.mask_truncated_completions,
             reward_weights=self.reward_weights,
             multi_objective_aggregation="normalize_then_sum" if self.gdpo_decoupled_normalization else "sum_then_normalize",
-            # Entropy regularization (prevents entropy collapse)
-            entropy_coef=self.entropy_coef,
-            use_adaptive_entropy=self.use_adaptive_entropy,
-            entropy_target=self.entropy_target,
-            entropy_coef_delta=self.entropy_coef_delta,
             gradient_checkpointing=self.gradient_checkpointing,
             bf16=self.bf16,
             fp16=self.fp16,
@@ -319,6 +368,17 @@ class RLVRConfig:
             ddp_find_unused_parameters=getattr(self, "ddp_find_unused_parameters", False),
         )
 
+        # Pass entropy_* only when TRL accepts them (inactive defaults never reach here
+        # as a "request"; active requests are rejected in _validate_entropy_trl_support).
+        valid_keys = _grpo_config_init_keys()
+        if all(k in valid_keys for k in _ENTROPY_GRPO_KEYS):
+            kwargs.update(
+                entropy_coef=self.entropy_coef,
+                use_adaptive_entropy=self.use_adaptive_entropy,
+                entropy_target=self.entropy_target,
+                entropy_coef_delta=self.entropy_coef_delta,
+            )
+
         if include_model_init:
             kwargs["model_init_kwargs"] = self.build_model_init_kwargs()
 
@@ -336,11 +396,17 @@ class RLVRConfig:
         # Forcing per_device*G breaks steps_per_generation on non-2-GPU layouts
         # (runtime evidence: forced → steps=16 vs default steps=8).
 
-        # Safely filter kwargs against GRPOConfig signature for cross-version compatibility
-        import inspect
-        sig = inspect.signature(GRPOConfig.__init__)
-        valid_keys = set(sig.parameters.keys())
+        # Filter remaining kwargs for cross-version compatibility (non-entropy fields).
         filtered_kwargs = {k: v for k, v in kwargs.items() if k in valid_keys}
+        dropped_entropy = [
+            k for k in _ENTROPY_GRPO_KEYS
+            if k in kwargs and k not in filtered_kwargs and self.entropy_regularization_requested()
+        ]
+        if dropped_entropy:
+            raise ValueError(
+                f"entropy_* keys dropped by GRPOConfig filter: {dropped_entropy}. "
+                "This should have been caught by validate(); refusing silent no-op."
+            )
 
         return GRPOConfig(**filtered_kwargs)
 

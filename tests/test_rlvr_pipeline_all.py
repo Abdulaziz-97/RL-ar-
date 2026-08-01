@@ -64,7 +64,8 @@ model_name: "Qwen/Qwen3.5-4B"
 learning_rate: 0.000005
 num_generations: 16
 beta: 0.0
-entropy_coef: 0.05
+entropy_coef: 0
+use_adaptive_entropy: false
 """
             )
             f_path = f.name
@@ -75,7 +76,7 @@ entropy_coef: 0.05
             self.assertEqual(cfg.learning_rate, 5e-6)
             self.assertEqual(cfg.num_generations, 16)
             self.assertEqual(cfg.beta, 0.0)
-            self.assertEqual(cfg.entropy_coef, 0.05)
+            self.assertEqual(cfg.entropy_coef, 0.0)
         finally:
             Path(f_path).unlink(missing_ok=True)
 
@@ -101,7 +102,8 @@ entropy_coef: 0.05
             temperature=1.15,
             loss_type="dr_grpo",
             beta=0.0,
-            entropy_coef=0.05,
+            entropy_coef=0.0,
+            use_adaptive_entropy=False,
         )
         grpo_cfg = cfg.build_grpo_config(include_model_init=False)
         self.assertEqual(grpo_cfg.output_dir, "./test_out")
