@@ -350,19 +350,9 @@ def build_vllm_engine(args: argparse.Namespace, task: str):
     return llm, sampling_params, profile
 
 
-def apply_chat_template(tokenizer, prompt: str, enable_thinking: bool) -> str:
-    """Apply the model's chat template to a prompt."""
-    if enable_thinking:
-        messages = [
-            {
-                "role": "system",
-                "content": "أنت مساعد ذكي يجيب على الأسئلة باللغة العربية. قم بالتفكير خطوة بخطوة داخل وسم <think>...</think> ثم اكتب إجابتك النهائية.",
-            },
-            {"role": "user", "content": prompt},
-        ]
-    else:
-        messages = [{"role": "user", "content": prompt}]
-
+def apply_chat_template(tokenizer, prompt: str, enable_thinking: bool = False) -> str:
+    """Apply the model's standard chat template to a prompt (pure zero-system-prompt)."""
+    messages = [{"role": "user", "content": prompt}]
     try:
         formatted = tokenizer.apply_chat_template(
             messages,
