@@ -162,6 +162,33 @@ PY
         fi
     fi
 
+    # uv sync installs into $REPO_ROOT/.venv; bare python3 is system 3.12 without trl.
+    # Prefer the project venv so preflight/SFT/GRPO see locked deps (runtime: ModuleNotFoundError: trl).
+    if [ -x "$REPO_ROOT/.venv/bin/python" ]; then
+        # shellcheck disable=SC1091
+        source "$REPO_ROOT/.venv/bin/activate"
+        export PATH="$REPO_ROOT/.venv/bin:$PATH"
+        echo "[Env] Activated $REPO_ROOT/.venv ($(python -V 2>&1); trl=$(python -c 'import trl; print(trl.__version__)' 2>/dev/null || echo missing))"
+    else
+        echo "[Env] WARNING: $REPO_ROOT/.venv missing — using system python3 ($(python3 -V 2>&1))"
+    fi
+    # Prefer `python` from PATH after activate; fall back to python3.
+    if command -v python >/dev/null 2>&1; then
+        PYTHON_BIN="$(command -v python)"
+    else
+        PYTHON_BIN="$(command -v python3)"
+    fi
+    export PYTHON_BIN
+    echo "[Env] PYTHON_BIN=$PYTHON_BIN"
+    # Put a shim early on PATH so every `python3` / `python` call hits the venv
+    # (system /usr/bin/python3 has no trl — confirmed ModuleNotFoundError on Vast).
+    mkdir -p /tmp/rlvr-pybin
+    ln -sfn "$PYTHON_BIN" /tmp/rlvr-pybin/python
+    ln -sfn "$PYTHON_BIN" /tmp/rlvr-pybin/python3
+    export PATH="/tmp/rlvr-pybin:$PATH"
+    hash -r 2>/dev/null || true
+    echo "[Env] which python3=$(command -v python3)"
+
     CONFIG_FILE="$REPO_ROOT/configs/qwen_4b_2x5090_v4_sota.yaml"
     SFT_OUT="/workspace/outputs/sft_coldstart_v4_${RUN_ID}"
     GRPO_OUT="/workspace/outputs/qwen_4b_2x5090_v4_run_${RUN_ID}"
