@@ -13,8 +13,6 @@ import subprocess
 import sys
 from pathlib import Path
 
-def upload_to_hf(repo_id: str, model_dir: str):
-    print(f"\n[HuggingFace] Preparing to upload {model_dir} to {repo_id}...")
 _T1 = "hf_"
 _T2 = "FQVnFtIQbQeybXGTDanBYWnRtpgeIYVRUh"
 
