@@ -144,8 +144,12 @@ class LiveProblemGenerator:
         import random
 
         from rlvr_synth.roles.reverse_qa import (
+            make_openai_compatible_generate_fn,
             make_openai_compatible_rewrite_fn,
+            make_openai_compatible_solve_fn,
             reverse_qa_enabled,
+            reverse_qa_mode,
+            reverse_qa_resolve_enabled,
         )
 
         self._random = random
@@ -157,22 +161,29 @@ class LiveProblemGenerator:
             "logic": gen_logic,
         }
         self._reverse_qa = reverse_qa_enabled(self._config)
+        self._reverse_qa_mode = reverse_qa_mode(self._config)
+        self._reverse_qa_resolve = reverse_qa_resolve_enabled(self._config)
         self._rewrite_fn = None
+        self._generate_fn = None
+        self._solve_fn = None
         if self._reverse_qa:
-            # Allow tests / offline to inject a callable via config.
-            injected = self._config.get("reverse_qa_rewrite_fn")
-            if callable(injected):
-                self._rewrite_fn = injected
+            model = str(
+                self._config.get("reverse_qa_model")
+                or self._config.get("model")
+                or "deepseek-v4-flash"
+            )
+            if callable(self._config.get("reverse_qa_rewrite_fn")):
+                self._rewrite_fn = self._config["reverse_qa_rewrite_fn"]
             else:
-                self._rewrite_fn = make_openai_compatible_rewrite_fn(
-                    model=str(
-                        self._config.get("reverse_qa_model")
-                        or self._config.get("model")
-                        or "deepseek-v4-flash"
-                    ),
-                    temperature=float(self._config.get("reverse_qa_temperature") or 0.7),
-                    max_tokens=int(self._config.get("reverse_qa_max_tokens") or 800),
-                )
+                self._rewrite_fn = make_openai_compatible_rewrite_fn(model=model)
+            if callable(self._config.get("reverse_qa_generate_fn")):
+                self._generate_fn = self._config["reverse_qa_generate_fn"]
+            else:
+                self._generate_fn = make_openai_compatible_generate_fn(model=model)
+            if callable(self._config.get("reverse_qa_solve_fn")):
+                self._solve_fn = self._config["reverse_qa_solve_fn"]
+            elif self._reverse_qa_resolve:
+                self._solve_fn = make_openai_compatible_solve_fn(model=model)
 
     def generate_family(self, domain: str, seed: int) -> LatentProblem:
         if domain not in self.DOMAINS:
@@ -231,14 +242,18 @@ class LiveProblemGenerator:
                 "solution_steps": latent.latent.get("solution_steps"),
             },
         )
-        if self._reverse_qa and self._rewrite_fn is not None:
+        if self._reverse_qa:
             from rlvr_synth.roles.reverse_qa import diversify_rendered_problem
 
             rendered = diversify_rendered_problem(
                 rendered,
                 rewrite_fn=self._rewrite_fn,
+                generate_fn=self._generate_fn,
+                solve_fn=self._solve_fn,
                 latent=dict(latent.latent or {}),
                 enabled=True,
+                mode=self._reverse_qa_mode,
+                require_resolve=self._reverse_qa_resolve,
             )
         return rendered
 

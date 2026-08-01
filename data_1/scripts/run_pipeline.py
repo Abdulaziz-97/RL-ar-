@@ -70,6 +70,9 @@ def main() -> int:
         "max_tokens": int(os.environ.get("TEACHER_MAX_TOKENS", "8192")),
         "reverse_qa": os.environ.get("REVERSE_QA", "1").strip()
         in {"1", "true", "True", "yes"},
+        "reverse_qa_mode": os.environ.get("REVERSE_QA_MODE", "full").strip() or "full",
+        "reverse_qa_resolve": os.environ.get("REVERSE_QA_RESOLVE", "1").strip()
+        in {"1", "true", "True", "yes"},
         "reverse_qa_model": os.environ.get("REVERSE_QA_MODEL")
         or os.environ.get("TEACHER_MODEL", "deepseek-v4-flash"),
     }

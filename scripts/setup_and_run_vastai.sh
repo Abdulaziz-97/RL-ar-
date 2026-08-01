@@ -94,11 +94,13 @@ PY
     export RLVR_BUDGET_USD="${RLVR_BUDGET_USD:-50}"
     # Reverse-QA: LLM diversifies Arabic prompts; solver GT + verifier stay fixed.
     export REVERSE_QA="${REVERSE_QA:-1}"
+    export REVERSE_QA_MODE="${REVERSE_QA_MODE:-full}"
+    export REVERSE_QA_RESOLVE="${REVERSE_QA_RESOLVE:-1}"
     export REVERSE_QA_MODEL="${REVERSE_QA_MODEL:-deepseek-v4-flash}"
     if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -z "${DEEPSEEK_API_KEY:-}" ]; then
         export USE_OPENROUTER="${USE_OPENROUTER:-1}"
     fi
-    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0} REVERSE_QA=${REVERSE_QA}"
+    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0} REVERSE_QA=${REVERSE_QA} REVERSE_QA_MODE=${REVERSE_QA_MODE}"
 
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
     if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi
@@ -230,6 +232,18 @@ PY
             --candidates "$SFT_WORK/release_corpora/sft_train.jsonl" \
             --out "$DATAGEN_ROOT/sft_selected_4000.jsonl" \
             --allow-missing-decontam
+
+        if [ "${REVERSE_QA:-1}" = "1" ]; then
+            echo "[2a1/N] FULL REVERSE-QA on selected SFT (answer-first + resolve + reteach)"
+            python3 "$REPO_ROOT/data_1/scripts/apply_full_reverse_qa_sft.py" \
+                --in "$DATAGEN_ROOT/sft_selected_4000.jsonl" \
+                --out "$DATAGEN_ROOT/sft_selected_4000_reverse_qa.jsonl" \
+                --reteach \
+                --workers "${TEACHER_WORKERS:-32}"
+            if [ -f "$DATAGEN_ROOT/sft_selected_4000_reverse_qa.jsonl" ]; then
+                cp "$DATAGEN_ROOT/sft_selected_4000_reverse_qa.jsonl" "$DATAGEN_ROOT/sft_selected_4000.jsonl"
+            fi
+        fi
 
         # Stage selected SFT for training (production promote happens after RLVR gate).
         mkdir -p "$REPO_ROOT/data"
