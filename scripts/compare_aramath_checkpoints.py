@@ -44,10 +44,11 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
     print(f"  Evaluating: {model_name} | Adapter: {adapter_path}", flush=True)
     print(f"=======================================================", flush=True)
 
-    print("[1/3] Loading base model on GPU...", flush=True)
+    print("[1/3] Loading base model on GPU (SDPA Flash Attention)...", flush=True)
     base = AutoModelForCausalLM.from_pretrained(
         model_name,
         torch_dtype=torch.bfloat16,
+        attn_implementation="sdpa",
         device_map="cuda:0",
         trust_remote_code=True,
     )
@@ -64,7 +65,7 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
                 param.data.zero_()
         merged_model = model.merge_and_unload()
     else:
-        print("[2/3] Using base SFT model without adapter...", flush=True)
+        print("[2/3] Using base Phase 1 SFT model without adapter...", flush=True)
         merged_model = base
 
     merged_model.eval()
@@ -72,19 +73,20 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
     prompts = [apply_chat_template(tokenizer, s["query"]) for s in samples]
     gold_indices = [s["gold"] for s in samples]
 
-    print(f"[3/3] Running generation on {len(prompts)} samples...", flush=True)
-    batch_size = 8
+    print(f"[3/3] Running high-speed PyTorch HF generation (batch_size=16) on {len(prompts)} samples...", flush=True)
+    batch_size = 16
     all_texts = []
     start_time = time.monotonic()
 
     for b in range(0, len(prompts), batch_size):
         batch = prompts[b : b + batch_size]
         inputs = tokenizer(batch, return_tensors="pt", padding=True).to("cuda:0")
-        with torch.no_grad():
+        with torch.inference_mode():
             outputs = merged_model.generate(
                 **inputs,
                 max_new_tokens=1280,
                 do_sample=False,
+                use_cache=True,
                 repetition_penalty=1.05,
                 pad_token_id=tokenizer.pad_token_id,
             )
@@ -127,7 +129,7 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
     }
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare AraMath Accuracy Across Checkpoints")
+    parser = argparse.ArgumentParser(description="Fast AraMath Evaluation for Phase 1 SFT, checkpoint-100, and checkpoint-200")
     parser.add_argument("--base-model", type=str, default="Qwen/Qwen3.5-4B")
     parser.add_argument("--sft-model", type=str, default="aziz9788/T06__qwen35-mixed-v6-lr1e5")
     parser.add_argument("--checkpoints-dir", type=str, default="/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run")
@@ -140,13 +142,13 @@ def main():
 
     results = []
 
-    # 1. Evaluate SFT Base Model
+    # 1. Evaluate Phase 1 SFT Model
     sft_res = evaluate_checkpoint(args.sft_model, None, samples)
     results.append(sft_res)
 
-    # 2. Find available GRPO checkpoints (checkpoint-100, checkpoint-180, checkpoint-200)
+    # 2. Evaluate GRPO checkpoint-100 and checkpoint-200
     ckpt_dir = Path(args.checkpoints_dir)
-    target_ckpts = ["checkpoint-100", "checkpoint-180", "checkpoint-200"]
+    target_ckpts = ["checkpoint-100", "checkpoint-200"]
     for ckpt_name in target_ckpts:
         p = ckpt_dir / ckpt_name
         if p.exists() and (p / "adapter_config.json").exists():
@@ -155,15 +157,15 @@ def main():
         else:
             print(f"\n[SKIP] {p} does not exist.")
 
-    print("\n" + "=" * 60)
-    print("      [ARAMATH COMPARATIVE BENCHMARK SUMMARY]      ")
-    print("=" * 60)
-    print(f"{'Model / Checkpoint':<45} | {'Accuracy':<10} | {'Failures':<8}")
+    print("\n" + "=" * 65)
+    print("  [ARAMATH HIGH-SPEED COMPARATIVE BENCHMARK (Phase 1 vs 100 vs 200)]  ")
+    print("=" * 65)
+    print(f"{'Model / Checkpoint':<45} | {'Accuracy':<10} | {'Time (s)':<8}")
     print("-" * 68)
     for r in results:
         name = Path(r["model"]).name
-        print(f"{name:<45} | {r['accuracy']:>6.1f}%   | {r['failures']:>8}")
-    print("=" * 60 + "\n")
+        print(f"{name:<45} | {r['accuracy']:>6.1f}%   | {r['seconds']:>8.1f}s")
+    print("=" * 65 + "\n")
 
 if __name__ == "__main__":
     main()
