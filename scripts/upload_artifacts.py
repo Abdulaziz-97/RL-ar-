@@ -27,26 +27,26 @@ def upload_to_hf(repo_id: str, model_dir: str, token: str | None = None):
     print(f"\n[HuggingFace] Preparing to upload {model_dir} to {repo_id}...")
     token = get_hf_token(token)
 
-    # Copy master execution log and summary into model_dir so they get uploaded to HF
+    # Copy master execution training log and trainer state into model_dir so they get uploaded to HF
     try:
         model_path = Path(model_dir)
-        for log_src in [Path("/workspace/outputs/master_execution.log"), Path("/workspace/RL-ar-/master_execution.log")]:
+        for log_src in [
+            Path("/workspace/outputs/master_execution_v4.log"),
+            Path("/workspace/outputs/master_execution.log"),
+            Path("/workspace/RL-ar-/master_execution.log"),
+        ]:
             if log_src.exists():
-                shutil.copy(log_src, model_path / "master_execution.log")
-                print("Added master_execution.log to HF model upload package!")
+                shutil.copy(log_src, model_path / "master_execution_v4.log")
+                print("Added master_execution_v4.log (Full Training Log) to HF model upload package!")
                 break
 
-        for eval_src in [
-            Path("/workspace/outputs/generative_eval_checkpoint_200/summary.json"),
-            Path("/workspace/outputs/generative_eval_grpo_v4/summary.json"),
-            Path("/workspace/RL-ar-/outputs/generative_eval_checkpoint_200/summary.json")
-        ]:
-            if eval_src.exists():
-                shutil.copy(eval_src, model_path / "generative_eval_summary.json")
-                print("Added generative_eval_summary.json to HF model upload package!")
-                break
+        # Check for trainer_state.json if in root run folder
+        parent_trainer_state = model_path.parent / "trainer_state.json"
+        if parent_trainer_state.exists() and not (model_path / "trainer_state.json").exists():
+            shutil.copy(parent_trainer_state, model_path / "trainer_state.json")
+            print("Added trainer_state.json (Training Loss/Reward History) to HF model upload package!")
     except Exception as e:
-        print(f"Warning copying logs to model_dir: {e}")
+        print(f"Warning copying training logs to model_dir: {e}")
 
     # Fallback to Python API
     try:
