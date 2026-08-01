@@ -113,9 +113,16 @@ PY
             uv pip install --system --break-system-packages -r "$REPO_ROOT/requirements-eval.txt" || true
         fi
         uv pip install --system --break-system-packages python-bidi arabic-reshaper || true
+        if [ -f "$REPO_ROOT/data_1/requirements.txt" ]; then
+            echo "[0b/N] Installing data_1 datagen deps (dspy/openai/...)"
+            uv pip install --system --break-system-packages -r "$REPO_ROOT/data_1/requirements.txt"
+        fi
     else
         pip install -e "$REPO_ROOT[eval]"
         pip install python-bidi arabic-reshaper || true
+        if [ -f "$REPO_ROOT/data_1/requirements.txt" ]; then
+            pip install -r "$REPO_ROOT/data_1/requirements.txt"
+        fi
     fi
 
     CONFIG_FILE="$REPO_ROOT/configs/qwen_4b_2x5090_v4_sota.yaml"
