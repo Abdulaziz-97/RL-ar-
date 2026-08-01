@@ -72,6 +72,10 @@ PY
     fi
     # #endregion
 
+    # 96 teacher workers + HTTP clients need far more than default soft nofile=1024.
+    ulimit -n 65536 2>/dev/null || ulimit -n 16384 2>/dev/null || true
+    echo "nofile soft=$(ulimit -n)"
+
     export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
     export HF_HUB_CACHE="${HF_HUB_CACHE:-/workspace/.hf_cache/hub}"
     export WANDB_DIR="/workspace/outputs/wandb"

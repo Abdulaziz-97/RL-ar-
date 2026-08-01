@@ -470,20 +470,33 @@ class SynthOrchestrator:
                         flush=True,
                     )
         elif pending_teacher:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [pool.submit(_teach_one, item) for item in pending_teacher]
-                for fut in as_completed(futures):
-                    idx, rows = fut.result()
-                    by_idx[idx] = rows
-                    _persist_partial(rows)
-                    done += 1
-                    if done == 1 or done % 25 == 0 or done == len(need_teacher):
-                        elapsed = max(time.perf_counter() - t0, 1e-6)
-                        print(
-                            f"[multi_trace] {done}/{len(need_teacher)} "
-                            f"({done / elapsed:.2f} problems/s)",
-                            flush=True,
-                        )
+            # Batch submissions so thread-local HTTP/LM clients can be GC'd between
+            # pools. Submitting all ~5k futures at once with 96 workers blows soft
+            # nofile=1024 (EMFILE on budget.json / sockets).
+            batch_size = max(workers * 4, workers)
+            for batch_start in range(0, len(pending_teacher), batch_size):
+                batch = pending_teacher[batch_start : batch_start + batch_size]
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    futures = [pool.submit(_teach_one, item) for item in batch]
+                    for fut in as_completed(futures):
+                        idx, rows = fut.result()
+                        by_idx[idx] = rows
+                        _persist_partial(rows)
+                        done += 1
+                        if done == 1 or done % 25 == 0 or done == len(need_teacher):
+                            elapsed = max(time.perf_counter() - t0, 1e-6)
+                            print(
+                                f"[multi_trace] {done}/{len(need_teacher)} "
+                                f"({done / elapsed:.2f} problems/s)",
+                                flush=True,
+                            )
+                # Best-effort budget flush + allow sockets/FDs to settle between batches.
+                budget = getattr(getattr(self.backend, "trace_teacher", None), "_budget", None)
+                if budget is not None and hasattr(budget, "flush"):
+                    try:
+                        budget.flush()
+                    except Exception:
+                        pass
 
         # Flush teacher budget buffer if present.
         teacher = getattr(self.backend, "trace_teacher", None)
