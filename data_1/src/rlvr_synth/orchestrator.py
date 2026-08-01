@@ -628,11 +628,13 @@ class SynthOrchestrator:
         _write_jsonl(self.stages_dir / "concision.jsonl", out)
 
     def stage_gates(self) -> None:
-        """Arabic / decontamination placeholder gates (full modules used in QA phase)."""
+        """Arabic / decontamination gates with progress logging."""
         from rlvr_synth.decontam.pipeline import decontaminate_records
         from rlvr_synth.qa.arabic_metrics import score_arabic_record
+        import time
 
         rows = _read_jsonl(self.stages_dir / "concision.jsonl")
+        print(f"[gates] start n={len(rows)}", flush=True)
         reference_texts: list[str] = []
         for raw_path in self.config.decontam_reference_paths:
             path = Path(raw_path)
@@ -651,13 +653,14 @@ class SynthOrchestrator:
                     for line in path.read_text(encoding="utf-8").splitlines()
                     if line.strip()
                 )
-        # Within-batch handling avoids self-rejecting alternate traces of the
-        # same problem; configured references enforce cross-run isolation.
+        print(f"[gates] decontam refs={len(reference_texts)}", flush=True)
+        t0 = time.time()
         deco = decontaminate_records(rows, reference_texts=reference_texts)
+        print(f"[gates] decontam done in {time.time() - t0:.1f}s", flush=True)
         out = []
-        for row, d in zip(rows, deco):
+        t1 = time.time()
+        for i, (row, d) in enumerate(zip(rows, deco), start=1):
             aq = score_arabic_record(row)
-            # Prefer scoring the think body for Arabic gates when present.
             row = {
                 **row,
                 "decontam": d,
@@ -667,7 +670,10 @@ class SynthOrchestrator:
                 and aq.get("pass", False),
             }
             out.append(row)
+            if i % 500 == 0 or i == len(rows):
+                print(f"[gates] arabic_qa {i}/{len(rows)}", flush=True)
         _write_jsonl(self.stages_dir / "gates.jsonl", out)
+        print(f"[gates] done in {time.time() - t0:.1f}s (arabic {time.time() - t1:.1f}s)", flush=True)
 
     def stage_select_quarantine(self) -> None:
         """Select by verified correctness/completeness first; concision tie-break.
