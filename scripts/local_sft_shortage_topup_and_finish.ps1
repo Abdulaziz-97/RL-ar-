@@ -1,4 +1,4 @@
-# Focused top-up for math / math_comp / logic shortages after first merge select.
+﻿# Focused top-up for math / math_comp / logic shortages after first merge select.
 # Requires DEEPSEEK_API_KEY. Resumes into merge+select+IFEval compose when done.
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
@@ -17,7 +17,7 @@ Remove-Item -Force $FailMarker -ErrorAction SilentlyContinue
 function Write-Log([string]$msg) {
     $line = "[{0}] {1}" -f (Get-Date -Format "o"), $msg
     Write-Host $line
-    Add-Content -Path $LogFile -Value $line -Encoding UTF8
+    try { Add-Content -Path $LogFile -Value $line -Encoding UTF8 -ErrorAction Stop } catch { }
 }
 
 function Invoke-LoggedPython {
@@ -26,7 +26,7 @@ function Invoke-LoggedPython {
     $ErrorActionPreference = "Continue"
     & python @ArgumentList 2>&1 | ForEach-Object {
         $s = "$_"
-        Add-Content -Path $LogFile -Value $s -Encoding UTF8
+        try { Add-Content -Path $LogFile -Value $s -Encoding UTF8 -ErrorAction Stop } catch { }
         Write-Host $s
     }
     $code = $LASTEXITCODE
@@ -134,13 +134,14 @@ print(r'$TopCfg')
     $RlvrWork = Join-Path $WorkRoot "rlvr_candidates"
     $RlvrRuntime = Join-Path $WorkRoot "full_rlvr_8000.runtime.yaml"
     $rlvrSeed = if ($env:RLVR_SEED) { [int]$env:RLVR_SEED } else { 4400 }
-    Write-Log "FULL RLVR candidates (core only; no MCQ)"
+    Write-Log "FULL RLVR candidates n_families=4000 (core only; no MCQ)"
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & python -c @"
 from pathlib import Path
 import yaml
 cfg = yaml.safe_load(Path(r'$RlvrCfg').read_text(encoding='utf-8'))
+cfg['n_families'] = 4000
 cfg['seed'] = $rlvrSeed
 cfg['decontam_reference_paths'] = [r'$dest', r'$ifevalSide']
 cfg['work_dir'] = r'$RlvrWork'
@@ -190,3 +191,4 @@ catch {
     Set-Content -Path $FailMarker -Value $payload -Encoding UTF8
     exit 1
 }
+
