@@ -32,11 +32,15 @@ def check_versions() -> list[str]:
             errors.append(f"Missing package: {name} (expected {expected})")
         elif got != expected:
             errors.append(f"Version mismatch: {name}={got} (expected {expected})")
-    # Training must not require vLLM; warn only if present with known-bad combo.
+    # Training path uses HF generate (use_vllm=false). Installed vLLM 0.26 is a
+    # soft warning only — do not hard-fail overnight GRPO/SFT runs.
     vllm = _pkg_version("vllm")
     if vllm and vllm.startswith("0.26"):
-        errors.append(
-            f"Unsupported vLLM {vllm} with locked TRL; use optional [eval] extra carefully"
+        print(
+            f"WARNING: Unsupported vLLM {vllm} with locked TRL; "
+            "ignored for HF training (use_vllm=false). Uninstall for eval/vLLM probes.",
+            file=sys.stderr,
+            flush=True,
         )
     return errors
 
