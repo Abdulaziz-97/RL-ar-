@@ -84,7 +84,7 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
         with torch.inference_mode():
             outputs = merged_model.generate(
                 **inputs,
-                max_new_tokens=512,
+                max_new_tokens=2048,
                 do_sample=False,
                 use_cache=True,
                 repetition_penalty=1.05,
