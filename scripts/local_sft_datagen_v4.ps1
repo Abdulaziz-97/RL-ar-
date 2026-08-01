@@ -56,7 +56,11 @@ $canaryBudget = if ($env:DATAGEN_CANARY_BUDGET_USD) { $env:DATAGEN_CANARY_BUDGET
 $env:DATAGEN_RESUME_MULTI_TRACE = if ($env:DATAGEN_RESUME_MULTI_TRACE) { $env:DATAGEN_RESUME_MULTI_TRACE } else { "1" }
 $env:TEACHER_RETRIES = if ($env:TEACHER_RETRIES) { $env:TEACHER_RETRIES } else { "4" }
 $env:REVERSE_QA = if ($env:REVERSE_QA) { $env:REVERSE_QA } else { "1" }
+$env:REVERSE_QA_MODE = if ($env:REVERSE_QA_MODE) { $env:REVERSE_QA_MODE } else { "full" }
+$env:REVERSE_QA_RESOLVE = if ($env:REVERSE_QA_RESOLVE) { $env:REVERSE_QA_RESOLVE } else { "1" }
 $env:REVERSE_QA_MODEL = if ($env:REVERSE_QA_MODEL) { $env:REVERSE_QA_MODEL } else { "deepseek-v4-flash" }
+# Fast path: Flash for Reverse-QA gen+resolve AND CoT reteach (override with REVERSE_QA_RETEACH_MODEL=deepseek-v4-pro if needed)
+$env:REVERSE_QA_RETEACH_MODEL = if ($env:REVERSE_QA_RETEACH_MODEL) { $env:REVERSE_QA_RETEACH_MODEL } else { $env:REVERSE_QA_MODEL }
 $skipCanary = ($env:SKIP_CANARY -eq "1")
 $fresh = ($env:DATAGEN_FRESH -eq "1")
 

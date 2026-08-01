@@ -155,9 +155,17 @@ def main() -> int:
     if args.reteach:
         from backends.dspy_backend import LiveTraceTeacher
 
+        # Default reteach to the same Flash model as Reverse-QA generate/resolve
+        # so the post-pass stays ~3 Flash calls/sample (gen+resolve+reteach), not Pro.
+        reteach_model = (
+            os.environ.get("REVERSE_QA_RETEACH_MODEL")
+            or os.environ.get("REVERSE_QA_MODEL")
+            or args.model
+            or "deepseek-v4-flash"
+        )
         teacher = LiveTraceTeacher(
             {
-                "model": os.environ.get("TEACHER_MODEL", "deepseek-v4-pro"),
+                "model": reteach_model,
                 "budget_path": str(args.out.with_suffix(".rqa_budget.json")),
                 "budget_usd": float(os.environ.get("SFT_BUDGET_USD", "200")),
                 "max_tokens": int(os.environ.get("TEACHER_MAX_TOKENS", "8192")),
