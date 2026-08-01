@@ -142,21 +142,30 @@ PY
 
     if command -v uv >/dev/null 2>&1; then
         if [ -f "$REPO_ROOT/uv.lock" ]; then
-            uv sync --frozen --extra eval || uv pip install --system --break-system-packages -e "$REPO_ROOT[eval]"
+            uv sync --frozen --extra eval || true
+        fi
+        VENV_PY="$REPO_ROOT/.venv/bin/python"
+        if [ -x "$VENV_PY" ]; then
+            # Install into the project venv (NOT --system /usr python3.12).
+            uv pip install --python "$VENV_PY" -e "$REPO_ROOT[eval]" || true
+            uv pip install --python "$VENV_PY" python-bidi arabic-reshaper pyyaml || true
+            if [ "${INSTALL_VLLM_PROBE:-0}" = "1" ] && [ -f "$REPO_ROOT/requirements-eval.txt" ]; then
+                uv pip install --python "$VENV_PY" -r "$REPO_ROOT/requirements-eval.txt" || true
+            fi
+            if [ -f "$REPO_ROOT/data_1/requirements.txt" ]; then
+                echo "[0b/N] Installing data_1 datagen deps into .venv"
+                uv pip install --python "$VENV_PY" -r "$REPO_ROOT/data_1/requirements.txt" || true
+            fi
         else
             uv pip install --system --break-system-packages -e "$REPO_ROOT[eval]"
-        fi
-        if [ "${INSTALL_VLLM_PROBE:-0}" = "1" ] && [ -f "$REPO_ROOT/requirements-eval.txt" ]; then
-            uv pip install --system --break-system-packages -r "$REPO_ROOT/requirements-eval.txt" || true
-        fi
-        uv pip install --system --break-system-packages python-bidi arabic-reshaper || true
-        if [ -f "$REPO_ROOT/data_1/requirements.txt" ]; then
-            echo "[0b/N] Installing data_1 datagen deps (dspy/openai/...)"
-            uv pip install --system --break-system-packages -r "$REPO_ROOT/data_1/requirements.txt"
+            uv pip install --system --break-system-packages python-bidi arabic-reshaper pyyaml || true
+            if [ -f "$REPO_ROOT/data_1/requirements.txt" ]; then
+                uv pip install --system --break-system-packages -r "$REPO_ROOT/data_1/requirements.txt"
+            fi
         fi
     else
         pip install -e "$REPO_ROOT[eval]"
-        pip install python-bidi arabic-reshaper || true
+        pip install python-bidi arabic-reshaper pyyaml || true
         if [ -f "$REPO_ROOT/data_1/requirements.txt" ]; then
             pip install -r "$REPO_ROOT/data_1/requirements.txt"
         fi
