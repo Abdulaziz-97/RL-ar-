@@ -112,15 +112,15 @@ class RLVRConfig:
     importance_sampling_level: ImportanceSamplingLevel = "token"
     mask_truncated_completions: bool = True
 
-    # Entropy regularization (prevents entropy collapse — TRL native)
-    # entropy_coef: coefficient for entropy bonus in the loss function
-    # use_adaptive_entropy: dynamically adjusts entropy_coef based on entropy_target
-    # entropy_target: target per-token entropy (nats); coefficient increases when below
-    # entropy_coef_delta: step size for adaptive entropy coefficient adjustments
+    # Entropy regularization (prevents entropy collapse — TRL native when present)
+    # entropy_coef / use_adaptive_entropy: NOT in installed TRL 1.7.x GRPOConfig.
+    # top_entropy_quantile: Beyond-80/20 token mask (paper ρ); NOT an entropy bonus /
+    # adaptive-coef substitute. Default 1.0 = keep all tokens (TRL no-op).
     entropy_coef: float = 0.0
     use_adaptive_entropy: bool = False
     entropy_target: float = 2.0
     entropy_coef_delta: float = 0.005
+    top_entropy_quantile: float = 1.0
 
     # Reward weights: [correctness, format, language, answer_leak, structural_leak, length]
     reward_weights: list[float] = field(
@@ -355,6 +355,7 @@ class RLVRConfig:
             epsilon_high=self.epsilon_high,
             importance_sampling_level=self.importance_sampling_level,
             mask_truncated_completions=self.mask_truncated_completions,
+            top_entropy_quantile=self.top_entropy_quantile,
             reward_weights=self.reward_weights,
             multi_objective_aggregation="normalize_then_sum" if self.gdpo_decoupled_normalization else "sum_then_normalize",
             gradient_checkpointing=self.gradient_checkpointing,

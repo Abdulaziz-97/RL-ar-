@@ -120,7 +120,8 @@ def test_v4_beta_anchored_and_adaptive_features_off():
     assert cfg.enable_adaptive_temperature is False
     assert cfg.enable_benchmark_probe is False
     assert cfg.curriculum_schedule_type == "gaussian"
-    assert cfg.zero_variance_strategy == "discard"
+    assert cfg.zero_variance_strategy == "direct_scoring"
+    assert cfg.top_entropy_quantile == pytest.approx(0.2)
     assert cfg.push_checkpoints_to_hub is True
     assert cfg.hub_model_id == "aziz9788/qwen35-4b-arabic-rlvr-v5"
     assert cfg.hub_private is True
@@ -376,9 +377,15 @@ def test_failure_mining_module_imports_json_and_path():
     assert "Path" in imported or "pathlib" in imported
 
 
-def test_v4_zero_variance_is_discard_not_flat_advantages():
+def test_v4_zero_variance_is_direct_scoring():
     cfg = RLVRConfig.from_yaml(V4_YAML)
-    assert cfg.zero_variance_strategy == "discard"
+    assert cfg.zero_variance_strategy == "direct_scoring"
+
+
+def test_build_grpo_config_passes_top_entropy_quantile():
+    cfg = RLVRConfig.from_yaml(V4_YAML)
+    grpo = cfg.build_grpo_config(include_model_init=False)
+    assert grpo.top_entropy_quantile == pytest.approx(0.2)
 
 
 # ---------------------------------------------------------------------------

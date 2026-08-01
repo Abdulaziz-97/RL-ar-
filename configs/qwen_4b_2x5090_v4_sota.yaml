@@ -76,16 +76,20 @@ reward_weights: [0.85, 0.10, 0.05, 0.5, 0.3, 0.0]
 gdpo_decoupled_normalization: true
 
 # Entropy Collapse Prevention
-# Installed TRL GRPOConfig has no entropy_coef / use_adaptive_entropy (only
-# top_entropy_quantile). Non-zero values used to be silently dropped — training
-# pretended entropy regularization was on when it was not. Keep inactive;
-# validate() fails closed if these are re-enabled without TRL support.
+# Installed TRL GRPOConfig has no entropy_coef / use_adaptive_entropy.
+# Non-zero values used to be silently dropped — validate() fails closed if
+# these are re-enabled without TRL support. Do NOT invent fake adaptive entropy.
 entropy_coef: 0
 use_adaptive_entropy: false
 # entropy_target: 3.0
 # entropy_coef_delta: 0.01
+# Beyond-80/20 Rule (TRL top_entropy_quantile / paper ρ): keep only top-ρ
+# entropy tokens in the policy loss. NOT a substitute for entropy_coef /
+# use_adaptive_entropy. Paper recommends 0.2; 1.0 = keep all tokens.
+top_entropy_quantile: 0.2
 
-# Stability Callbacks — fixed temperature for reproducible baseline
+# Stability Callbacks — current entropy-collapse alternative (reduce_lr).
+# Adaptive temperature stays off for a reproducible overnight baseline.
 enable_stability_callback: true
 stability_consecutive: 2
 entropy_collapse_action: "reduce_lr"
@@ -124,7 +128,10 @@ resume_policy: "fresh"
 # Gaussian curriculum uses pass@8 bins on promoted rlvr_v5.
 # E2E order is SFT → pass@8/curate/promote → GRPO; sampler attaches only in GRPO
 # (ignored by SFT / pass@8). Keep sigma_fraction=0.2 aligned with V3 production.
-zero_variance_strategy: "discard"
+# ZVP direct_scoring: discard was V4 clean-baseline (with curriculum off), not a
+# bug. Safe with multi-GPU + clamped advantages; restores signal on all-wrong /
+# all-correct flat groups (more common under hard curriculum bins).
+zero_variance_strategy: "direct_scoring"
 curriculum_schedule_type: "gaussian"
 sigma_fraction: 0.2
 enable_crps: false
