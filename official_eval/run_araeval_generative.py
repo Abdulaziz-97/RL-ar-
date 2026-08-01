@@ -344,6 +344,21 @@ def build_hf_engine(args: argparse.Namespace):
     return merged_model, tokenizer
 
 
+def apply_chat_template(tokenizer, prompt: str, enable_thinking: bool = False) -> str:
+    """Apply the model's standard chat template to a prompt (pure zero-system-prompt)."""
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        formatted = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+        return formatted
+    except Exception:
+        # Fallback if tokenizer formatting fails
+        return f"User: {prompt}\nAssistant:"
+
+
 def evaluate_task(
     model,
     tokenizer,
