@@ -226,7 +226,7 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         new_state_dict = {}
         for k, v in state_dict.items():
             new_k = k.replace("language_model.", "").replace("model.model.", "model.")
-            new_state_dict[new_k] = v
+            new_state_dict[new_k] = v.clone()
 
         os.makedirs(merged_dir, exist_ok=True)
         save_file(new_state_dict, os.path.join(merged_dir, "model.safetensors"))
