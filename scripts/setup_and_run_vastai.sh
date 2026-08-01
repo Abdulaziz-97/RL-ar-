@@ -379,10 +379,14 @@ else
     echo "To view live logs run  : tail -f $LOG_FILE"
     echo "================================================================="
     rm -f "$LOG_FILE"
+    # Detach overnight job: must NOT register this PID in PIPELINE_PIDS or keep
+    # the EXIT trap — otherwise the launcher kill-on-exit aborts the nohup child.
+    trap - EXIT
     _NOHUP_LAUNCHED=1 nohup bash "$0" --fg > "$LOG_FILE" 2>&1 &
-    PIPELINE_PIDS+=($!)
+    BG_PID=$!
+    disown "$BG_PID" 2>/dev/null || true
     sleep 4
-    echo "Process launched in background (pid=${PIPELINE_PIDS[0]})."
+    echo "Process launched in background (pid=${BG_PID})."
     echo "Showing initial output:"
     echo "-----------------------------------------------------------------"
     tail -n 25 "$LOG_FILE" || true
