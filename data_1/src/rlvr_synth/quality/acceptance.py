@@ -242,15 +242,39 @@ def accept_rlvr_row(
     return (len(reasons) == 0), reasons
 
 
+_SFT_SCHEMA_KEYS = {
+    "problem_id",
+    "family_id",
+    "partition",
+    "domain",
+    "prompt",
+    "response",
+    "answer_spec",
+    "verifier_result",
+    "verifier_type",
+    "verifier_version",
+    "trace_audit",
+    "lineage",
+    "provenance",
+    "licensing",
+    "quality",
+    "metadata",
+}
+
+
 def stamp_fresh_sft_audit(row: dict[str, Any]) -> dict[str, Any]:
-    """Rewrite verifier_result/trace_audit from live replay only."""
+    """Rewrite verifier_result/trace_audit from live replay only.
+
+    Projects onto sft_trace.schema.json keys so gate-stage extras
+    (decontam/arabic_qa/gate_pass/...) do not fail additionalProperties.
+    """
     out = dict(row)
     response = str(out.get("response") or "")
     parsed = parse_response(response) if response else None
     ok, reasons = replay_verifier(out)
     think = (parsed.think if parsed else "") or ""
     out["verifier_result"] = bool(ok and parsed and parsed.format_ok)
-    method_id = (out.get("trace_audit") or {}).get("method_id") or "dspy_0"
+    method_id = (out.get("trace_audit") or {}).get("method_id") or out.get("method_id") or "dspy_0"
     out["trace_audit"] = {
         "format_ok": bool(parsed.format_ok) if parsed else False,
         "step_verified": bool(ok and parsed and parsed.format_ok and len(think.split()) >= 20),
@@ -261,4 +285,19 @@ def stamp_fresh_sft_audit(row: dict[str, Any]) -> dict[str, Any]:
     }
     if out.get("partition") in {"sft", "train", ""}:
         out["partition"] = "sft_train"
-    return out
+    md = dict(out.get("metadata") or {})
+    for key in (
+        "decontam",
+        "arabic_qa",
+        "gate_pass",
+        "seed",
+        "think",
+        "verified",
+        "answer_canonical",
+        "concision_tokens",
+    ):
+        if key in out and key not in md:
+            md[key] = out[key]
+    if md:
+        out["metadata"] = md
+    return {k: out[k] for k in _SFT_SCHEMA_KEYS if k in out}
