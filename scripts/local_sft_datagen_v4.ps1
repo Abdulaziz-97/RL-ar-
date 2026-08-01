@@ -1,6 +1,9 @@
-# Local SFT teacher datagen (DeepSeek Pro). On success writes DONE marker for the monitor loop.
+# Local FULL teacher datagen: SFT (+ Flash Reverse-QA+reteach) then RLVR candidates (+ Flash Reverse-QA).
+# Writes coldstart_v5 + rlvr_candidates_v5. Does NOT run pass@8 (needs GPU + SFT ckpt on Vast).
+# Vast: SFT train → pass@8 → curate/promote rlvr_v5 → GRPO.
 # Usage: powershell -File scripts/local_sft_datagen_v4.ps1
-# Resume: $env:RUN_ID='local_v4_...'; $env:SKIP_CANARY='1' (keeps multi_trace.partial.jsonl)
+# Resume SFT: $env:RUN_ID='local_v4_...'; $env:SKIP_CANARY='1'
+# RLVR-only after SFT ready: $env:SKIP_SFT='1' $env:RUN_ID='...'
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Data1 = Join-Path $RepoRoot "data_1"
@@ -65,14 +68,27 @@ $skipCanary = ($env:SKIP_CANARY -eq "1")
 $fresh = ($env:DATAGEN_FRESH -eq "1")
 
 $SftCfg = Join-Path $Data1 "configs\full_sft_6500.yaml"
+$RlvrCfg = Join-Path $Data1 "configs\full_rlvr_8000.yaml"
 $runPipeline = Join-Path $Data1 "scripts\run_pipeline.py"
 $selectScript = Join-Path $Data1 "scripts\select_sft_v4_release.py"
+$rlvrBudget = if ($env:RLVR_BUDGET_USD) { $env:RLVR_BUDGET_USD } else { "80" }
+$skipSft = ($env:SKIP_SFT -eq "1")
 
-Write-Log "START run_id=$RunId workers=$workers max_tokens=$($env:TEACHER_MAX_TOKENS) reverse_qa=$($env:REVERSE_QA) skip_canary=$skipCanary fresh=$fresh log=$LogFile"
+Write-Log "START run_id=$RunId workers=$workers max_tokens=$($env:TEACHER_MAX_TOKENS) reverse_qa=$($env:REVERSE_QA) skip_canary=$skipCanary skip_sft=$skipSft fresh=$fresh log=$LogFile"
 Write-Log "WORK=$WorkRoot"
 
 try {
-    if (-not $skipCanary) {
+    $selected = Join-Path $WorkRoot "sft_selected_4000.jsonl"
+    $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v5.jsonl"
+
+    if ($skipSft) {
+        Write-Log "SKIP_SFT=1 — reuse existing coldstart/selected"
+        if (-not (Test-Path $dest)) { throw "SKIP_SFT=1 but missing $dest" }
+        if (-not (Test-Path $selected)) {
+            Copy-Item -Force $dest $selected
+        }
+    }
+    elseif (-not $skipCanary) {
         $CanaryWork = Join-Path $WorkRoot "canary_sft"
         $CanaryCfg = Join-Path $WorkRoot "canary_sft_$canaryN.yaml"
         New-Item -ItemType Directory -Force -Path $CanaryWork | Out-Null
@@ -105,52 +121,103 @@ print(r'$CanaryCfg')
         Write-Log "SKIP_CANARY=1"
     }
 
-    $SftWork = Join-Path $WorkRoot "sft_candidates"
-    Write-Log "FULL SFT start work=$SftWork"
-    $fullArgs = @(
-        $runPipeline, "--mode", "live", "--config", $SftCfg,
-        "--work-dir", $SftWork, "--track", "sft",
-        "--model", $env:TEACHER_MODEL, "--workers", "$workers",
-        "--budget-usd", "$budget"
-    )
-    if ($fresh) { $fullArgs += "--no-resume" }
-    Invoke-LoggedPython -ArgumentList $fullArgs
+    if (-not $skipSft) {
+        $SftWork = Join-Path $WorkRoot "sft_candidates"
+        Write-Log "FULL SFT start work=$SftWork"
+        $fullArgs = @(
+            $runPipeline, "--mode", "live", "--config", $SftCfg,
+            "--work-dir", $SftWork, "--track", "sft",
+            "--model", $env:TEACHER_MODEL, "--workers", "$workers",
+            "--budget-usd", "$budget"
+        )
+        if ($fresh) { $fullArgs += "--no-resume" }
+        Invoke-LoggedPython -ArgumentList $fullArgs
 
-    $cand = Join-Path $SftWork "release_corpora\sft_train.jsonl"
-    $selected = Join-Path $WorkRoot "sft_selected_4000.jsonl"
-    Write-Log "SELECT 4k from $cand"
-    Invoke-LoggedPython -ArgumentList @(
-        $selectScript, "--candidates", $cand, "--out", $selected, "--allow-missing-decontam"
-    )
+        $cand = Join-Path $SftWork "release_corpora\sft_train.jsonl"
+        Write-Log "SELECT 4k from $cand"
+        Invoke-LoggedPython -ArgumentList @(
+            $selectScript, "--candidates", $cand, "--out", $selected, "--allow-missing-decontam"
+        )
 
-    # Full answer-first Reverse-QA on the selected 4k, then re-teach CoT for new prompts.
-    $selectedRqa = Join-Path $WorkRoot "sft_selected_4000_reverse_qa.jsonl"
-    Write-Log "FULL REVERSE-QA + reteach on selected 4k"
+        # Full answer-first Reverse-QA on the selected 4k, then re-teach CoT for new prompts.
+        $selectedRqa = Join-Path $WorkRoot "sft_selected_4000_reverse_qa.jsonl"
+        Write-Log "FULL REVERSE-QA + reteach on selected 4k (Flash gen+resolve+reteach)"
+        $env:REVERSE_QA = "1"
+        $env:REVERSE_QA_MODE = "full"
+        $env:REVERSE_QA_RESOLVE = "1"
+        Invoke-LoggedPython -ArgumentList @(
+            (Join-Path $Data1 "scripts\apply_full_reverse_qa_sft.py"),
+            "--in", $selected,
+            "--out", $selectedRqa,
+            "--reteach",
+            "--workers", "$workers"
+        )
+        if (Test-Path $selectedRqa) { $selected = $selectedRqa }
+
+        Copy-Item -Force $selected $dest
+        $n = (Get-Content $dest | Measure-Object -Line).Lines
+        Write-Log "WROTE $dest rows=$n"
+    }
+
+    # ---- RLVR candidates (local API gen; pass@8 stays on Vast GPU after SFT) ----
+    $RlvrWork = Join-Path $WorkRoot "rlvr_candidates"
+    $RlvrRuntime = Join-Path $WorkRoot "full_rlvr_8000.runtime.yaml"
+    Write-Log "FULL RLVR candidates start work=$RlvrWork"
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    & python -c @"
+from pathlib import Path
+import yaml
+cfg = yaml.safe_load(Path(r'$RlvrCfg').read_text(encoding='utf-8'))
+cfg['decontam_reference_paths'] = [r'$selected']
+cfg['work_dir'] = r'$RlvrWork'
+Path(r'$RlvrRuntime').write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding='utf-8')
+print(r'$RlvrRuntime')
+"@
+    $ErrorActionPreference = $prev
+    # Programmatic RLVR first (REVERSE_QA off in-pipeline); post-pass Flash Reverse-QA below.
+    $env:REVERSE_QA = "0"
+    $rlvrArgs = @(
+        $runPipeline, "--mode", "live", "--config", $RlvrRuntime,
+        "--work-dir", $RlvrWork, "--track", "rlvr",
+        "--model", $env:TEACHER_MODEL, "--workers", "1",
+        "--budget-usd", "$rlvrBudget"
+    )
+    if ($fresh) { $rlvrArgs += "--no-resume" }
+    Invoke-LoggedPython -ArgumentList $rlvrArgs
+
+    $rlvrCand = Join-Path $RlvrWork "release_corpora\rlvr_train.jsonl"
+    if (-not (Test-Path $rlvrCand)) { throw "RLVR release missing: $rlvrCand" }
+    $rlvrRqa = Join-Path $WorkRoot "rlvr_candidates_reverse_qa.jsonl"
+    Write-Log "FULL REVERSE-QA on RLVR candidates (Flash gen+resolve, no reteach)"
     $env:REVERSE_QA = "1"
     $env:REVERSE_QA_MODE = "full"
     $env:REVERSE_QA_RESOLVE = "1"
     Invoke-LoggedPython -ArgumentList @(
         (Join-Path $Data1 "scripts\apply_full_reverse_qa_sft.py"),
-        "--in", $selected,
-        "--out", $selectedRqa,
-        "--reteach",
+        "--in", $rlvrCand,
+        "--out", $rlvrRqa,
         "--workers", "$workers"
     )
-    if (Test-Path $selectedRqa) { $selected = $selectedRqa }
+    if (-not (Test-Path $rlvrRqa)) { throw "RLVR Reverse-QA output missing" }
 
-    $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v5.jsonl"
-    Copy-Item -Force $selected $dest
-    $n = (Get-Content $dest | Measure-Object -Line).Lines
-    Write-Log "WROTE $dest rows=$n"
+    $rlvrDest = Join-Path $RepoRoot "data\arabic_reasoning_rlvr_candidates_v5.jsonl"
+    Copy-Item -Force $rlvrRqa $rlvrDest
+    $nSft = (Get-Content $dest | Measure-Object -Line).Lines
+    $nRlvr = (Get-Content $rlvrDest | Measure-Object -Line).Lines
+    Write-Log "WROTE $rlvrDest rows=$nRlvr (pass@8+curate on Vast after SFT)"
 
     $payload = @{
         status = "done"
         run_id = $RunId
         coldstart = $dest
         selected = $selected
-        rows = $n
+        rlvr_candidates = $rlvrDest
+        rows_sft = $nSft
+        rows_rlvr_candidates = $nRlvr
         log = $LogFile
         finished_at = (Get-Date).ToString("o")
+        note = "Local teacher gen complete; Vast must run SFT train then GPU pass@8 then curate/promote rlvr_v5 then GRPO"
     } | ConvertTo-Json
     Set-Content -Path $DoneMarker -Value $payload -Encoding UTF8
     Set-Content -Path (Join-Path $Data1 "outputs\LOCAL_SFT_DATAGEN_DONE.json") -Value $payload -Encoding UTF8

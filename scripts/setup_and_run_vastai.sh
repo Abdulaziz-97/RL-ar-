@@ -97,10 +97,11 @@ PY
     export REVERSE_QA_MODE="${REVERSE_QA_MODE:-full}"
     export REVERSE_QA_RESOLVE="${REVERSE_QA_RESOLVE:-1}"
     export REVERSE_QA_MODEL="${REVERSE_QA_MODEL:-deepseek-v4-flash}"
+    export SKIP_RLVR_TEACHER="${SKIP_RLVR_TEACHER:-0}"
     if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -z "${DEEPSEEK_API_KEY:-}" ]; then
         export USE_OPENROUTER="${USE_OPENROUTER:-1}"
     fi
-    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0} REVERSE_QA=${REVERSE_QA} REVERSE_QA_MODE=${REVERSE_QA_MODE}"
+    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0} REVERSE_QA=${REVERSE_QA} REVERSE_QA_MODE=${REVERSE_QA_MODE} SKIP_SFT_DATAGEN=${SKIP_SFT_DATAGEN:-0} SKIP_RLVR_TEACHER=${SKIP_RLVR_TEACHER}"
 
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
     if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi
@@ -281,9 +282,26 @@ PY
 
     if [ "${REGENERATE_DATA:-0}" = "1" ]; then
         echo "================================================================="
-        echo "[5a/N] REGENERATE RLVR CANDIDATES"
+        echo "[5a/N] RLVR CANDIDATES"
         echo "================================================================="
         RLVR_WORK="$DATAGEN_ROOT/rlvr_candidates"
+        RLVR_CAND_RELEASE=""
+        if [ "${SKIP_RLVR_TEACHER:-0}" = "1" ] || [ -f "$REPO_ROOT/data/arabic_reasoning_rlvr_candidates_v5.jsonl" ]; then
+            echo "[5a/N] SKIP RLVR TEACHER — using prebuilt local candidates"
+            CAND_SRC="$REPO_ROOT/data/arabic_reasoning_rlvr_candidates_v5.jsonl"
+            if [ ! -f "$CAND_SRC" ]; then
+                echo "ERROR: SKIP_RLVR_TEACHER=1 but $CAND_SRC missing" >&2
+                exit 2
+            fi
+            mkdir -p "$RLVR_WORK/release_corpora"
+            cp "$CAND_SRC" "$RLVR_WORK/release_corpora/rlvr_train.jsonl"
+            # Ensure SFT selected path exists for promote later.
+            mkdir -p "$DATAGEN_ROOT"
+            if [ ! -f "$DATAGEN_ROOT/sft_selected_4000.jsonl" ]; then
+                cp "$REPO_ROOT/data/arabic_reasoning_coldstart_v5.jsonl" "$DATAGEN_ROOT/sft_selected_4000.jsonl"
+            fi
+            RLVR_CAND_RELEASE="$RLVR_WORK/release_corpora/rlvr_train.jsonl"
+        else
         # Point decontam at the freshly selected SFT release.
         python3 - <<PY
 from pathlib import Path
@@ -305,15 +323,17 @@ PY
             --workers 1 \
             --budget-usd "$RLVR_BUDGET_USD" \
             --no-resume
+        RLVR_CAND_RELEASE="$RLVR_WORK/release_corpora/rlvr_train.jsonl"
+        fi
 
         echo "================================================================="
-        echo "[5b/N] STRICT PASS@8 ON FRESH SFT LINEAGE"
+        echo "[5b/N] STRICT PASS@8 ON FRESH SFT LINEAGE (GPU)"
         echo "================================================================="
         mkdir -p "$DATAGEN_ROOT/pass8"
         if [ "$NUM_GPUS" -gt 1 ]; then
             for shard in $(seq 0 $((NUM_GPUS - 1))); do
                 CUDA_VISIBLE_DEVICES="$shard" python3 "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
-                    --candidates "$RLVR_WORK/release_corpora/rlvr_train.jsonl" \
+                    --candidates "$RLVR_CAND_RELEASE" \
                     --sft-checkpoint "$SFT_OUT" \
                     --out-calibration "$DATAGEN_ROOT/pass8/cal_shard${shard}.json" \
                     --out-candidates "$DATAGEN_ROOT/pass8/cand_shard${shard}.jsonl" \
@@ -329,7 +349,7 @@ PY
             done
         else
             python3 "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
-                --candidates "$RLVR_WORK/release_corpora/rlvr_train.jsonl" \
+                --candidates "$RLVR_CAND_RELEASE" \
                 --sft-checkpoint "$SFT_OUT" \
                 --out-calibration "$DATAGEN_ROOT/pass8/cal_shard0.json" \
                 --out-candidates "$DATAGEN_ROOT/pass8/cand_shard0.jsonl" \
