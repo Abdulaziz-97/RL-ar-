@@ -54,3 +54,27 @@ def test_gpu_smoke_placeholder():
 def test_shell_script_has_no_pkill_python():
     src = (REPO / "scripts" / "setup_and_run_vastai.sh").read_text(encoding="utf-8")
     assert "pkill -9 -f python" not in src
+
+
+def test_pass8_defaults_hf_when_instruction_lineage():
+    src = (REPO / "scripts" / "setup_and_run_vastai.sh").read_text(encoding="utf-8")
+    assert "defaulting PASS8_BACKEND=hf" in src
+    assert "SFT_HAS_INSTRUCTION" in src
+    cal = (REPO / "data_1" / "scripts" / "calibrate_v4_pass8.py").read_text(encoding="utf-8")
+    assert "_merge_instruction_base_to_dir" in cal
+    assert "Fail-closed: vLLM pass@8" in cal
+
+
+def test_lineage_loader_fail_closed_on_skipped_instruction_merge():
+    src = (SRC / "rlvr_pipeline" / "lineage.py").read_text(encoding="utf-8")
+    assert "_resolve_instruction_for_trainable" in src
+    assert "Fail-closed lineage load" in src
+    assert "merge_instruction=False" in src
+
+
+def test_sft_bench_waiter_uses_generative_t06_path():
+    waiter = (REPO / "outputs" / "vast_sft_bench_waiter.py").read_text(encoding="utf-8")
+    assert "run_araeval_generative.py" in waiter
+    assert "--instruction-adapter" in waiter or "instruction-adapter" in waiter
+    assert "scripts/run_araeval.py" not in waiter
+    assert "--engine" in waiter and "hf" in waiter

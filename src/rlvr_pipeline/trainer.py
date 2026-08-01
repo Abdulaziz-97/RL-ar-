@@ -262,7 +262,7 @@ def build_sft_trainer(
         base_model = AutoModelForCausalLM.from_pretrained(config.model_name, **init_kwargs)
         if not hasattr(base_model.config, "text_config"):
             base_model.config.text_config = base_model.config
-        
+
         if config.instruction_base_model:
             print(f"Merging SOTA instruction base adapter ({config.instruction_base_model}) into base weights...", flush=True)
             t06_peft = PeftModel.from_pretrained(base_model, config.instruction_base_model)
@@ -364,34 +364,78 @@ def build_trainer(
     if model is None:
         from transformers import AutoModelForCausalLM
         from peft import PeftModel, get_peft_model
+        from rlvr_pipeline.lineage import read_lineage
+
         init_kwargs = config.build_model_init_kwargs()
         base_model = AutoModelForCausalLM.from_pretrained(config.model_name, **init_kwargs)
         if not hasattr(base_model.config, "text_config"):
             base_model.config.text_config = base_model.config
 
-        # Always merge instruction base model first if specified
-        if config.instruction_base_model:
-            print(f"Merging SOTA instruction base adapter ({config.instruction_base_model}) into base weights...", flush=True)
-            t06_peft = PeftModel.from_pretrained(base_model, config.instruction_base_model)
+        lineage_instruction = None
+        if config.sft_checkpoint_path and os.path.isdir(config.sft_checkpoint_path):
+            meta = read_lineage(config.sft_checkpoint_path)
+            if meta and meta.instruction_adapter:
+                lineage_instruction = str(meta.instruction_adapter).strip() or None
+
+        cfg_instruction = (config.instruction_base_model or "").strip() or None
+        if (
+            lineage_instruction
+            and cfg_instruction
+            and cfg_instruction != lineage_instruction
+        ):
+            raise ValueError(
+                "Fail-closed GRPO build: instruction_base_model mismatch vs SFT lineage "
+                f"(config={cfg_instruction!r}, lineage={lineage_instruction!r})"
+            )
+        required_instruction = cfg_instruction or lineage_instruction
+
+        # Always merge instruction base when config or SFT lineage requires it.
+        if required_instruction:
+            print(
+                f"Merging SOTA instruction base adapter ({required_instruction}) "
+                "into base weights...",
+                flush=True,
+            )
+            t06_peft = PeftModel.from_pretrained(base_model, required_instruction)
             base_model = t06_peft.merge_and_unload()
             del t06_peft
-            print(f"Instruction adapter merged successfully into base weights.", flush=True)
+            print("Instruction adapter merged successfully into base weights.", flush=True)
+        elif config.sft_checkpoint_path and os.path.exists(
+            os.path.join(config.sft_checkpoint_path, "adapter_config.json")
+        ):
+            # Trainable adapter present with no instruction in config/lineage —
+            # allow legacy stacks, but make the risk explicit.
+            print(
+                "WARNING: loading SFT adapter without instruction_base_model / "
+                "lineage instruction_adapter (raw-base stack).",
+                flush=True,
+            )
 
-        if config.sft_checkpoint_path and os.path.exists(os.path.join(config.sft_checkpoint_path, "adapter_config.json")):
+        if config.sft_checkpoint_path and os.path.exists(
+            os.path.join(config.sft_checkpoint_path, "adapter_config.json")
+        ):
             print(f"Loading SFT checkpoint strictly from {config.sft_checkpoint_path}...", flush=True)
             peft_config = config.build_peft_config()
             model = get_peft_model(base_model, peft_config)
             load_sft_adapter_strict(model, config.sft_checkpoint_path)
             model.train()
             peft_config = None
-        elif config.instruction_base_model:
-            print(f"Initializing fresh Rank-{config.lora_r} (alpha={config.lora_alpha}) LoRA adapter for GRPO training...", flush=True)
+        elif required_instruction:
+            print(
+                f"Initializing fresh Rank-{config.lora_r} (alpha={config.lora_alpha}) "
+                "LoRA adapter for GRPO training...",
+                flush=True,
+            )
             peft_config = config.build_peft_config()
             model = get_peft_model(base_model, peft_config)
             peft_config = None
         else:
             if config.sft_checkpoint_path:
-                print(f"Warning: Valid adapter_config.json not found in {config.sft_checkpoint_path}. Initializing new PEFT adapter on base model.", flush=True)
+                print(
+                    f"Warning: Valid adapter_config.json not found in "
+                    f"{config.sft_checkpoint_path}. Initializing new PEFT adapter on base model.",
+                    flush=True,
+                )
             peft_config = config.build_peft_config()
             model = get_peft_model(base_model, peft_config)
             peft_config = None

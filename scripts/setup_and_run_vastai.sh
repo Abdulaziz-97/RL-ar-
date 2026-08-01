@@ -393,9 +393,58 @@ PY
         echo "[5b/N] STRICT PASS@8 ON FRESH SFT LINEAGE (GPU)"
         echo "================================================================="
         mkdir -p "$DATAGEN_ROOT/pass8"
+        # Lineage-aware backend selection:
+        # - If SFT lineage has instruction_adapter (T06), default PASS8_BACKEND=hf
+        #   (HF path merges T06 via load_lineage_model). vLLM can still be forced
+        #   via PASS8_BACKEND=vllm; calibrate_v4_pass8.py will auto-merge T06 into
+        #   a temp base dir or fail closed.
+        # - Without instruction adapter, prefer vLLM continuous batching when available.
+        SFT_HAS_INSTRUCTION=0
+        if [ -f "$SFT_OUT/lineage.json" ]; then
+            if python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d.get('instruction_adapter') else 1)" "$SFT_OUT/lineage.json" 2>/dev/null; then
+                SFT_HAS_INSTRUCTION=1
+            fi
+        fi
+        if [ -z "${PASS8_BACKEND+x}" ]; then
+            if [ "$SFT_HAS_INSTRUCTION" = "1" ]; then
+                PASS8_BACKEND=hf
+                echo "INFO: lineage has instruction_adapter — defaulting PASS8_BACKEND=hf (set PASS8_BACKEND=vllm to force vLLM+T06-merge)"
+            else
+                PASS8_BACKEND=vllm
+            fi
+        else
+            PASS8_BACKEND="${PASS8_BACKEND}"
+        fi
+        PASS8_PY="${PASS8_PYTHON:-}"
+        if [ -z "$PASS8_PY" ]; then
+            if [ "$PASS8_BACKEND" = "vllm" ] && [ -x /venv/main/bin/python ] && /venv/main/bin/python -c 'import vllm' 2>/dev/null; then
+                PASS8_PY=/venv/main/bin/python
+            else
+                PASS8_PY=python3
+                if [ "$PASS8_BACKEND" = "vllm" ] && ! "$PASS8_PY" -c 'import vllm' 2>/dev/null; then
+                    echo "WARNING: vLLM unavailable — falling back to HF backend for pass@8"
+                    PASS8_BACKEND=hf
+                fi
+            fi
+        fi
+        if [ "$PASS8_BACKEND" = "vllm" ] && [ "$SFT_HAS_INSTRUCTION" = "1" ]; then
+            echo "INFO: PASS8_BACKEND=vllm with instruction_adapter — calibrate_v4_pass8 will merge T06 before loading LoRA (or fail closed)"
+        fi
+        export PYTHONPATH="${REPO_ROOT}/src:${REPO_ROOT}:${REPO_ROOT}/data_1:${REPO_ROOT}/data_1/src:${REPO_ROOT}/data_1/vendor:${PYTHONPATH:-}"
+        PASS8_EXTRA=(--backend "$PASS8_BACKEND")
+        if [ "$PASS8_BACKEND" = "vllm" ]; then
+            PASS8_EXTRA+=(
+                --gpu-memory-utilization "${PASS8_GPU_MEM_UTIL:-0.92}"
+                --max-num-seqs "${PASS8_MAX_NUM_SEQS:-256}"
+                --max-model-len "${PASS8_MAX_MODEL_LEN:-2048}"
+                --max-lora-rank "${PASS8_MAX_LORA_RANK:-128}"
+                --prompt-batch-size "${PASS8_PROMPT_BATCH:-256}"
+            )
+            export VLLM_WORKER_MULTIPROC_METHOD="${VLLM_WORKER_MULTIPROC_METHOD:-spawn}"
+        fi
         if [ "$NUM_GPUS" -gt 1 ]; then
             for shard in $(seq 0 $((NUM_GPUS - 1))); do
-                CUDA_VISIBLE_DEVICES="$shard" python3 "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
+                CUDA_VISIBLE_DEVICES="$shard" "$PASS8_PY" "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
                     --candidates "$RLVR_CAND_RELEASE" \
                     --sft-checkpoint "$SFT_OUT" \
                     --out-calibration "$DATAGEN_ROOT/pass8/cal_shard${shard}.json" \
@@ -403,7 +452,8 @@ PY
                     --shard-id "$shard" \
                     --num-shards "$NUM_GPUS" \
                     --temperature "${PASS8_TEMPERATURE:-0.7}" \
-                    --max-new-tokens "${PASS8_MAX_NEW_TOKENS:-768}" &
+                    --max-new-tokens "${PASS8_MAX_NEW_TOKENS:-768}" \
+                    "${PASS8_EXTRA[@]}" &
             done
             wait
             CAND_ARGS=()
@@ -411,13 +461,14 @@ PY
                 CAND_ARGS+=("$DATAGEN_ROOT/pass8/cand_shard${shard}.jsonl")
             done
         else
-            python3 "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
+            "$PASS8_PY" "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
                 --candidates "$RLVR_CAND_RELEASE" \
                 --sft-checkpoint "$SFT_OUT" \
                 --out-calibration "$DATAGEN_ROOT/pass8/cal_shard0.json" \
                 --out-candidates "$DATAGEN_ROOT/pass8/cand_shard0.jsonl" \
                 --temperature "${PASS8_TEMPERATURE:-0.7}" \
-                --max-new-tokens "${PASS8_MAX_NEW_TOKENS:-768}"
+                --max-new-tokens "${PASS8_MAX_NEW_TOKENS:-768}" \
+                "${PASS8_EXTRA[@]}"
             CAND_ARGS=("$DATAGEN_ROOT/pass8/cand_shard0.jsonl")
         fi
 

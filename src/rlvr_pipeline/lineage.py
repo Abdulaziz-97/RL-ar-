@@ -73,6 +73,44 @@ def read_lineage(checkpoint_dir: str | Path) -> Optional[LineageMeta]:
     return LineageMeta.from_dict(json.loads(path.read_text(encoding="utf-8")))
 
 
+def _resolve_instruction_for_trainable(
+    *,
+    instruction_adapter: Optional[str],
+    trainable_adapter: Optional[str],
+    merge_instruction: bool,
+) -> Optional[str]:
+    """Resolve instruction adapter; fail closed if lineage requires merge but it is skipped."""
+    lineage_instruction: Optional[str] = None
+    if trainable_adapter:
+        meta = read_lineage(trainable_adapter)
+        if meta and meta.instruction_adapter:
+            lineage_instruction = str(meta.instruction_adapter).strip() or None
+
+    resolved = (instruction_adapter or lineage_instruction or None)
+    if resolved:
+        resolved = str(resolved).strip() or None
+
+    if trainable_adapter and resolved and not merge_instruction:
+        raise ValueError(
+            "Fail-closed lineage load: trainable adapter requires instruction merge "
+            f"(instruction={resolved!r}, trainable={trainable_adapter!r}) but "
+            "merge_instruction=False. Merge T06 into the base first, or set "
+            "merge_instruction=True."
+        )
+    if (
+        trainable_adapter
+        and lineage_instruction
+        and instruction_adapter
+        and str(instruction_adapter).strip() != lineage_instruction
+    ):
+        raise ValueError(
+            "Fail-closed lineage load: instruction_adapter mismatch vs lineage.json "
+            f"(arg={instruction_adapter!r}, lineage={lineage_instruction!r}, "
+            f"trainable={trainable_adapter!r})"
+        )
+    return resolved
+
+
 def load_lineage_model(
     *,
     base_model: str,
@@ -89,6 +127,12 @@ def load_lineage_model(
     from peft import PeftModel, get_peft_model, LoraConfig, TaskType
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
+    instruction_adapter = _resolve_instruction_for_trainable(
+        instruction_adapter=instruction_adapter,
+        trainable_adapter=trainable_adapter,
+        merge_instruction=merge_instruction,
+    )
+
     dtype = torch_dtype or torch.bfloat16
     model = AutoModelForCausalLM.from_pretrained(
         base_model,
@@ -104,6 +148,13 @@ def load_lineage_model(
         peft = PeftModel.from_pretrained(model, instruction_adapter)
         model = peft.merge_and_unload()
         del peft
+    elif instruction_adapter and not merge_instruction:
+        # Defensive: _resolve_instruction_for_trainable already fails when trainable
+        # is set; bare instruction without merge is still invalid for this loader.
+        raise ValueError(
+            "Fail-closed lineage load: instruction_adapter is set but "
+            "merge_instruction=False (refusing to load mismatched base)."
+        )
 
     tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=trust_remote_code)
     if trainable_adapter:
