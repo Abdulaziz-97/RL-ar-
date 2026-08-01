@@ -16,6 +16,7 @@ CUDA_VISIBLE_DEVICES=0 python3 official_eval/run_araeval_generative.py \
   --adapter-path "/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run/checkpoint-200" \
   --output-dir "/workspace/outputs/generative_eval_checkpoint_200" \
   --tasks araeval_aramath araeval_ifeval araeval_arapro \
+  --enable-thinking \
   --limit 50
 
 # Safely upload checkpoint adapters, merged model, and evaluation logs to Hugging Face Hub
