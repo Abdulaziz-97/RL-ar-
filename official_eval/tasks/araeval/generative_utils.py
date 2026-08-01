@@ -98,6 +98,14 @@ _ARABIC_TO_LATIN = {
     "b": "B",
     "c": "C",
     "d": "D",
+    "1": "A",
+    "2": "B",
+    "3": "C",
+    "4": "D",
+    "١": "A",
+    "٢": "B",
+    "٣": "C",
+    "٤": "D",
 }
 
 
@@ -105,6 +113,9 @@ def strip_thinking_tags(text: str) -> str:
     """Remove all <think>...</think> blocks (including unclosed <think>...) from generated text."""
     # First remove closed <think>...</think> blocks
     stripped = _THINK_CLOSED_RE.sub("", text)
+    # Also handle text ending with </think> if <think> was prepended in system prompt
+    if "</think>" in stripped:
+        stripped = stripped.split("</think>")[-1]
     # If <think> is still present (unclosed), strip from <think> to end of text
     if "<think>" in stripped:
         stripped = _THINK_OPEN_RE.sub("", stripped)
@@ -114,8 +125,8 @@ def strip_thinking_tags(text: str) -> str:
 # ---------------------------------------------------------------------------
 # Answer extraction
 # ---------------------------------------------------------------------------
-# All choice tokens (Latin A-D and Arabic أ/ب/ج/د)
-_CHOICE_PATTERN = r"([A-Da-dأبجد])"
+# All choice tokens (Latin A-D, Arabic أ/ب/ج/د, digits 1-4, Eastern Arabic digits ١-٤)
+_CHOICE_PATTERN = r"([A-Da-dأبجد1-4١-٤])"
 
 # Layer 1: Explicit answer statement patterns (e.g. الإجابة: A, الإجابة هي (أ), Answer: B)
 _EXPLICIT_ANSWER_RE = re.compile(

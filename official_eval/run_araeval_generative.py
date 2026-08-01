@@ -415,8 +415,17 @@ def evaluate_task(
     # Extract and grade answers
     correct = 0
     extraction_failures = 0
-    for output, gold_idx, sample in zip(all_outputs, gold_indices, samples):
+    for i, (output, gold_idx, sample) in enumerate(zip(all_outputs, gold_indices, samples)):
         generated_text = output.outputs[0].text
+        if i < 3:
+            print(f"\n--- [DEBUG SAMPLE {i+1}] ---", flush=True)
+            print(f"Generated text snippet: {repr(generated_text[:350])}", flush=True)
+            if not sample.get("is_ifeval"):
+                ext = extract_answer(generated_text)
+                gold_label = _LABELS[gold_idx] if isinstance(gold_idx, int) and 0 <= gold_idx < len(_LABELS) else gold_idx
+                print(f"Extracted: {ext} | Gold: {gold_label}", flush=True)
+            print("---------------------------\n", flush=True)
+
         if sample.get("is_ifeval"):
             ifeval_res = process_ifeval_results(gold_idx, [generated_text])
             if ifeval_res.get("prompt_level_strict_acc"):
