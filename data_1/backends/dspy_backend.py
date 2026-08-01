@@ -151,11 +151,21 @@ class LiveProblemGenerator:
         }
 
     def generate_family(self, domain: str, seed: int) -> LatentProblem:
-        domain = domain if domain in self.DOMAINS else "math"
+        if domain not in self.DOMAINS:
+            raise ValueError(f"unsupported domain for live generator: {domain}")
         rng = self._random.Random(seed ^ hash(domain) & 4294967295)
         sample = self._gens[domain](rng)
+        template_family = str((sample.meta_extra or {}).get("template_family") or sample.domain)
+        from rlvr_synth.quality.ids import content_family_id
+
+        family_id = content_family_id(
+            domain=sample.domain,
+            prompt=sample.prompt,
+            template_family=template_family,
+            seed=seed,
+        )
         return LatentProblem(
-            family_id=f"fam_{sample.domain}_{seed:05d}",
+            family_id=family_id,
             domain=sample.domain,
             answer_spec=_gt_to_spec(sample.domain, sample.ground_truth),
             latent={
@@ -165,14 +175,24 @@ class LiveProblemGenerator:
                 "num_steps": sample.num_steps,
                 "solution_steps": sample.solution_steps,
                 "meta_extra": sample.meta_extra,
+                "template_family": template_family,
                 "seed": seed,
             },
         )
 
     def render_arabic(self, latent: LatentProblem, seed: int) -> RenderedProblem:
         prompt = str(latent.latent.get("prompt") or "")
+        from rlvr_synth.quality.ids import content_problem_id
+
+        problem_id = content_problem_id(
+            domain=latent.domain,
+            prompt=prompt,
+            answer_canonical=(latent.answer_spec or {}).get("canonical"),
+            partition=latent.partition,
+            seed=seed,
+        )
         return RenderedProblem(
-            problem_id=f"prob_{latent.domain}_{seed:05d}_{abs(hash(prompt)) % 10 ** 8:08d}",
+            problem_id=problem_id,
             family_id=latent.family_id,
             domain=latent.domain,
             partition=latent.partition,
@@ -182,6 +202,8 @@ class LiveProblemGenerator:
             metadata={
                 "ground_truth": latent.latent.get("ground_truth"),
                 "num_steps": latent.latent.get("num_steps"),
+                "template_family": latent.latent.get("template_family"),
+                "oracle_ground_truth": latent.latent.get("ground_truth"),
             },
         )
 
@@ -212,12 +234,14 @@ class LiveTraceTeacher:
         self.teacher = load_teacher(gepa) if gepa.exists() else ArabicTeacher()
 
     def sample_traces(self, problem: RenderedProblem, n: int, seed: int) -> list[TraceCandidate]:
+        if n <= 0:
+            return []
         gt = problem.metadata.get("ground_truth")
         if gt is None:
             gt = problem.answer_spec.get("ground_truth_structured") or problem.answer_spec.get("canonical")
         gts = json.dumps(gt, ensure_ascii=False) if isinstance(gt, (dict, list)) else str(gt)
         out = []
-        for i in range(max(1, n)):
+        for i in range(n):
             pred = self.teacher(domain=problem.domain, problem=problem.prompt, ground_truth=gts)
             response = (getattr(pred, "response", None) or "").strip() or "<think>\n\n</think>\n<answer></answer>"
             parsed = parse_response(response)
@@ -239,11 +263,33 @@ class ContractVerifier:
 
     def verify_problem(self, problem: RenderedProblem) -> tuple[bool, list[str]]:
         try:
-            parse_answer_spec(problem.answer_spec)
+            spec = parse_answer_spec(problem.answer_spec)
         except Exception as exc:
             return (False, [f"answer_spec:{exc}"])
         if not problem.prompt.strip():
             return (False, ["empty_prompt"])
+        domain = str(problem.domain or "")
+        if domain == "logic" and spec.type != "logic_json":
+            return (False, ["logic_must_be_logic_json"])
+        if domain and domain not in ("gsm8k", "math", "math_comp", "logic"):
+            return (False, [f"non_core_domain:{domain}"])
+        # Oracle replay when programmatic ground truth is present.
+        gt = (problem.metadata or {}).get("oracle_ground_truth")
+        if gt is None:
+            gt = (problem.metadata or {}).get("ground_truth")
+        if gt is not None:
+            try:
+                expected = infer_answer_spec_from_legacy(
+                    gt, domain=("logic" if domain == "logic" else "math")
+                )
+                if expected.type != spec.type or str(expected.canonical) != str(spec.canonical):
+                    try:
+                        if float(expected.canonical) != float(spec.canonical):
+                            return (False, ["oracle_canonical_mismatch"])
+                    except Exception:
+                        return (False, ["oracle_canonical_mismatch"])
+            except Exception as exc:
+                return (False, [f"oracle_error:{exc}"])
         return (True, [])
 
     def verify_trace(self, problem: RenderedProblem, trace: TraceCandidate) -> tuple[bool, list[str]]:
@@ -268,6 +314,22 @@ class ContractVerifier:
         sentences = [s.strip() for s in re.split(r"[.。.!?\n]+", think) if s.strip()]
         if len(lines) < 2 and len(sentences) < 2 and (len(think.split()) < 20):
             return (False, ["insufficient_steps"])
+        try:
+            from synth.dspy_teacher import think_quality_ok, think_has_bare_ops, think_has_answer_equation
+
+            gt = (problem.metadata or {}).get("ground_truth")
+            q_ok, tag = think_quality_ok(
+                think, trace.response, domain=problem.domain or "gsm8k", gt=gt
+            )
+            if not q_ok:
+                return (False, [f"think_quality:{tag}"])
+            if problem.domain != "logic":
+                if think_has_bare_ops(think):
+                    return (False, ["bare_op"])
+                if gt is not None and not think_has_answer_equation(think, gt, problem.domain):
+                    return (False, ["missing_answer_eq"])
+        except Exception:
+            pass
         return (True, [])
 
 

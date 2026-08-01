@@ -1,0 +1,13 @@
+mode: rlvr
+n_families: 8000
+domains: [gsm8k, math, math_comp, logic]
+traces_per_problem: 0
+seed: 2200
+work_dir: outputs/full_rlvr_8000
+backend: external
+external_module: backends/dspy_backend.py
+max_alternate_methods: 0
+decontam_reference_paths:
+  - ../data/arabic_reasoning_coldstart_v4.jsonl
+partitions:
+  rlvr_train: 1.0

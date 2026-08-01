@@ -40,6 +40,20 @@ class Sample:
     solution_steps: list[str]  # Arabic steps for cold-start CoT
 
 
+def _with_family(sample: Sample, family: str) -> Sample:
+    """Stamp a structural template-family ID (not merely the domain name)."""
+    meta = dict(sample.meta_extra or {})
+    meta["template_family"] = family
+    return Sample(
+        sample.domain,
+        sample.prompt,
+        sample.ground_truth,
+        sample.num_steps,
+        meta,
+        sample.solution_steps,
+    )
+
+
 def _arabic_purity(text: str) -> float:
     if not text:
         return 0.0
@@ -68,20 +82,21 @@ def next_id(existing: set[str], prefix: str) -> str:
 
 def gen_gsm8k(rng: random.Random) -> Sample:
     families = [
-        _gsm_shop_change,
-        _gsm_multi_buy,
-        _gsm_trip_days,
-        _gsm_work_rate,
-        _gsm_fraction_of,
-        _gsm_ages,
-        _gsm_ratio_share,
-        _gsm_remaining_after,
-        _gsm_stacked_ops,
-        _gsm_bus_split,
-        _gsm_salary_save,
-        _gsm_garden_rows,
+        ("gsm_shop_change", _gsm_shop_change),
+        ("gsm_multi_buy", _gsm_multi_buy),
+        ("gsm_trip_days", _gsm_trip_days),
+        ("gsm_work_rate", _gsm_work_rate),
+        ("gsm_fraction_of", _gsm_fraction_of),
+        ("gsm_ages", _gsm_ages),
+        ("gsm_ratio_share", _gsm_ratio_share),
+        ("gsm_remaining_after", _gsm_remaining_after),
+        ("gsm_stacked_ops", _gsm_stacked_ops),
+        ("gsm_bus_split", _gsm_bus_split),
+        ("gsm_salary_save", _gsm_salary_save),
+        ("gsm_garden_rows", _gsm_garden_rows),
     ]
-    return rng.choice(families)(rng)
+    name, fn = rng.choice(families)
+    return _with_family(fn(rng), name)
 
 
 def _grade_for_steps(ns: int) -> str:
@@ -482,16 +497,18 @@ def _gsm_garden_rows(rng: random.Random) -> Sample:
 # ---------------------------------------------------------------------------
 
 def gen_math(rng: random.Random) -> Sample:
-    return rng.choice([
-        _math_percent,
-        _math_discount,
-        _math_speed,
-        _math_mixture,
-        _math_area_rect,
-        _math_simple_interest,
-        _math_unit_price,
-        _math_avg,
-    ])(rng)
+    families = [
+        ("math_percent", _math_percent),
+        ("math_discount", _math_discount),
+        ("math_speed", _math_speed),
+        ("math_mixture", _math_mixture),
+        ("math_area_rect", _math_area_rect),
+        ("math_simple_interest", _math_simple_interest),
+        ("math_unit_price", _math_unit_price),
+        ("math_avg", _math_avg),
+    ]
+    name, fn = rng.choice(families)
+    return _with_family(fn(rng), name)
 
 
 def _diff_tag(ns: int) -> str:
@@ -619,14 +636,18 @@ def _math_avg(rng: random.Random) -> Sample:
 # ---------------------------------------------------------------------------
 
 def gen_math_comp(rng: random.Random) -> Sample:
-    return rng.choice([
-        _mc_linear,
-        _mc_quadratic_root_sum,
-        _mc_modular,
-        _mc_gcd_style,
-        _mc_arithm_seq,
-        _mc_power_diff,
-    ])(rng)
+    families = [
+        ("mc_linear", _mc_linear),
+        ("mc_quadratic_root_sum", _mc_quadratic_root_sum),
+        ("mc_modular", _mc_modular),
+        ("mc_gcd_style", _mc_gcd_style),
+        ("mc_arithm_seq", _mc_arithm_seq),
+        ("mc_power_diff", _mc_power_diff),
+        ("mc_lcm_product", _mc_lcm_product),
+        ("mc_digit_sum_constraint", _mc_digit_sum_constraint),
+    ]
+    name, fn = rng.choice(families)
+    return _with_family(fn(rng), name)
 
 
 def _mc_linear(rng: random.Random) -> Sample:
@@ -755,12 +776,82 @@ def _mc_power_diff(rng: random.Random) -> Sample:
     )
 
 
+def _mc_lcm_product(rng: random.Random) -> Sample:
+    a = rng.randint(2, 12)
+    b = rng.randint(2, 12)
+    while math.gcd(a, b) == 1 and rng.random() < 0.5:
+        b = rng.randint(2, 12)
+    lcm = a * b // math.gcd(a, b)
+    prompt = f"ما المضاعف المشترك الأصغر للعددين {a} و{b}؟"
+    steps = [
+        f"القاسم المشترك الأكبر لـ {a} و{b} هو {math.gcd(a, b)}.",
+        f"المضاعف المشترك الأصغر = ({a}×{b})÷{math.gcd(a, b)} = {lcm}.",
+    ]
+    return Sample(
+        "math_comp",
+        prompt,
+        str(lcm),
+        2,
+        {"math_domain": "number_theory", "level": 2},
+        steps,
+    )
+
+
+def _mc_digit_sum_constraint(rng: random.Random) -> Sample:
+    tens = rng.randint(1, 9)
+    ones = rng.randint(0, 9)
+    n = 10 * tens + ones
+    s = tens + ones
+    prompt = (
+        f"عدد مكون من رقمين، مجموع رقميه {s}، ورقمه العشرات أكبر من رقمه الآحاد بمقدار "
+        f"{tens - ones if tens >= ones else ones - tens}. ما هو العدد؟"
+        if tens != ones
+        else f"عدد مكون من رقمين ومجموع رقميه {s} ورقماه متساويان. ما هو العدد؟"
+    )
+    if tens == ones:
+        steps = [
+            f"الرقمان متساويان ومجموعهما {s}، فكل منهما {s // 2}.",
+            f"العدد = {n}.",
+        ]
+    elif tens > ones:
+        steps = [
+            f"ليكن رقم الآحاد x ورقمه العشرات x+{tens - ones}.",
+            f"مجموع الرقمين = 2x+{tens - ones} = {s} ⇒ x = {ones}.",
+            f"العدد = {n}.",
+        ]
+    else:
+        steps = [
+            f"ليكن رقم العشرات x ورقمه الآحاد x+{ones - tens}.",
+            f"مجموع الرقمين = 2x+{ones - tens} = {s} ⇒ x = {tens}.",
+            f"العدد = {n}.",
+        ]
+    return Sample(
+        "math_comp",
+        prompt,
+        str(n),
+        3,
+        {"math_domain": "digits", "level": 3},
+        steps,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Logic — unique flat GT via enumeration
 # ---------------------------------------------------------------------------
 
 def gen_logic(rng: random.Random) -> Sample:
-    return rng.choice([_logic_ordering, _logic_assignment, _logic_truth])(rng)
+    families = [
+        ("logic_ordering", _logic_ordering),
+        ("logic_assignment", _logic_assignment),
+        ("logic_truth", _logic_truth),
+        ("logic_who_has", _logic_who_has),
+        ("logic_seating_left_right", _logic_seating_left_right),
+        ("logic_schedule_slots", _logic_schedule_slots),
+        ("logic_color_objects", _logic_color_objects),
+        ("logic_two_attribute", _logic_two_attribute),
+    ]
+    name, fn = rng.choice(families)
+    return _with_family(fn(rng), name)
 
 
 def _logic_ordering(rng: random.Random) -> Sample:
@@ -877,6 +968,149 @@ def _logic_truth(rng: random.Random) -> Sample:
         gt,
         4,
         {"difficulty_tag": "hard", "puzzle_type": "truth_teller_liar"},
+        steps,
+    )
+
+
+def _logic_who_has(rng: random.Random) -> Sample:
+    people = rng.sample(["أحمد", "سارة", "نورة"], 3)
+    items = rng.sample(["كتاب", "قلم", "حقيبة"], 3)
+    assign = {people[i]: items[i] for i in range(3)}
+    p0, p1, p2 = people
+    prompt = (
+        f"لدى {', '.join(people)} ثلاثة أغراض مختلفة: {', '.join(items)}.\n"
+        f"1. {p0} ليس معه {assign[p1]}.\n"
+        f"2. {p1} معه {assign[p1]}.\n"
+        f"3. {p2} ليس معه {assign[p0]}.\n"
+        f"عيّن ما مع كل شخص."
+    )
+    steps = [
+        f"من (2): {p1} معه {assign[p1]}.",
+        f"من (1) و(3) بالاستبعاد تتعين بقية التعيينات.",
+    ]
+    return Sample(
+        "logic",
+        prompt,
+        assign,
+        3,
+        {"difficulty_tag": "medium", "puzzle_type": "who_has"},
+        steps,
+    )
+
+
+def _logic_seating_left_right(rng: random.Random) -> Sample:
+    people = rng.sample(["خالد", "فاطمة", "يوسف", "ليلى"], 4)
+    order = people[:]
+    rng.shuffle(order)
+    a, b, c, d = order
+    prompt = (
+        f"أربعة أشخاص يجلسون في صف واحد من اليسار إلى اليمين: {', '.join(people)}.\n"
+        f"1. {b} يجلس مباشرة إلى يمين {a}.\n"
+        f"2. {d} في أقصى اليمين.\n"
+        f"3. {c} ليس في أقصى اليسار.\n"
+        f"عيّن ترتيب الجلوس من اليسار إلى اليمين."
+    )
+    gt = {"يسار1": a, "يسار2": b, "يسار3": c, "يسار4": d}
+    steps = [
+        f"من (2): أقصى اليمين = {d}.",
+        f"من (1): {a} ثم {b} مباشرة.",
+        f"من (3) يتبقى {c} في الموقع الثالث.",
+    ]
+    return Sample(
+        "logic",
+        prompt,
+        gt,
+        3,
+        {"difficulty_tag": "medium", "puzzle_type": "seating"},
+        steps,
+    )
+
+
+def _logic_schedule_slots(rng: random.Random) -> Sample:
+    people = rng.sample(["مها", "سامي", "هند"], 3)
+    slots = ["صباحًا", "ظهرًا", "مساءً"]
+    order = slots[:]
+    rng.shuffle(order)
+    assign = {people[i]: order[i] for i in range(3)}
+    morning = next(p for p, s in assign.items() if s == "صباحًا")
+    evening = next(p for p, s in assign.items() if s == "مساءً")
+    noon = next(p for p, s in assign.items() if s == "ظهرًا")
+    prompt = (
+        f"ثلاثة مواعيد: صباحًا وظهرًا ومساءً للأشخاص {', '.join(people)}.\n"
+        f"1. {morning} موعده صباحًا.\n"
+        f"2. {evening} ليس موعده ظهرًا.\n"
+        f"3. موعد {noon} بعد موعد {morning}.\n"
+        f"عيّن موعد كل شخص."
+    )
+    steps = [
+        f"من (1): {morning} صباحًا.",
+        f"من (2) و(3): {noon} ظهرًا و{evening} مساءً.",
+    ]
+    return Sample(
+        "logic",
+        prompt,
+        assign,
+        3,
+        {"difficulty_tag": "medium", "puzzle_type": "schedule"},
+        steps,
+    )
+
+
+def _logic_color_objects(rng: random.Random) -> Sample:
+    objects = rng.sample(["قلم", "دفتر", "مسطرة"], 3)
+    colors = rng.sample(["أحمر", "أخضر", "أزرق"], 3)
+    assign = {objects[i]: colors[i] for i in range(3)}
+    o0, o1, o2 = objects
+    prompt = (
+        f"ثلاثة أدوات: {', '.join(objects)} بألوان {', '.join(colors)} دون تكرار.\n"
+        f"1. {o0} ليس {assign[o1]}.\n"
+        f"2. {o1} لونه {assign[o1]}.\n"
+        f"3. {o2} ليس {assign[o0]}.\n"
+        f"عيّن لون كل أداة."
+    )
+    steps = [
+        f"من (2): {o1} = {assign[o1]}.",
+        "ثم بالاستبعاد تتعين بقية الألوان.",
+    ]
+    return Sample(
+        "logic",
+        prompt,
+        assign,
+        3,
+        {"difficulty_tag": "easy", "puzzle_type": "colors"},
+        steps,
+    )
+
+
+def _logic_two_attribute(rng: random.Random) -> Sample:
+    people = rng.sample(["ريم", "هدى", "سلمى"], 3)
+    jobs = rng.sample(["طبيبة", "معلمة", "مهندسة"], 3)
+    cities = rng.sample(["الرياض", "جدة", "الدمام"], 3)
+    assign_job = {people[i]: jobs[i] for i in range(3)}
+    assign_city = {people[i]: cities[i] for i in range(3)}
+    p0 = people[0]
+    prompt = (
+        f"ثلاث نساء: {', '.join(people)}. لكل واحدة مهنة ومدينة سكن.\n"
+        f"1. {p0} تعمل {assign_job[p0]} وتسكن في {assign_city[p0]}.\n"
+        f"2. {people[1]} ليست {assign_job[people[2]]}.\n"
+        f"3. الساكنة في {assign_city[people[1]]} تعمل {assign_job[people[1]]}.\n"
+        f"4. {people[2]} تسكن في {assign_city[people[2]]}.\n"
+        f"عيّن المهنة والمدينة لكل واحدة."
+    )
+    gt = {}
+    for p in people:
+        gt[f"{p}_مهنة"] = assign_job[p]
+        gt[f"{p}_مدينة"] = assign_city[p]
+    steps = [
+        f"من (1): {p0} محددة بالكامل.",
+        "من بقية القرائن تتعين المهنة والمدينة للباقي بلا تعارض.",
+    ]
+    return Sample(
+        "logic",
+        prompt,
+        gt,
+        4,
+        {"difficulty_tag": "hard", "puzzle_type": "two_attribute"},
         steps,
     )
 
@@ -1237,7 +1471,7 @@ def to_rlvr(uid: str, s: Sample) -> dict:
             "gt_verified": True,
             "verify_method": "programmatic",
             "num_steps_source": "programmatic",
-            "template_family": s.domain,
+            "template_family": (s.meta_extra or {}).get("template_family") or s.domain,
             "solution_steps": scrub_final_gt_from_think(
                 list(s.solution_steps or []), s.ground_truth, s.domain
             ),
@@ -1271,6 +1505,7 @@ def to_coldstart(uid: str, s: Sample) -> dict:
             "gt_verified": True,
             "verify_method": "programmatic",
             "num_steps_source": "programmatic",
+            "template_family": (s.meta_extra or {}).get("template_family") or s.domain,
             "corpus_version": "v1_frontier_regen",
             **s.meta_extra,
         },

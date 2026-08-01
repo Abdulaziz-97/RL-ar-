@@ -1,0 +1,11 @@
+mode: cold_start
+n_families: 6500
+domains: [gsm8k, math, math_comp, logic]
+traces_per_problem: 1
+seed: 1200
+work_dir: outputs/full_sft_6500
+backend: external
+external_module: backends/dspy_backend.py
+max_alternate_methods: 0
+partitions:
+  sft_train: 1.0

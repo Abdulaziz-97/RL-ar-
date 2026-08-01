@@ -8,6 +8,15 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding='utf-8')
 
+if os.environ.get("EXPERIMENTAL_QWEN_DATAGEN") != "1":
+    print(
+        "REFUSED: generate_qwen37_4k_live.py is demoted from production. "
+        "Set EXPERIMENTAL_QWEN_DATAGEN=1 only for experimental staging.",
+        file=sys.stderr,
+        flush=True,
+    )
+    raise SystemExit(2)
+
 PACK_ROOT = Path(__file__).resolve().parents[1]
 root_dir = PACK_ROOT.parent
 

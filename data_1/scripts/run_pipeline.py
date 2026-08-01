@@ -6,6 +6,7 @@ Runs the synth orchestrator with `backends/dspy_backend.py`:
   python scripts/run_pipeline.py --mode live     # live Pro/Flash generation (needs API key)
 
 Replay clears `--work-dir` first so stage artifacts cannot mix with a prior run.
+YAML `partitions` are respected (do not hardcode sft_train).
 """
 
 from __future__ import annotations
@@ -27,37 +28,52 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--mode", choices=["replay", "live"], default="replay")
     parser.add_argument("--config", type=Path, default=PACK_ROOT / "configs" / "pilot_20.yaml")
-    parser.add_argument("--work-dir", type=Path, default=PACK_ROOT / "outputs" / "run")
+    parser.add_argument("--work-dir", type=Path, default=None)
     parser.add_argument("--model", type=str, default="deepseek-v4-pro")
+    parser.add_argument("--track", choices=["auto", "sft", "rlvr"], default="auto",
+                        help="Optional partition override; default keeps YAML partitions.")
+    parser.add_argument("--budget-usd", type=float, default=None)
+    parser.add_argument("--no-resume", action="store_true")
     args = parser.parse_args()
 
     os.environ["RLVR_PACK_MODE"] = args.mode
     from rlvr_synth.orchestrator import SynthConfig, SynthOrchestrator
 
     cfg = SynthConfig.from_yaml(args.config)
-    cfg.work_dir = str(args.work_dir)
+    work_dir = args.work_dir or Path(cfg.work_dir)
+    cfg.work_dir = str(work_dir)
     cfg.backend = "external"
     cfg.external_module = str(PACK_ROOT / "backends" / "dspy_backend.py")
+    budget = float(args.budget_usd) if args.budget_usd is not None else 30.0
     cfg.external_config = {
         "mode": args.mode,
         "model": args.model,
         "gepa_path": str(PACK_ROOT / "assets" / "arabic_teacher_gepa_v2.json"),
         "replay_stages": str(PACK_ROOT / "assets" / "replay_stages"),
-        "budget_path": str(args.work_dir / "budget.json"),
-        "budget_usd": 30.0,
+        "budget_path": str(work_dir / "budget.json"),
+        "budget_usd": budget,
         "cache": True,
     }
-    cfg.partitions = {"sft_train": 1.0}
     cfg.max_alternate_methods = 0
 
-    if args.work_dir.exists() and args.mode == "replay":
-        shutil.rmtree(args.work_dir)
+    if args.track == "sft":
+        cfg.partitions = {"sft_train": 1.0}
+    elif args.track == "rlvr":
+        cfg.partitions = {"rlvr_train": 1.0}
+        cfg.traces_per_problem = 0
+    # else: keep YAML partitions verbatim
 
-    result = SynthOrchestrator(cfg).run(resume=False)
+    if work_dir.exists() and (args.mode == "replay" or args.no_resume):
+        shutil.rmtree(work_dir)
+
+    result = SynthOrchestrator(cfg).run(resume=not args.no_resume and args.mode != "replay")
+    corpora = work_dir / "release_corpora"
     out = {
         "mode": args.mode,
         "result": result,
-        "sft_train": str(Path(args.work_dir) / "release_corpora" / "sft_train.jsonl"),
+        "partitions": cfg.partitions,
+        "sft_train": str(corpora / "sft_train.jsonl"),
+        "rlvr_train": str(corpora / "rlvr_train.jsonl"),
     }
     print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0

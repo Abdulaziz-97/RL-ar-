@@ -260,12 +260,14 @@ class SynthOrchestrator:
             latent = self.backend.problem_generator.generate_family(
                 fam["domain"], fam["seed"]
             )
-            # Preserve planned family_id / partition from prior stage.
-            latent.family_id = fam["family_id"]
+            # Prefer content-derived family_id from the generator when present.
+            if not getattr(latent, "family_id", None):
+                latent.family_id = fam["family_id"]
             latent.partition = fam["partition"]
             rows.append(
                 {
                     "family_id": latent.family_id,
+                    "planned_family_id": fam["family_id"],
                     "domain": latent.domain,
                     "partition": latent.partition,
                     "answer_spec": latent.answer_spec,
@@ -383,6 +385,7 @@ class SynthOrchestrator:
                 partition=row["partition"],
                 prompt=row["prompt"],
                 answer_spec=row["answer_spec"],
+                metadata=dict(row.get("metadata") or {}),
             )
             trace = TraceCandidate(
                 problem_id=row["problem_id"],
@@ -579,7 +582,11 @@ class SynthOrchestrator:
                 "provenance": row.get("provenance")
                 or {"source": self.config.backend},
                 "licensing": {"license": "internal"},
-                "lineage": {"generator_version": "rlvr_synth"},
+                "lineage": {
+                    "generator_version": "rlvr_synth",
+                    "seed": row.get("seed") or (row.get("metadata") or {}).get("seed"),
+                    "template_family": (row.get("metadata") or {}).get("template_family"),
+                },
                 "metadata": metadata,
             }
             if part in {"sft_train", "sft_eval", "rejection_sft"}:

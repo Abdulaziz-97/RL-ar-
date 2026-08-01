@@ -1,6 +1,6 @@
 #!/bin/bash
 # Master Setup and Background Execution Script for Vast.ai GPU Instances (Saudi-LLM GRPO V4)
-# Explicit stages: preflight → data audit → SFT → SFT validate → GRPO → GRPO validate → offline-eval
+# Explicit stages: preflight → (optional data regen) → SFT → pass@8/curate → GRPO → eval
 set -euo pipefail
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -8,6 +8,7 @@ REPO_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
 RUN_ID="${RUN_ID:-v4_$(date +%Y%m%d_%H%M%S)}"
 LOG_FILE="${LOG_FILE:-/workspace/outputs/master_execution_v4_${RUN_ID}.log}"
 PIPELINE_PIDS=()
+DATAGEN_ROOT="${DATAGEN_ROOT:-$REPO_ROOT/data_1/outputs/v4_regen/${RUN_ID}}"
 
 cleanup_pipeline_pids() {
     local pid
@@ -20,7 +21,7 @@ cleanup_pipeline_pids() {
 }
 trap cleanup_pipeline_pids EXIT
 
-mkdir -p /workspace/tmp /workspace/.hf_cache /workspace/outputs "$REPO_ROOT/outputs"
+mkdir -p /workspace/tmp /workspace/.hf_cache /workspace/outputs "$REPO_ROOT/outputs" "$DATAGEN_ROOT"
 
 run_pipeline() {
     if [ -z "${_NOHUP_LAUNCHED:-}" ]; then
@@ -32,6 +33,7 @@ run_pipeline() {
     echo "Repository Root: $REPO_ROOT"
     echo "Run ID:          $RUN_ID"
     echo "Master Log File: $LOG_FILE"
+    echo "REGENERATE_DATA: ${REGENERATE_DATA:-0}"
     echo "================================================================="
 
     export HF_HOME="${HF_HOME:-/workspace/.hf_cache}"
@@ -40,14 +42,14 @@ run_pipeline() {
     mkdir -p /workspace/outputs/wandb
     export PYTORCH_CUDA_ALLOC_CONF="expandable_segments:True"
     export WANDB_MODE="${WANDB_MODE:-offline}"
-    export PYTHONPATH="$REPO_ROOT/src:$PYTHONPATH"
+    export PYTHONPATH="$REPO_ROOT/src:$REPO_ROOT/data_1/src:$REPO_ROOT/data_1/vendor:${PYTHONPATH:-}"
 
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
     if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi
     echo "[System Diagnostic] Detected $NUM_GPUS active NVIDIA GPU(s)."
 
     echo "================================================================="
-    echo "[0/7] Installing locked project dependencies (no unpinned upgrades)"
+    echo "[0/N] Installing locked project dependencies (no unpinned upgrades)"
     echo "================================================================="
     curl -LsSf https://astral.sh/uv/install.sh | sh > /dev/null 2>&1 || true
     export PATH="/root/.local/bin:/root/.cargo/bin:$PATH"
@@ -58,11 +60,9 @@ run_pipeline() {
         else
             uv pip install --system --break-system-packages -e "$REPO_ROOT[eval]"
         fi
-        # Optional probe deps (vLLM) in a separate requirements file — HF eval is default.
         if [ "${INSTALL_VLLM_PROBE:-0}" = "1" ] && [ -f "$REPO_ROOT/requirements-eval.txt" ]; then
             uv pip install --system --break-system-packages -r "$REPO_ROOT/requirements-eval.txt" || true
         fi
-        # Arabic terminal rendering helpers (optional)
         uv pip install --system --break-system-packages python-bidi arabic-reshaper || true
     else
         pip install -e "$REPO_ROOT[eval]"
@@ -73,9 +73,11 @@ run_pipeline() {
     SFT_OUT="/workspace/outputs/sft_coldstart_v4_${RUN_ID}"
     GRPO_OUT="/workspace/outputs/qwen_4b_2x5090_v4_run_${RUN_ID}"
     EVAL_OUT="/workspace/outputs/generative_eval_grpo_v4_${RUN_ID}"
+    SFT_CFG="$REPO_ROOT/data_1/configs/full_sft_6500.yaml"
+    RLVR_CFG="$REPO_ROOT/data_1/configs/full_rlvr_8000.yaml"
 
     echo "================================================================="
-    echo "[1/7] PREFLIGHT"
+    echo "[1/N] PREFLIGHT"
     echo "================================================================="
     python3 -m rlvr_pipeline.preflight \
         --config "$CONFIG_FILE" \
@@ -83,21 +85,44 @@ run_pipeline() {
         --sft-output "$SFT_OUT" \
         --grpo-output "$GRPO_OUT"
 
-    echo "================================================================="
-    echo "[2/7] DATA AUDIT (ship gate + coldstart)"
-    echo "================================================================="
-    if [ -n "${OPENROUTER_API_KEY:-}" ]; then
-        python3 "$REPO_ROOT/data_1/scripts/generate_qwen37_rlvr_live.py" || true
+    if [ "${REGENERATE_DATA:-0}" = "1" ]; then
+        echo "================================================================="
+        echo "[2a/N] REGENERATE SFT CANDIDATES (verifier-first orchestrator)"
+        echo "================================================================="
+        if [ -z "${DEEPSEEK_API_KEY:-}${OPENROUTER_API_KEY:-}" ]; then
+            echo "ERROR: REGENERATE_DATA=1 requires DEEPSEEK_API_KEY or OPENROUTER_API_KEY" >&2
+            exit 2
+        fi
+        SFT_WORK="$DATAGEN_ROOT/sft_candidates"
+        python3 "$REPO_ROOT/data_1/scripts/run_pipeline.py" \
+            --mode live \
+            --config "$SFT_CFG" \
+            --work-dir "$SFT_WORK" \
+            --track sft \
+            --model "${TEACHER_MODEL:-deepseek-v4-pro}" \
+            --budget-usd "${SFT_BUDGET_USD:-200}" \
+            --no-resume
+
+        python3 "$REPO_ROOT/data_1/scripts/select_sft_v4_release.py" \
+            --candidates "$SFT_WORK/release_corpora/sft_train.jsonl" \
+            --out "$DATAGEN_ROOT/sft_selected_4000.jsonl" \
+            --allow-missing-decontam
+
+        # Stage selected SFT for training (production promote happens after RLVR gate).
+        mkdir -p "$REPO_ROOT/data"
+        cp "$DATAGEN_ROOT/sft_selected_4000.jsonl" "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl"
     else
-        echo "OPENROUTER_API_KEY not set. Using shipped V4 datasets."
+        echo "================================================================="
+        echo "[2/N] DATA AUDIT (immutable release; no generation)"
+        echo "================================================================="
+        python3 "$REPO_ROOT/data_1/scripts/verify_master_v4_datasets_complete.py"
+        python3 -m rlvr_pipeline.cli audit-coldstart \
+            --data "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl" \
+            --fail-above 0.0
     fi
-    python3 "$REPO_ROOT/data_1/scripts/verify_master_v4_datasets_complete.py"
-    python3 -m rlvr_pipeline.cli audit-coldstart \
-        --data "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl" \
-        --fail-above 0.05
 
     echo "================================================================="
-    echo "[3/7] STAGE 1: COLD-START SFT"
+    echo "[3/N] STAGE 1: COLD-START SFT"
     echo "================================================================="
     if [ "${FORCE_FRESH:-1}" = "1" ] && [ -d "$SFT_OUT" ]; then
         echo "FORCE_FRESH=1: clearing $SFT_OUT"
@@ -112,12 +137,105 @@ run_pipeline() {
     fi
 
     echo "================================================================="
-    echo "[4/7] SFT VALIDATION / CHECKPOINT INTEGRITY"
+    echo "[4/N] SFT VALIDATION / CHECKPOINT INTEGRITY"
     echo "================================================================="
     python3 -m rlvr_pipeline.checkpoint_integrity --checkpoint "$SFT_OUT" --require-adapter-only
 
+    if [ "${REGENERATE_DATA:-0}" = "1" ]; then
+        echo "================================================================="
+        echo "[5a/N] REGENERATE RLVR CANDIDATES"
+        echo "================================================================="
+        RLVR_WORK="$DATAGEN_ROOT/rlvr_candidates"
+        # Point decontam at the freshly selected SFT release.
+        python3 - <<PY
+from pathlib import Path
+import yaml
+cfg_path = Path(r"$RLVR_CFG")
+data = yaml.safe_load(cfg_path.read_text(encoding="utf-8"))
+data["decontam_reference_paths"] = [r"$DATAGEN_ROOT/sft_selected_4000.jsonl"]
+data["work_dir"] = r"$RLVR_WORK"
+out = Path(r"$DATAGEN_ROOT/full_rlvr_8000.runtime.yaml")
+out.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+print(out)
+PY
+        python3 "$REPO_ROOT/data_1/scripts/run_pipeline.py" \
+            --mode live \
+            --config "$DATAGEN_ROOT/full_rlvr_8000.runtime.yaml" \
+            --work-dir "$RLVR_WORK" \
+            --track rlvr \
+            --model "${TEACHER_MODEL:-deepseek-v4-pro}" \
+            --budget-usd "${RLVR_BUDGET_USD:-50}" \
+            --no-resume
+
+        echo "================================================================="
+        echo "[5b/N] STRICT PASS@8 ON FRESH SFT LINEAGE"
+        echo "================================================================="
+        mkdir -p "$DATAGEN_ROOT/pass8"
+        if [ "$NUM_GPUS" -gt 1 ]; then
+            for shard in $(seq 0 $((NUM_GPUS - 1))); do
+                CUDA_VISIBLE_DEVICES="$shard" python3 "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
+                    --candidates "$RLVR_WORK/release_corpora/rlvr_train.jsonl" \
+                    --sft-checkpoint "$SFT_OUT" \
+                    --out-calibration "$DATAGEN_ROOT/pass8/cal_shard${shard}.json" \
+                    --out-candidates "$DATAGEN_ROOT/pass8/cand_shard${shard}.jsonl" \
+                    --shard-id "$shard" \
+                    --num-shards "$NUM_GPUS" \
+                    --temperature "${PASS8_TEMPERATURE:-0.7}" \
+                    --max-new-tokens "${PASS8_MAX_NEW_TOKENS:-768}" &
+            done
+            wait
+            CAND_ARGS=()
+            for shard in $(seq 0 $((NUM_GPUS - 1))); do
+                CAND_ARGS+=("$DATAGEN_ROOT/pass8/cand_shard${shard}.jsonl")
+            done
+        else
+            python3 "$REPO_ROOT/data_1/scripts/calibrate_v4_pass8.py" \
+                --candidates "$RLVR_WORK/release_corpora/rlvr_train.jsonl" \
+                --sft-checkpoint "$SFT_OUT" \
+                --out-calibration "$DATAGEN_ROOT/pass8/cal_shard0.json" \
+                --out-candidates "$DATAGEN_ROOT/pass8/cand_shard0.jsonl" \
+                --temperature "${PASS8_TEMPERATURE:-0.7}" \
+                --max-new-tokens "${PASS8_MAX_NEW_TOKENS:-768}"
+            CAND_ARGS=("$DATAGEN_ROOT/pass8/cand_shard0.jsonl")
+        fi
+
+        echo "================================================================="
+        echo "[5c/N] CURATE 4000 RLVR + DUAL SHIP GATE + ATOMIC PROMOTE"
+        echo "================================================================="
+        python3 "$REPO_ROOT/data_1/scripts/curate_v4_rlvr.py" \
+            --candidates "${CAND_ARGS[@]}" \
+            --out "$DATAGEN_ROOT/rlvr_selected_4000.jsonl"
+
+        # Export human-review packs (annotation is offline; optional auto-bypass for CI).
+        python3 "$REPO_ROOT/data_1/scripts/export_human_review_packs.py" export \
+            --corpus "$DATAGEN_ROOT/sft_selected_4000.jsonl" \
+            --out "$DATAGEN_ROOT/review_sft_100.json" \
+            --kind sft --n 100 --seed 0
+        python3 "$REPO_ROOT/data_1/scripts/export_human_review_packs.py" export \
+            --corpus "$DATAGEN_ROOT/rlvr_selected_4000.jsonl" \
+            --out "$DATAGEN_ROOT/review_rlvr_100.json" \
+            --kind rlvr --n 100 --seed 0
+
+        PROMOTE_ARGS=(
+            --sft "$DATAGEN_ROOT/sft_selected_4000.jsonl"
+            --rlvr "$DATAGEN_ROOT/rlvr_selected_4000.jsonl"
+            --staging-root "$DATAGEN_ROOT/promote"
+            --release-id "v4_${RUN_ID}"
+        )
+        if [ "${SKIP_HUMAN_REVIEW:-0}" = "1" ]; then
+            echo "WARNING: SKIP_HUMAN_REVIEW=1 — promoting without annotated review summary"
+        elif [ -n "${HUMAN_REVIEW_REPORT:-}" ]; then
+            PROMOTE_ARGS+=(--require-human-review-report "$HUMAN_REVIEW_REPORT")
+        else
+            echo "ERROR: set HUMAN_REVIEW_REPORT to a passing summarize output, or SKIP_HUMAN_REVIEW=1 for machine-only CI" >&2
+            exit 2
+        fi
+        python3 "$REPO_ROOT/data_1/scripts/promote_v4_release.py" "${PROMOTE_ARGS[@]}"
+        python3 "$REPO_ROOT/data_1/scripts/verify_master_v4_datasets_complete.py"
+    fi
+
     echo "================================================================="
-    echo "[5/7] STAGE 2: GRPO (explicit --output=$GRPO_OUT)"
+    echo "[6/N] STAGE 2: GRPO (explicit --output=$GRPO_OUT)"
     echo "================================================================="
     if [ "${FORCE_FRESH:-1}" = "1" ] && [ -d "$GRPO_OUT" ]; then
         echo "FORCE_FRESH=1: clearing $GRPO_OUT"
@@ -133,13 +251,13 @@ run_pipeline() {
     fi
 
     echo "================================================================="
-    echo "[6/7] GRPO VALIDATION / CHECKPOINT INTEGRITY"
+    echo "[7/N] GRPO VALIDATION / CHECKPOINT INTEGRITY"
     echo "================================================================="
     TRAINED_CHECKPOINT=$(ls -d "$GRPO_OUT"/checkpoint-* 2>/dev/null | sort -V | tail -n 1 || echo "$GRPO_OUT")
     python3 -m rlvr_pipeline.checkpoint_integrity --checkpoint "$TRAINED_CHECKPOINT" --require-adapter-only
 
     echo "================================================================="
-    echo "[7/7] OFFLINE EVALUATION (lineage-aware)"
+    echo "[8/N] OFFLINE EVALUATION (lineage-aware)"
     echo "================================================================="
     python3 "$REPO_ROOT/official_eval/run_araeval_generative.py" \
       --model "Qwen/Qwen3.5-4B" \

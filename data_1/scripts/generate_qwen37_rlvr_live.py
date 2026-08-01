@@ -1,9 +1,14 @@
 """
-Master V4 Data Generator — Phase 2 Live Qwen 3.7 Flash RLVR Generator.
-Enforces 100% Zero Exact Overlap, Zero 5-Gram Overlap, AND Stop-Word Filtered Jaccard Guard (< 0.65)!
+EXPERIMENTAL / NON-PRODUCTION.
 
-Generates:
-  Phase 2: 4,000 RLVR prompts → data/arabic_reasoning_rlvr_v4.jsonl
+Demoted from the V4 production path. Free-form Qwen-generated ground truth is not
+verifier-first and does not emit canonical family_id / verifier metadata.
+
+Production generation must use `data_1/scripts/run_pipeline.py` with
+`configs/full_sft_6500.yaml` / `configs/full_rlvr_8000.yaml` plus
+select/calibrate/curate/promote scripts.
+
+Set EXPERIMENTAL_QWEN_DATAGEN=1 to run this script intentionally.
 """
 
 import json
@@ -20,6 +25,16 @@ from pathlib import Path
 from datetime import datetime, timezone
 
 sys.stdout.reconfigure(encoding='utf-8')
+
+if os.environ.get("EXPERIMENTAL_QWEN_DATAGEN") != "1":
+    print(
+        "REFUSED: generate_qwen37_rlvr_live.py is demoted from production.\n"
+        "Use run_pipeline.py + calibrate_v4_pass8.py + curate_v4_rlvr.py + promote_v4_release.py.\n"
+        "Set EXPERIMENTAL_QWEN_DATAGEN=1 only for experimental staging.",
+        file=sys.stderr,
+        flush=True,
+    )
+    raise SystemExit(2)
 
 SCRIPT_DIR  = Path(__file__).resolve().parent
 PACK_ROOT   = SCRIPT_DIR.parent
