@@ -146,6 +146,21 @@ PY
         --grpo-output "$GRPO_OUT"
 
     if [ "${REGENERATE_DATA:-0}" = "1" ]; then
+        if [ "${SKIP_SFT_DATAGEN:-0}" = "1" ]; then
+            echo "================================================================="
+            echo "[2a/N] SKIP SFT TEACHER DATAGEN (using prebuilt coldstart)"
+            echo "================================================================="
+            if [ ! -f "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl" ]; then
+                echo "ERROR: SKIP_SFT_DATAGEN=1 but data/arabic_reasoning_coldstart_v4.jsonl missing" >&2
+                exit 2
+            fi
+            python3 -m rlvr_pipeline.cli audit-coldstart \
+                --data "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl" \
+                --fail-above 0.0
+            # Keep selected SFT path available for RLVR decontam / promote.
+            mkdir -p "$DATAGEN_ROOT"
+            cp "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl" "$DATAGEN_ROOT/sft_selected_4000.jsonl"
+        else
         echo "================================================================="
         echo "[2a/N] REGENERATE SFT CANDIDATES (lightning-fast parallel teacher)"
         echo "================================================================="
@@ -216,6 +231,7 @@ PY
         # Stage selected SFT for training (production promote happens after RLVR gate).
         mkdir -p "$REPO_ROOT/data"
         cp "$DATAGEN_ROOT/sft_selected_4000.jsonl" "$REPO_ROOT/data/arabic_reasoning_coldstart_v4.jsonl"
+        fi
     else
         echo "================================================================="
         echo "[2/N] DATA AUDIT (immutable release; no generation)"
