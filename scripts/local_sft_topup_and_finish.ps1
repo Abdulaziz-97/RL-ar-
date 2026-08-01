@@ -105,22 +105,46 @@ print(r'$TopCfg')
     )
     if (Test-Path $selectedRqa) { $selected = $selectedRqa }
 
-    $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v5.jsonl"
-    Copy-Item -Force $selected $dest
-    $nSft = (Get-Content $dest | Measure-Object -Line).Lines
-    Write-Log "WROTE $dest rows=$nSft"
+    # IFEval-like sidecar only (explicitly no MCQ / AraPro generation)
+    $ifevalSide = Join-Path $RepoRoot "data\sidecars\ifeval_sft_v5.jsonl"
+    if (-not (Test-Path $ifevalSide)) {
+        Write-Log "GENERATE IFEval sidecar (no MCQ)"
+        Invoke-LoggedPython -ArgumentList @(
+            (Join-Path $Data1 "scripts\generate_ifeval_sidecar_v5.py"),
+            "--n", "500", "--seed", "4400",
+            "--out", "$ifevalSide",
+            "--reference", "$selected"
+        )
+    } else {
+        Write-Log "REUSE existing IFEval sidecar $ifevalSide"
+    }
 
-    # RLVR candidates
+    $mixed = Join-Path $WorkRoot "sft_mixed_core_ifeval.jsonl"
+    Write-Log "COMPOSE mixed SFT (core + IFEval; mcq=0)"
+    Invoke-LoggedPython -ArgumentList @(
+        (Join-Path $Data1 "scripts\compose_mixed_sft_v5.py"),
+        "--core", "$selected",
+        "--ifeval", "$ifevalSide",
+        "--out", "$mixed",
+        "--seed", "42"
+    )
+
+    $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v5.jsonl"
+    Copy-Item -Force $mixed $dest
+    $nSft = (Get-Content $dest | Measure-Object -Line).Lines
+    Write-Log "WROTE $dest rows=$nSft (core+ifeval; no MCQ)"
+
+    # Core RLVR candidates only (no MCQ RLVR)
     $RlvrWork = Join-Path $WorkRoot "rlvr_candidates"
     $RlvrRuntime = Join-Path $WorkRoot "full_rlvr_8000.runtime.yaml"
-    Write-Log "FULL RLVR candidates"
+    Write-Log "FULL RLVR candidates (core only; no MCQ)"
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & python -c @"
 from pathlib import Path
 import yaml
 cfg = yaml.safe_load(Path(r'$RlvrCfg').read_text(encoding='utf-8'))
-cfg['decontam_reference_paths'] = [r'$selected']
+cfg['decontam_reference_paths'] = [r'$selected', r'$ifevalSide']
 cfg['work_dir'] = r'$RlvrWork'
 Path(r'$RlvrRuntime').write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding='utf-8')
 print(r'$RlvrRuntime')
@@ -148,12 +172,14 @@ print(r'$RlvrRuntime')
         status = "done"
         run_id = $RunId
         coldstart = $dest
+        ifeval_sidecar = $ifevalSide
         rlvr_candidates = $rlvrDest
         rows_sft = $nSft
         rows_rlvr_candidates = $nRlvr
+        mcq_generated = $false
         log = $LogFile
         finished_at = (Get-Date).ToString("o")
-        note = "topup+finish; Vast: SFT then GPU pass@8 then GRPO"
+        note = "topup+finish core+IFEval SFT; core RLVR only; Vast: SFT then GPU pass@8 then GRPO"
     } | ConvertTo-Json
     Set-Content -Path $DoneMarker -Value $payload -Encoding UTF8
     Set-Content -Path (Join-Path $WorkRoot "LOCAL_SFT_DATAGEN_DONE.json") -Value $payload -Encoding UTF8

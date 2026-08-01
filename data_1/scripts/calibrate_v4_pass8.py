@@ -15,6 +15,7 @@ ROOT = PACK_ROOT.parent
 sys.path[:0] = [str(PACK_ROOT), str(PACK_ROOT / "src"), str(PACK_ROOT / "vendor"), str(ROOT / "src")]
 
 from rlvr_contracts.verifiers import verify_answer
+from rlvr_pipeline.config import DEFAULT_SYSTEM_PROMPT
 from rlvr_synth.calibration.pass_at_n import (
     assign_band,
     calibrate_pass_at_n,
@@ -129,7 +130,7 @@ def main() -> int:
     parser.add_argument("--out-candidates", type=Path, required=True,
                         help="Candidates stamped with empirical_difficulty")
     parser.add_argument("--sft-checkpoint", type=Path, default=None)
-    parser.add_argument("--system-prompt", type=str, default="")
+    parser.add_argument("--system-prompt", type=str, default=DEFAULT_SYSTEM_PROMPT)
     parser.add_argument("--max-new-tokens", type=int, default=768)
     parser.add_argument("--temperature", type=float, default=0.7)
     parser.add_argument("--top-p", type=float, default=0.95)

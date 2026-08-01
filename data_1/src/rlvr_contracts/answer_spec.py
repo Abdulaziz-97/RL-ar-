@@ -1,6 +1,7 @@
 """Discriminated answer_spec canonicalization.
 
-Supported v1 types: integer, rational, decimal_exact, decimal_approx, logic_json.
+Supported types: integer, rational, decimal_exact, decimal_approx, logic_json,
+mcq_letter, constraint_set.
 Symbolic answers are explicitly rejected at every boundary.
 """
 
@@ -15,7 +16,15 @@ from fractions import Fraction
 from typing import Any, Mapping, Optional
 
 SUPPORTED_ANSWER_TYPES = frozenset(
-    {"integer", "rational", "decimal_exact", "decimal_approx", "logic_json"}
+    {
+        "integer",
+        "rational",
+        "decimal_exact",
+        "decimal_approx",
+        "logic_json",
+        "mcq_letter",
+        "constraint_set",
+    }
 )
 REJECTED_ANSWER_TYPES = frozenset({"symbolic", "sympy", "expression"})
 
@@ -23,6 +32,22 @@ _ARABIC_DIGITS = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
 _FRAC_RE = re.compile(r"^\s*(-?\d+)\s*/\s*(-?\d+)\s*$")
 _INT_RE = re.compile(r"^\s*-?\d+\s*$")
 _DECIMAL_RE = re.compile(r"^\s*-?\d+(?:\.\d+)?\s*$")
+_MCQ_LETTER_RE = re.compile(r"^\s*([A-Da-d]|[أاببججدد])\s*[).:\-،,]?\s*$")
+_MCQ_LETTER_MAP = {
+    "أ": "A",
+    "ا": "A",
+    "ب": "B",
+    "ج": "C",
+    "د": "D",
+    "a": "A",
+    "b": "B",
+    "c": "C",
+    "d": "D",
+    "A": "A",
+    "B": "B",
+    "C": "C",
+    "D": "D",
+}
 
 
 class AnswerSpecError(ValueError):
@@ -61,8 +86,8 @@ def reject_symbolic(type_name: str | None) -> None:
     key = str(type_name).strip().lower()
     if key in REJECTED_ANSWER_TYPES or key.startswith("symbolic"):
         raise AnswerSpecError(
-            f"answer type '{type_name}' is rejected in v1; "
-            "use integer|rational|decimal_exact|decimal_approx|logic_json"
+            f"answer type '{type_name}' is rejected; "
+            "use integer|rational|decimal_exact|decimal_approx|logic_json|mcq_letter|constraint_set"
         )
 
 
@@ -166,6 +191,70 @@ def canonicalize_logic_json(value: Any) -> str:
     raise AnswerSpecError(f"invalid logic_json: {type(value).__name__}")
 
 
+def canonicalize_mcq_letter(value: Any) -> str:
+    text = str(value).strip()
+    # Accept "C" / "ج" / "الخيار C" / "الإجابة: B"
+    m = re.search(r"([A-Da-d]|[أاببججدد])\b", text)
+    if not m:
+        m = _MCQ_LETTER_RE.match(text)
+        if not m:
+            raise AnswerSpecError(f"invalid mcq_letter: {value!r}")
+        token = m.group(1)
+    else:
+        token = m.group(1)
+    letter = _MCQ_LETTER_MAP.get(token, token.upper())
+    if letter not in {"A", "B", "C", "D"}:
+        raise AnswerSpecError(f"mcq_letter out of range: {value!r}")
+    return letter
+
+
+def canonicalize_constraint_set(value: Any) -> str:
+    """Canonicalize a constraint_set answer_spec payload.
+
+    Expected structured form::
+        {"constraints": [{"id": "...", "category": "...", "params": {...}}, ...],
+         "pass_all": true}
+    ``canonical`` is a stable JSON digest used for equality checks of the spec
+    itself; verification of completions uses the structured constraints list.
+    """
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise AnswerSpecError(
+                f"constraint_set must be valid JSON: {value!r}"
+            ) from exc
+    elif isinstance(value, dict):
+        parsed = value
+    else:
+        raise AnswerSpecError(f"invalid constraint_set: {type(value).__name__}")
+    constraints = parsed.get("constraints")
+    if not isinstance(constraints, list) or not constraints:
+        raise AnswerSpecError("constraint_set.constraints must be a non-empty list")
+    normalized = []
+    for item in constraints:
+        if not isinstance(item, dict):
+            raise AnswerSpecError("each constraint must be an object")
+        cid = str(item.get("id") or item.get("category") or "").strip()
+        category = str(item.get("category") or "").strip()
+        if not cid or not category:
+            raise AnswerSpecError("constraint id and category are required")
+        normalized.append(
+            {
+                "id": cid,
+                "category": category,
+                "params": dict(item.get("params") or {}),
+            }
+        )
+    normalized.sort(key=lambda c: c["id"])
+    payload = {
+        "constraints": normalized,
+        "pass_all": bool(parsed.get("pass_all", True)),
+    }
+    return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
 def canonicalize_answer(type_name: str, value: Any, *, tolerance: float | None = None) -> str:
     reject_symbolic(type_name)
     key = str(type_name).strip().lower()
@@ -181,6 +270,10 @@ def canonicalize_answer(type_name: str, value: Any, *, tolerance: float | None =
         return canonicalize_decimal_approx(value, tolerance=tolerance)
     if key == "logic_json":
         return canonicalize_logic_json(value)
+    if key == "mcq_letter":
+        return canonicalize_mcq_letter(value)
+    if key == "constraint_set":
+        return canonicalize_constraint_set(value)
     raise AnswerSpecError(f"unsupported answer type: {type_name!r}")
 
 
@@ -229,6 +322,8 @@ def parse_answer_spec(raw: Mapping[str, Any] | AnswerSpec | None) -> AnswerSpec:
     canonical = canonicalize_answer(key, canonical_in, tolerance=tolerance)
     structured = raw.get("ground_truth_structured")
     if structured is None and key == "logic_json":
+        structured = json.loads(canonical)
+    elif structured is None and key == "constraint_set":
         structured = json.loads(canonical)
     elif structured is None and key == "rational":
         num, den = canonical.split("/", 1)

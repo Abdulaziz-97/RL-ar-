@@ -1,0 +1,8 @@
+{
+  "rows": 500,
+  "seed": 4400,
+  "domain": "ifeval_multiconstraint",
+  "answer_type": "constraint_set",
+  "mcq_generated": false,
+  "out": "C:\\Users\\Azooo\\arabic-reasoning-rlvr-sota\\RL-ar-\\data\\sidecars\\ifeval_sft_v5.jsonl"
+}

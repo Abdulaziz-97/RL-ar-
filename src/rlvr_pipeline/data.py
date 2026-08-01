@@ -31,6 +31,7 @@ DOMAIN_MAP: dict[str, str] = {
     "math": "math",
     "math_comp": "math",
     "logic": "logic",
+    "ifeval_multiconstraint": "instruction",
 }
 
 
@@ -409,17 +410,28 @@ def load_rlvr_dataset(
 
 
 def load_cold_start_sft_dataset(
-    path: str | Path,
+    path: str | Path | list[str | Path],
     system_prompt: str | None = None,
+    *,
+    stratify_by_domain: bool = True,
+    seed: int = 42,
 ) -> Dataset:
-    """Load cold-start CoT data for SFT warm-up before GRPO."""
-    records = _read_jsonl(path)
-    all_messages = []
+    """Load cold-start CoT data for SFT warm-up before GRPO.
+
+    ``path`` may be a single JSONL or a list of corpora (core + sidecars).
+    When ``stratify_by_domain`` is true, rows are shuffled with a round-robin
+    mix across domains so small sidecars are not clumped at the end.
+    """
+    paths = path if isinstance(path, list) else [path]
+    records: list[dict[str, Any]] = []
+    for p in paths:
+        records.extend(_read_jsonl(p))
+
+    prepared: list[tuple[str, list[dict[str, str]]]] = []
     for raw in records:
         response = raw.get("response") or raw.get("trace") or ""
         if not response:
             continue
-        # Reject symbolic at SFT ingest boundary when answer_spec present.
         try:
             if _is_production_record(raw):
                 _extract_answer_spec(raw)
@@ -431,12 +443,33 @@ def load_cold_start_sft_dataset(
         prompt = raw.get("prompt") or raw.get("problem_text") or ""
         if not isinstance(prompt, str) or not prompt.strip():
             continue
-        messages = []
+        messages: list[dict[str, str]] = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
         messages.append({"role": "assistant", "content": response})
-        all_messages.append(messages)
+        domain = str(raw.get("domain") or "math")
+        prepared.append((domain, messages))
+
+    if stratify_by_domain and prepared:
+        rng = np.random.default_rng(seed)
+        by_domain: dict[str, list[list[dict[str, str]]]] = {}
+        for domain, messages in prepared:
+            by_domain.setdefault(domain, []).append(messages)
+        for domain in by_domain:
+            rng.shuffle(by_domain[domain])
+        # Round-robin across domains proportional to remaining counts.
+        mixed: list[list[dict[str, str]]] = []
+        domains = sorted(by_domain.keys())
+        while any(by_domain[d] for d in domains):
+            rng.shuffle(domains)
+            for domain in domains:
+                bucket = by_domain[domain]
+                if bucket:
+                    mixed.append(bucket.pop())
+        all_messages = mixed
+    else:
+        all_messages = [m for _, m in prepared]
 
     return Dataset.from_dict({"messages": all_messages})
 

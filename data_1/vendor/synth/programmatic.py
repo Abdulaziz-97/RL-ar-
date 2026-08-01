@@ -1553,29 +1553,208 @@ def gen_arapro_knowledge(rng: random.Random) -> Sample:
     return Sample("arapro_knowledge", prompt, correct_letter, 3, {"topic": domain_tag, "code": code}, steps)
 
 
-def gen_ifeval_multiconstraint(rng: random.Random) -> Sample:
-    topics = ["الذكاء الاصطناعي", "الطاقة المتجددة", "التخطيط المالي", "الصحة النفسية", "الرؤية الاقتصادية", "الأمن السيبراني", "الابتكار الرقمي", "التعليم الذكي"]
-    topic = rng.choice(topics)
-    min_w = rng.randint(80, 150)
-    max_w = min_w + rng.randint(40, 70)
-    bullets = rng.randint(3, 5)
-    forbidden = rng.choice(["حاسوب", "مشكلة", "صعب", "تراجع", "فشل", "بطء", "مخاطر", "خسارة"])
-    code = rng.randint(1000, 9999)
-    
-    prompt = (
-        f"اكتب مقالاً توجيهياً عن '{topic}' [مرجع-{code}] مع الالتزام التام بالشروط التالية:\n"
-        f"1. أن يتراوح طول النص بين {min_w} و{max_w} كلمة.\n"
-        f"2. يتضمن قائمة نقطية تحتوي على بالضبط {bullets} نقاط.\n"
-        f"3. عدم استخدام كلمة '{forbidden}' نهائياً في النص.\n"
-        f"4. إنهاء النص بملاحظة تبدأ بـ 'ملاحظة:'."
-    )
-    steps = [
-        f"صياغة مقال عن {topic} مع ضبط عدد الكلمات بين {min_w} و{max_w} كلمة.",
-        f"إدراج {bullets} نقاط رئيسية في قائمة نقطية واضحة.",
-        f"تجنب استخدام كلمة '{forbidden}' تماماً أثناء الكتابة.",
-        f"إضافة الملاحظة الختامية بالشكل المطلوب."
+def _ifeval_compliant_body(
+    *,
+    topic: str,
+    min_w: int,
+    max_w: int,
+    bullets: int,
+    forbidden: str,
+    include_title: bool,
+    include_quote: bool,
+) -> str:
+    """Deterministic Arabic body that satisfies the IFEval-like constraints."""
+    safe_topic = topic if forbidden not in topic else "الموضوع المحدد"
+    openers = [
+        f"يعد {safe_topic} من أولويات التنمية الحديثة في المؤسسات.",
+        f"يتطلب {safe_topic} تخطيطاً عملياً وواضحاً للنتائج.",
+        f"يمكن تعزيز {safe_topic} عبر سياسات قصيرة المدى قابلة للقياس.",
     ]
-    return Sample("ifeval_multiconstraint", prompt, "التزام تام بالشروط", 4, {"topic": topic, "forbidden": forbidden, "bullets": bullets, "code": code}, steps)
+    bullet_templates = [
+        "تحديد أهداف قابلة للقياس خلال ربع سنوي واحد.",
+        "تخصيص موارد بشرية وتقنية مناسبة للتنفيذ.",
+        "متابعة المؤشرات أسبوعياً وتصحيح الانحرافات مبكراً.",
+        "توثيق الدروس المستفادة ومشاركتها مع الفرق المعنية.",
+        "مراجعة العوامل التشغيلية قبل توسيع النطاق.",
+        "تحسين جودة التواصل بين الإدارات ذات العلاقة.",
+    ]
+    chosen = list(bullet_templates[:bullets])
+    while len(chosen) < bullets:
+        chosen.append(f"خطوة عملية إضافية رقم {len(chosen) + 1} لدعم {safe_topic}.")
+
+    lines: list[str] = []
+    if include_title:
+        lines.append(f"<<دليل موجز حول {safe_topic}>>")
+        lines.append("")
+    lines.append(" ".join(openers))
+    lines.append("")
+    lines.append("فيما يلي أبرز الإجراءات المقترحة:")
+    lines.append("")
+    lines.extend(f"- {b}" for b in chosen)
+    lines.append("")
+    lines.append(
+        "ويجب تنفيذ هذه الإجراءات بصورة تدريجية مع مراجعة مستمرة للجودة والنتائج "
+        "مع الحفاظ على التنسيق بين الفرق المعنية وضمان الاستمرارية في التنفيذ اليومي."
+    )
+    filler = (
+        "كما ينبغي التركيز على الشفافية والمتابعة الدقيقة لضمان وضوح المسؤوليات "
+        "وتوزيع المهام بصورة عادلة ومستدامة عبر الوحدات المختلفة."
+    )
+    body = "\n".join(lines)
+    note = "ملاحظة: يرجى الالتزام الكامل بالشروط المذكورة في الطلب."
+
+    def _count(text: str) -> int:
+        return len(re.findall(r"[\w\u0600-\u06ff]+", text, flags=re.UNICODE))
+
+    # Grow body until min_w without breaking bullet lines or the final note.
+    while _count(body + "\n" + note) < min_w:
+        body = body.rstrip() + " " + filler
+
+    candidate = body.rstrip() + "\n" + note
+    # If somehow over max, trim trailing filler sentences before the note.
+    if _count(candidate) > max_w:
+        words = re.findall(r"[\w\u0600-\u06ff]+|[^\w\u0600-\u06ff]+", body, flags=re.UNICODE)
+        # Keep structure: rebuild from lines and drop last prose tokens.
+        prose = "\n".join(lines)
+        toks = prose.split()
+        note_words = note.split()
+        budget = max(min_w - len(note_words), 1)
+        budget = min(budget, max_w - len(note_words))
+        prose_trim = " ".join(toks[:budget])
+        # Restore newlines for bullets roughly.
+        for b in chosen:
+            marker = f"- {b}"
+            prose_trim = prose_trim.replace(marker.replace(" ", " "), marker)
+        # Safer: rebuild from original lines but shorten the last paragraph only.
+        kept = list(lines)
+        while kept and _count("\n".join(kept) + "\n" + note) > max_w:
+            last = kept[-1]
+            if last.startswith("-") or last.startswith("<<") or not last.strip():
+                break
+            parts = last.split()
+            if len(parts) <= 8:
+                break
+            kept[-1] = " ".join(parts[:-5])
+        candidate = "\n".join(kept).rstrip() + "\n" + note
+
+    if include_quote:
+        candidate = f"«{candidate}»"
+    if forbidden and forbidden in candidate:
+        candidate = candidate.replace(forbidden, "عنصر")
+    return candidate
+
+
+def gen_ifeval_multiconstraint(rng: random.Random) -> Sample:
+    topics = [
+        "الذكاء الاصطناعي",
+        "الطاقة المتجددة",
+        "التخطيط المالي",
+        "الصحة النفسية",
+        "الرؤية الاقتصادية",
+        "الأمن السيبراني",
+        "الابتكار الرقمي",
+        "التعليم الذكي",
+        "إدارة المشاريع",
+        "التحول المؤسسي",
+        "جودة الخدمات",
+        "سلاسل الإمداد",
+        "حوكمة البيانات",
+        "السلامة المهنية",
+        "التجارة الإلكترونية",
+        "التنمية المحلية",
+    ]
+    topic = rng.choice(topics)
+    min_w = rng.randint(70, 130)
+    max_w = min_w + rng.randint(35, 80)
+    bullets = rng.randint(3, 6)
+    forbidden = rng.choice(
+        ["حاسوب", "مشكلة", "صعب", "تراجع", "فشل", "بطء", "مخاطر", "خسارة", "أزمة", "انهيار"]
+    )
+    code = rng.randint(1000, 99999)
+    include_title = rng.random() < 0.45
+    include_quote = rng.random() < 0.25
+    audience = rng.choice(["المدراء", "الفرق التنفيذية", "المتخصصين", "صناع القرار"])
+    tone = rng.choice(["توجيهي موجز", "تطبيقي", "تشغيلي", "تحليلي مختصر"])
+
+    constraints: list[dict[str, Any]] = [
+        {
+            "id": "c_words",
+            "category": "word_count_range",
+            "params": {"min": min_w, "max": max_w},
+        },
+        {
+            "id": "c_bullets",
+            "category": "exact_bullets",
+            "params": {"count": bullets},
+        },
+        {
+            "id": "c_forbidden",
+            "category": "forbidden_substring",
+            "params": {"text": forbidden},
+        },
+        {
+            "id": "c_postscript",
+            "category": "endswith_line_prefix",
+            "params": {"prefix": "ملاحظة:"},
+        },
+    ]
+    extra_lines: list[str] = []
+    if include_title:
+        constraints.append({"id": "c_title", "category": "title", "params": {}})
+        extra_lines.append("5. تضمين عنوان داخل علامتي << >>.")
+    if include_quote:
+        constraints.append({"id": "c_quote", "category": "quotation", "params": {}})
+        extra_lines.append("6. إحاطة النص الكامل بعلامتي اقتباس عربيتين « ».")
+
+    prompt_lines = [
+        f"المطلوب ({tone}) لجمهور {audience} حول '{topic}' [مرجع-{code}]:",
+        "اكتب نصاً يلتزم بالشروط التالية دون أي استثناء:",
+        f"1. أن يتراوح طول النص بين {min_w} و{max_w} كلمة.",
+        f"2. يتضمن قائمة نقطية تحتوي على بالضبط {bullets} نقاط.",
+        f"3. عدم استخدام كلمة '{forbidden}' نهائياً في النص.",
+        "4. إنهاء النص بملاحظة تبدأ بـ 'ملاحظة:'.",
+    ]
+    prompt_lines.extend(extra_lines)
+    prompt = "\n".join(prompt_lines)
+
+    body = _ifeval_compliant_body(
+        topic=topic,
+        min_w=min_w,
+        max_w=max_w,
+        bullets=bullets,
+        forbidden=forbidden,
+        include_title=include_title,
+        include_quote=include_quote,
+    )
+    constraint_payload = {"constraints": constraints, "pass_all": True}
+    steps = [
+        f"صياغة مقال عن {topic} ضمن نطاق الكلمات المطلوب.",
+        f"إدراج {bullets} نقاط رئيسية في قائمة نقطية.",
+        f"تجنب كلمة '{forbidden}' وإضافة الملاحظة الختامية.",
+    ]
+    return Sample(
+        "ifeval_multiconstraint",
+        prompt,
+        constraint_payload,
+        len(constraints),
+        {
+            "topic": topic,
+            "forbidden": forbidden,
+            "bullets": bullets,
+            "code": code,
+            "min_words": min_w,
+            "max_words": max_w,
+            "audience": audience,
+            "tone": tone,
+            "teacher_body": body,
+            "answer_spec": {
+                "type": "constraint_set",
+                "canonical": constraint_payload,
+                "ground_truth_structured": constraint_payload,
+            },
+        },
+        steps,
+    )
 
 
 def gen_aratrust_truth(rng: random.Random) -> Sample:
