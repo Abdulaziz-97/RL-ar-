@@ -226,6 +226,8 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         new_state_dict = {}
         for k, v in state_dict.items():
             new_k = k.replace("language_model.", "").replace("model.model.", "model.")
+            if "linear_attn" in new_k or "visual" in new_k:
+                continue  # Skip hybrid Qwen3.5 linear_attn/vision weights not in standard Qwen2 text model
             new_state_dict[new_k] = v.clone()
 
         os.makedirs(merged_dir, exist_ok=True)
