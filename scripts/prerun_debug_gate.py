@@ -260,6 +260,8 @@ def main() -> int:
         "has_teacher_workers": "TEACHER_WORKERS" in vast and "--workers" in vast,
         "has_datagen_canary": "DATAGEN_CANARY" in vast,
         "default_teacher_pro": "deepseek-v4-pro" in vast,
+        "has_multi_trace_resume": "DATAGEN_RESUME_MULTI_TRACE" in vast,
+        "has_verify_workers": "VERIFY_WORKERS" in vast,
     }
     _log("E", "prerun:orchestration", "shell/orchestrator contracts", e_data)
     if e_data["has_pkill_python"]:
@@ -280,6 +282,10 @@ def main() -> int:
         failures.append("H-E vastai missing DATAGEN_CANARY")
     if not e_data["default_teacher_pro"]:
         failures.append("H-E vastai not defaulting DeepSeek V4 Pro teacher")
+    if not e_data["has_multi_trace_resume"]:
+        failures.append("H-E vastai missing DATAGEN_RESUME_MULTI_TRACE")
+    if not e_data["has_verify_workers"]:
+        failures.append("H-E vastai missing VERIFY_WORKERS")
 
     # ── H-F: preflight module / integrity import ─────────────────────────
     try:

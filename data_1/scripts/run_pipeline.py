@@ -53,7 +53,7 @@ def main() -> int:
     budget = float(args.budget_usd) if args.budget_usd is not None else 30.0
     workers = args.workers
     if workers is None:
-        workers = int(os.environ.get("TEACHER_WORKERS", "32" if args.track == "sft" else "1"))
+        workers = int(os.environ.get("TEACHER_WORKERS", "96" if args.track == "sft" else "1"))
     # RLVR is prompt-only; keep workers=1 to avoid pointless teacher spin-up fanout.
     if args.track == "rlvr":
         workers = 1

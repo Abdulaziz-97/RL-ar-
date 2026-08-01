@@ -44,16 +44,18 @@ run_pipeline() {
     export WANDB_MODE="${WANDB_MODE:-offline}"
     export PYTHONPATH="$REPO_ROOT/src:$REPO_ROOT/data_1/src:$REPO_ROOT/data_1/vendor:${PYTHONPATH:-}"
 
-    # Frontier-lab datagen defaults (A/B winner: DeepSeek V4 Pro; high fan-out).
+    # Frontier-lab datagen defaults (A/B winner: DeepSeek V4 Pro; max safe fan-out).
     export TEACHER_MODEL="${TEACHER_MODEL:-deepseek-v4-pro}"
-    export TEACHER_WORKERS="${TEACHER_WORKERS:-48}"
+    export TEACHER_WORKERS="${TEACHER_WORKERS:-96}"
     export TEACHER_RETRIES="${TEACHER_RETRIES:-4}"
+    export VERIFY_WORKERS="${VERIFY_WORKERS:-32}"
+    export DATAGEN_RESUME_MULTI_TRACE="${DATAGEN_RESUME_MULTI_TRACE:-1}"
     export SFT_BUDGET_USD="${SFT_BUDGET_USD:-200}"
     export RLVR_BUDGET_USD="${RLVR_BUDGET_USD:-50}"
     if [ -n "${OPENROUTER_API_KEY:-}" ] && [ -z "${DEEPSEEK_API_KEY:-}" ]; then
         export USE_OPENROUTER="${USE_OPENROUTER:-1}"
     fi
-    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0}"
+    echo "TEACHER_MODEL=${TEACHER_MODEL} TEACHER_WORKERS=${TEACHER_WORKERS} VERIFY_WORKERS=${VERIFY_WORKERS} USE_OPENROUTER=${USE_OPENROUTER:-0}"
 
     NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l || echo 1)
     if [ "$NUM_GPUS" -lt 1 ]; then NUM_GPUS=1; fi
@@ -134,6 +136,14 @@ PY
             echo "Canary OK: ${CANARY_N} SFT candidates"
         fi
         SFT_WORK="$DATAGEN_ROOT/sft_candidates"
+        # After canary, allow mid-SFT resume (per-problem partial) unless DATAGEN_FRESH=1.
+        SFT_RESUME_FLAG=()
+        if [ "${DATAGEN_FRESH:-0}" = "1" ]; then
+            SFT_RESUME_FLAG=(--no-resume)
+            echo "DATAGEN_FRESH=1: wiping SFT work dir"
+        else
+            echo "SFT resume enabled (DATAGEN_RESUME_MULTI_TRACE=${DATAGEN_RESUME_MULTI_TRACE})"
+        fi
         python3 "$REPO_ROOT/data_1/scripts/run_pipeline.py" \
             --mode live \
             --config "$SFT_CFG" \
@@ -142,7 +152,7 @@ PY
             --model "$TEACHER_MODEL" \
             --workers "$TEACHER_WORKERS" \
             --budget-usd "$SFT_BUDGET_USD" \
-            --no-resume
+            "${SFT_RESUME_FLAG[@]}"
 
         python3 "$REPO_ROOT/data_1/scripts/select_sft_v4_release.py" \
             --candidates "$SFT_WORK/release_corpora/sft_train.jsonl" \

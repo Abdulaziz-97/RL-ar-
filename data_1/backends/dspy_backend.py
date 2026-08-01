@@ -298,7 +298,7 @@ class LiveTraceTeacher:
                         break
                     import time
 
-                    time.sleep(min(2 ** attempt, 20) + (0.05 * (seed % 17)))
+                    time.sleep(min(2 ** attempt, 8) + (0.05 * (seed % 17)))
             if last_err is not None and pred is None:
                 # Soft-fail: empty response is quarantined by later gates.
                 print(

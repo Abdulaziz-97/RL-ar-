@@ -65,6 +65,12 @@ def _make_hf_generate_fn(
     temperature: float,
     top_p: float,
 ):
+    """Return (generate_n_fn, checkpoint_hash, tokenizer_id).
+
+    ``generate_n_fn(prompt, seeds)`` draws len(seeds) samples in one
+    ``num_return_sequences`` forward (same N/temp/top_p/max tokens). Parent RNG
+    seed is ``seeds[0]`` so re-runs are reproducible without 8 serial generates.
+    """
     from rlvr_pipeline.lineage import load_lineage_model, read_lineage
     import torch
 
@@ -84,8 +90,12 @@ def _make_hf_generate_fn(
         sft_checkpoint / "adapter_config.json"
     ).exists() else _file_hash(sft_checkpoint)
 
-    def _gen(prompt: str, seed: int) -> str:
-        torch.manual_seed(int(seed))
+    def _gen_n(prompt: str, seeds: list[int]) -> list[str]:
+        if not seeds:
+            return []
+        torch.manual_seed(int(seeds[0]))
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(int(seeds[0]))
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
@@ -101,11 +111,15 @@ def _make_hf_generate_fn(
                 temperature=float(temperature),
                 top_p=float(top_p),
                 max_new_tokens=int(max_new_tokens),
+                num_return_sequences=len(seeds),
             )
-        gen = out[0][inputs["input_ids"].shape[-1] :]
-        return tokenizer.decode(gen, skip_special_tokens=True)
+        prompt_len = inputs["input_ids"].shape[-1]
+        return [
+            tokenizer.decode(seq[prompt_len:], skip_special_tokens=True)
+            for seq in out
+        ]
 
-    return _gen, ckpt_hash, getattr(tokenizer, "name_or_path", "")
+    return _gen_n, ckpt_hash, getattr(tokenizer, "name_or_path", "")
 
 
 def main() -> int:
@@ -139,22 +153,25 @@ def main() -> int:
         from rlvr_synth.calibration.pass_at_n import stub_generate_fn_factory
 
         generate_fn = stub_generate_fn_factory()
+        generate_n_fn = None
         checkpoint_hash = "stub"
         tokenizer_id = "stub"
     else:
         if args.sft_checkpoint is None:
             raise SystemExit("--sft-checkpoint is required unless --stub")
-        generate_fn, checkpoint_hash, tokenizer_id = _make_hf_generate_fn(
+        generate_n_fn, checkpoint_hash, tokenizer_id = _make_hf_generate_fn(
             sft_checkpoint=args.sft_checkpoint,
             system_prompt=system_prompt,
             max_new_tokens=args.max_new_tokens,
             temperature=args.temperature,
             top_p=args.top_p,
         )
+        generate_fn = None
 
     results = calibrate_pass_at_n(
         shard_rows,
         generate_fn=generate_fn,
+        generate_n_fn=generate_n_fn,
         verify_fn=_make_verify_fn(),
         n=args.n,
         base_seed=args.base_seed,

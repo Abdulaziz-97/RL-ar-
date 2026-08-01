@@ -287,10 +287,12 @@ def parse_gt(gt: Any) -> Any:
 class BudgetState:
     """Thread-safe USD spend tracker for DSPy + Flash calls."""
 
-    def __init__(self, path: Path, budget_usd: float):
+    def __init__(self, path: Path, budget_usd: float, *, flush_every: int = 25):
         self.path = path
         self.budget_usd = budget_usd
         self._lock = threading.Lock()
+        self._dirty = 0
+        self._flush_every = max(1, int(flush_every))
         self.data = self._load()
 
     def _load(self) -> dict:
@@ -314,6 +316,7 @@ class BudgetState:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.data["budget_usd"] = self.budget_usd
         self.path.write_text(json.dumps(self.data, indent=2), encoding="utf-8")
+        self._dirty = 0
 
     def ok(self, soft_reserve: float = 0.30) -> bool:
         return float(self.data.get("spent_usd", 0.0)) < self.budget_usd - soft_reserve
@@ -329,7 +332,15 @@ class BudgetState:
             self.data["tokens_in"] = int(self.data.get("tokens_in", 0)) + tin
             self.data["tokens_out"] = int(self.data.get("tokens_out", 0)) + tout
             self.data["calls"] = int(self.data.get("calls", 0)) + 1
-            self.save()
+            self._dirty += 1
+            # Buffer disk writes under high teacher fan-out (flush periodically).
+            if self._dirty >= self._flush_every:
+                self.save()
+
+    def flush(self) -> None:
+        with self._lock:
+            if self._dirty:
+                self.save()
 
 
 class BudgetCallback(BaseCallback):
@@ -412,6 +423,10 @@ def make_deepseek_lm(
     cache: bool = True,
 ) -> dspy.LM:
     dspy_model, api_key, api_base = _resolve_lm_endpoint(model)
+    # GPT-5 family (Luna/Terra/Sol via OpenRouter) only accepts temperature=1.
+    raw_model = str(model or "").lower()
+    if "gpt-5" in raw_model or "luna" in raw_model or "terra" in raw_model or "sol" in raw_model:
+        temperature = 1.0
     callbacks = [BudgetCallback(budget, model_hint=model)] if budget is not None else None
     return dspy.LM(
         model=dspy_model,

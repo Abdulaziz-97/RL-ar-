@@ -122,6 +122,8 @@ def decontaminate_records(records: list[dict[str, Any]], *, reference_texts: lis
     lsh = LSHIndex()
     ref_texts = reference_texts or []
     ref_hashes = {exact_hash(t) for t in ref_texts}
+    # Precompute reference n-grams once (avoids O(|refs|) rebuild per candidate).
+    ref_grams = [char_ngrams(t) for t in ref_texts]
     ref_sketches = [mh.sketch(t) for t in ref_texts]
     for i, sk in enumerate(ref_sketches):
         lsh.add(f'ref:{i}', sk)
@@ -145,8 +147,8 @@ def decontaminate_records(records: list[dict[str, Any]], *, reference_texts: lis
         if h not in seen_hashes:
             seen_hashes[h] = pid or fid or str(idx)
         grams = char_ngrams(text)
-        for ref in ref_texts:
-            max_jac = max(max_jac, jaccard(grams, char_ngrams(ref)))
+        for rg in ref_grams:
+            max_jac = max(max_jac, jaccard(grams, rg))
         if max_jac >= jaccard_reject:
             status = 'reject'
             reasons.append(f'jaccard>={jaccard_reject}')

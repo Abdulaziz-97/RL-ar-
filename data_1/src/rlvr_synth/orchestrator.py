@@ -175,9 +175,18 @@ class SynthOrchestrator:
         )
 
     def _config_fingerprint(self) -> str:
-        payload = json.dumps(
-            asdict(self.config), ensure_ascii=False, sort_keys=True, default=str
-        )
+        # Exclude throughput/path knobs so raising TEACHER_WORKERS mid-run can resume.
+        payload_obj = asdict(self.config)
+        ext = dict(payload_obj.get("external_config") or {})
+        for volatile in (
+            "teacher_workers",
+            "budget_path",
+            "teacher_retries",
+            "cache",
+        ):
+            ext.pop(volatile, None)
+        payload_obj["external_config"] = ext
+        payload = json.dumps(payload_obj, ensure_ascii=False, sort_keys=True, default=str)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _reset_managed_outputs(self) -> None:
@@ -369,10 +378,24 @@ class SynthOrchestrator:
 
     def stage_multi_trace(self) -> None:
         problems = _read_jsonl(self.stages_dir / "arabic_render.jsonl")
-        out: list[dict[str, Any]] = []
-        # Clear candidate archive for this run stage (resume-safe rewrite).
-        if self.candidates_path.exists():
+        partial_path = self.stages_dir / "multi_trace.partial.jsonl"
+        resume_teacher = os.environ.get("DATAGEN_RESUME_MULTI_TRACE", "1") == "1"
+
+        # Load prior per-problem progress (crash-safe); never skip gates later.
+        done_by_pid: dict[str, list[dict[str, Any]]] = {}
+        if resume_teacher and partial_path.exists():
+            for row in _read_jsonl(partial_path):
+                pid = str(row.get("problem_id") or "")
+                if pid:
+                    done_by_pid.setdefault(pid, []).append(row)
+            print(
+                f"[multi_trace] resume partial problems={len(done_by_pid)} from {partial_path}",
+                flush=True,
+            )
+        elif self.candidates_path.exists():
             self.candidates_path.unlink()
+        if not resume_teacher and partial_path.exists():
+            partial_path.unlink()
 
         prompt_only: list[tuple[int, RenderedProblem]] = []
         need_teacher: list[tuple[int, RenderedProblem]] = []
@@ -385,9 +408,11 @@ class SynthOrchestrator:
             else:
                 need_teacher.append((idx, problem))
 
-        # Prompt-only partitions (RLVR) stay local and instantaneous.
         by_idx: dict[int, list[dict[str, Any]]] = {}
         for idx, problem in prompt_only:
+            if problem.problem_id in done_by_pid:
+                by_idx[idx] = done_by_pid[problem.problem_id]
+                continue
             traces = [
                 TraceCandidate(
                     problem_id=problem.problem_id,
@@ -399,14 +424,22 @@ class SynthOrchestrator:
             ]
             by_idx[idx] = self._pack_trace_candidates(problem, traces)
 
-        workers = self._teacher_workers() if need_teacher else 1
+        pending_teacher = [
+            item for item in need_teacher if item[1].problem_id not in done_by_pid
+        ]
+        for idx, problem in need_teacher:
+            if problem.problem_id in done_by_pid:
+                by_idx[idx] = done_by_pid[problem.problem_id]
+
+        workers = self._teacher_workers() if pending_teacher else 1
         write_lock = threading.Lock()
-        done = 0
+        done = len(need_teacher) - len(pending_teacher)
         t0 = time.perf_counter()
-        if need_teacher:
+        if pending_teacher:
             print(
-                f"[multi_trace] teacher problems={len(need_teacher)} "
-                f"workers={workers} traces_per={self.config.traces_per_problem}",
+                f"[multi_trace] teacher pending={len(pending_teacher)} "
+                f"already={done} workers={workers} "
+                f"traces_per={self.config.traces_per_problem}",
                 flush=True,
             )
 
@@ -417,10 +450,17 @@ class SynthOrchestrator:
             )
             return idx, self._pack_trace_candidates(problem, traces)
 
-        if need_teacher and workers <= 1:
-            for item in need_teacher:
+        def _persist_partial(rows: list[dict[str, Any]]) -> None:
+            with write_lock:
+                with open(partial_path, "a", encoding="utf-8") as f:
+                    for cand in rows:
+                        f.write(json.dumps(cand, ensure_ascii=False) + "\n")
+
+        if pending_teacher and workers <= 1:
+            for item in pending_teacher:
                 idx, rows = _teach_one(item)
                 by_idx[idx] = rows
+                _persist_partial(rows)
                 done += 1
                 if done == 1 or done % 25 == 0 or done == len(need_teacher):
                     elapsed = max(time.perf_counter() - t0, 1e-6)
@@ -429,12 +469,13 @@ class SynthOrchestrator:
                         f"({done / elapsed:.2f} problems/s)",
                         flush=True,
                     )
-        elif need_teacher:
+        elif pending_teacher:
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [pool.submit(_teach_one, item) for item in need_teacher]
+                futures = [pool.submit(_teach_one, item) for item in pending_teacher]
                 for fut in as_completed(futures):
                     idx, rows = fut.result()
                     by_idx[idx] = rows
+                    _persist_partial(rows)
                     done += 1
                     if done == 1 or done % 25 == 0 or done == len(need_teacher):
                         elapsed = max(time.perf_counter() - t0, 1e-6)
@@ -444,14 +485,26 @@ class SynthOrchestrator:
                             flush=True,
                         )
 
-        # Stable order matching arabic_render.jsonl; lock around appends.
+        # Flush teacher budget buffer if present.
+        teacher = getattr(self.backend, "trace_teacher", None)
+        budget = getattr(teacher, "_budget", None)
+        if budget is not None and hasattr(budget, "flush"):
+            try:
+                budget.flush()
+            except Exception:
+                pass
+
+        out: list[dict[str, Any]] = []
+        if self.candidates_path.exists():
+            self.candidates_path.unlink()
         for idx in range(len(problems)):
             rows = by_idx.get(idx) or []
-            with write_lock:
-                for cand in rows:
-                    _append_jsonl(self.candidates_path, cand)
-                    out.append(cand)
+            for cand in rows:
+                _append_jsonl(self.candidates_path, cand)
+                out.append(cand)
         _write_jsonl(self.stages_dir / "multi_trace.jsonl", out)
+        if partial_path.exists():
+            partial_path.unlink()
         if need_teacher:
             elapsed = max(time.perf_counter() - t0, 1e-6)
             print(
@@ -463,8 +516,10 @@ class SynthOrchestrator:
 
     def stage_step_verify(self) -> None:
         rows = _read_jsonl(self.stages_dir / "multi_trace.jsonl")
-        out = []
-        for row in rows:
+        workers = max(1, int(os.environ.get("VERIFY_WORKERS", "16")))
+        write_lock = threading.Lock()
+
+        def _verify_one(row: dict[str, Any]) -> dict[str, Any]:
             problem = RenderedProblem(
                 problem_id=row["problem_id"],
                 family_id=row["family_id"],
@@ -485,10 +540,25 @@ class SynthOrchestrator:
                 ok, reasons = self.backend.verifier.verify_problem(problem)
             else:
                 ok, reasons = self.backend.verifier.verify_steps(problem, trace)
-            row = {**row, "step_verified": ok, "verified": ok, "rejection_reasons": reasons}
+            out_row = {
+                **row,
+                "step_verified": ok,
+                "verified": ok,
+                "rejection_reasons": reasons,
+            }
             if not ok:
-                _append_jsonl(self.quarantine_path, row)
-            out.append(row)
+                with write_lock:
+                    _append_jsonl(self.quarantine_path, out_row)
+            return out_row
+
+        if workers <= 1 or len(rows) < 8:
+            out = [_verify_one(row) for row in rows]
+        else:
+            out = [None] * len(rows)
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futs = {pool.submit(_verify_one, row): i for i, row in enumerate(rows)}
+                for fut in as_completed(futs):
+                    out[futs[fut]] = fut.result()
         _write_jsonl(self.stages_dir / "step_verify.jsonl", out)
 
     def stage_concision(self) -> None:

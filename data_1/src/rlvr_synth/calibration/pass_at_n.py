@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 GenerateFn = Callable[[str, int], str]  # (prompt, seed) -> completion text
+GenerateNFn = Callable[[str, list[int]], list[str]]  # (prompt, seeds) -> N completions
 
 
 @dataclass
@@ -53,7 +54,8 @@ def _hash_text(text: str) -> str:
 def calibrate_pass_at_n(
     problems: list[dict[str, Any]],
     *,
-    generate_fn: GenerateFn,
+    generate_fn: GenerateFn | None = None,
+    generate_n_fn: GenerateNFn | None = None,
     verify_fn: Callable[[dict[str, Any], str], bool],
     n: int = 8,
     base_seed: int = 0,
@@ -61,9 +63,15 @@ def calibrate_pass_at_n(
     tokenizer_id: str = "",
     system_prompt: str = "",
 ) -> list[PassAtNResult]:
-    """Record raw pass fraction for each problem under fixed seeds/protocol."""
+    """Record raw pass fraction for each problem under fixed seeds/protocol.
+
+    Prefer ``generate_n_fn`` (batched N completions per prompt) for throughput;
+    fall back to serial ``generate_fn(prompt, seed)``.
+    """
     if n <= 0:
         raise ValueError(f"n must be positive, got {n}")
+    if generate_fn is None and generate_n_fn is None:
+        raise ValueError("provide generate_fn or generate_n_fn")
     results: list[PassAtNResult] = []
     sys_hash = _hash_text(system_prompt) if system_prompt else ""
     for i, prob in enumerate(problems):
@@ -71,10 +79,16 @@ def calibrate_pass_at_n(
         # generate_fn receives only the user prompt string.
         prompt = str(prob.get("prompt", ""))
         seeds = [base_seed + i * n + k for k in range(n)]
-        flags: list[bool] = []
-        for seed in seeds:
-            completion = generate_fn(prompt, seed)
-            flags.append(bool(verify_fn(prob, completion)))
+        if generate_n_fn is not None:
+            completions = generate_n_fn(prompt, seeds)
+            if len(completions) != n:
+                raise ValueError(
+                    f"generate_n_fn returned {len(completions)} completions, expected {n}"
+                )
+        else:
+            assert generate_fn is not None
+            completions = [generate_fn(prompt, seed) for seed in seeds]
+        flags = [bool(verify_fn(prob, completion)) for completion in completions]
         passes = sum(flags)
         frac = passes / n if n else 0.0
         results.append(
