@@ -194,8 +194,8 @@ def load_dataset_for_task(task: str) -> list[dict[str, Any]]:
 
 
 def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
-    # Use native vLLM LoRA engine to preserve Qwen 3.5 q_norm/k_norm attention weights intact
-    return
+    if not args.adapter_path or not os.path.exists(os.path.join(args.adapter_path, "adapter_config.json")):
+        return
     merged_dir = os.path.join(os.path.dirname(args.adapter_path), f"merged_eval_{os.path.basename(args.adapter_path)}")
 
     # Wipe stale unpatched directory if rope_scaling or rope_parameters or mrope_section exists in config
@@ -220,6 +220,12 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
 
         base = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16, device_map="cpu")
         peft = PeftModel.from_pretrained(base, args.adapter_path)
+
+        # Zero out embed_tokens and lm_head LoRA parameters to prevent embedding distortion during merge
+        for name, param in peft.named_parameters():
+            if "lora_" in name and ("embed_tokens" in name or "lm_head" in name):
+                param.data.zero_()
+
         merged = peft.merge_and_unload()
 
         def is_valid_qwen2_param(k: str) -> bool:
