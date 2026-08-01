@@ -34,21 +34,21 @@ _LABELS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 GENERATION_PROFILES: dict[str, dict[str, Any]] = {
     # Short MCQ tasks: long reasoning chain + letter answer
     "gen_mcq": {
-        "max_new_tokens": 768,
+        "max_new_tokens": 1280,
         "temperature": 0.0,
         "gpu_memory_utilization": 0.88,
         "max_num_seqs": 64,
     },
     # AraMath: long chain-of-thought math reasoning
     "araeval_aramath": {
-        "max_new_tokens": 768,
+        "max_new_tokens": 1280,
         "temperature": 0.0,
         "gpu_memory_utilization": 0.88,
         "max_num_seqs": 32,
     },
     # AraPro: long medical/science passages + reasoning
     "araeval_arapro": {
-        "max_new_tokens": 768,
+        "max_new_tokens": 1280,
         "temperature": 0.0,
         "gpu_memory_utilization": 0.80,
         "max_num_seqs": 16,
