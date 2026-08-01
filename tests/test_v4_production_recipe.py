@@ -391,10 +391,19 @@ def test_build_grpo_config_passes_top_entropy_quantile():
 def test_vllm_max_model_len_maps_to_trl_vllm_max_model_length():
     """TRL GRPOConfig uses vllm_max_model_length; YAML keeps vllm_max_model_len."""
     cfg = RLVRConfig.from_yaml(V4_YAML)
-    assert cfg.use_vllm is False
-    # Off: must not inject dead kwargs that get silently filtered.
+    # V5 overnight recipe: colocated vLLM enabled with conservative util.
+    assert cfg.use_vllm is True
+    assert cfg.vllm_gpu_memory_utilization == pytest.approx(0.30)
+    assert cfg.vllm_max_model_len == 4096
+    grpo = cfg.build_grpo_config(include_model_init=False)
+    assert grpo.use_vllm is True
+    assert grpo.vllm_max_model_length == 4096
+    assert grpo.vllm_gpu_memory_utilization == pytest.approx(0.30)
+
+    # Off path: must not inject dead kwargs that get silently filtered.
+    cfg.use_vllm = False
     grpo_off = cfg.build_grpo_config(include_model_init=False)
-    assert not hasattr(grpo_off, "vllm_max_model_len") or getattr(grpo_off, "vllm_max_model_len", None) in (None, 4096)
+    assert grpo_off.use_vllm is False
 
     cfg.use_vllm = True
     cfg.vllm_max_model_len = 8192

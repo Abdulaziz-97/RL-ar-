@@ -112,9 +112,14 @@ save_strategy: "steps"
 save_steps: 50
 save_total_limit: 8
 log_completions: false
-use_vllm: false
-# When enabling vLLM: YAML key stays vllm_max_model_len; mapped to TRL's
-# vllm_max_model_length in build_grpo_config (old name was silently dropped).
+# Colocated vLLM for GRPO rollouts (same G=16 / 2048 / 250 steps — quality-neutral).
+# Historical HF-generate GRPO ~8h on 4k; vLLM targets ~3–5h. Keep util conservative
+# so trainer + vLLM coexist on 2×32GB without OOM (do not raise batch size).
+use_vllm: true
+vllm_gpu_memory_utilization: 0.30
+vllm_max_model_len: 4096
+# YAML key stays vllm_max_model_len; mapped to TRL's vllm_max_model_length in
+# build_grpo_config (old name was silently dropped).
 enable_benchmark_probe: false
 # Push each checkpoint-{step} folder to HF Hub after save (token: HF_TOKEN env).
 # Subfolders: aziz9788/qwen35-4b-arabic-rlvr-v5/checkpoint-50, ...
