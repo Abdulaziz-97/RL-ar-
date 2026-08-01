@@ -23,8 +23,15 @@ def main():
     )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
 
-    print(f"[2/3] Loading GRPO LoRA adapter ({args.adapter_path}) and merging...", flush=True)
+    print(f"[2/3] Loading GRPO LoRA adapter ({args.adapter_path})...", flush=True)
     model = PeftModel.from_pretrained(base, args.adapter_path)
+
+    # Zero out embed_tokens and lm_head LoRA parameters to prevent embedding distortion during merge
+    for name, param in model.named_parameters():
+        if "lora_" in name and ("embed_tokens" in name or "lm_head" in name):
+            param.data.zero_()
+
+    print(f"[2.5/3] Merging attention & MLP LoRA weights into base model...", flush=True)
     merged_model = model.merge_and_unload()
     merged_model.eval()
 
