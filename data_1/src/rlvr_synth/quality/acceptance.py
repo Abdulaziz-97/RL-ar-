@@ -250,11 +250,12 @@ def stamp_fresh_sft_audit(row: dict[str, Any]) -> dict[str, Any]:
     ok, reasons = replay_verifier(out)
     think = (parsed.think if parsed else "") or ""
     out["verifier_result"] = bool(ok and parsed and parsed.format_ok)
+    method_id = (out.get("trace_audit") or {}).get("method_id") or "dspy_0"
     out["trace_audit"] = {
         "format_ok": bool(parsed.format_ok) if parsed else False,
         "step_verified": bool(ok and parsed and parsed.format_ok and len(think.split()) >= 20),
         "concision_tokens": len(think.split()),
-        "method_id": (out.get("trace_audit") or {}).get("method_id"),
+        "method_id": str(method_id),
         "rejection_reasons": [] if ok else list(reasons),
         "replay_source": "accept_sft_row",
     }

@@ -1,0 +1,11 @@
+mode: pilot
+n_families: 10
+domains: [gsm8k, math, math_comp, logic]
+traces_per_problem: 1
+seed: 4242
+work_dir: outputs/ab_teacher_10
+backend: external
+external_module: backends/dspy_backend.py
+max_alternate_methods: 0
+partitions:
+  sft_train: 1.0

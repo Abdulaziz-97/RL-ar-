@@ -361,6 +361,46 @@ class BudgetCallback(BaseCallback):
             self.budget.record(model=model, tin=tin, tout=tout)
 
 
+def _resolve_lm_endpoint(model: str) -> tuple[str, str, str]:
+    """Return (dspy_model, api_key, api_base) for DeepSeek direct or OpenRouter.
+
+    OpenRouter is used when:
+    - model contains '/' (e.g. qwen/qwen3.7-flash), or
+    - model starts with 'openrouter/', or
+    - OPENROUTER_API_KEY is set and DEEPSEEK_API_KEY is missing.
+    """
+    raw = str(model or MODEL_PRO).strip()
+    if raw.startswith("openrouter/"):
+        raw = raw[len("openrouter/") :]
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY") or ""
+    deepseek_key = os.environ.get("DEEPSEEK_API_KEY") or ""
+
+    use_openrouter = (
+        "/" in raw
+        or raw.lower().startswith("qwen")
+        or (bool(openrouter_key) and not deepseek_key)
+        or os.environ.get("USE_OPENROUTER", "").strip() == "1"
+    )
+    if use_openrouter:
+        if not openrouter_key:
+            raise RuntimeError("OPENROUTER_API_KEY missing for OpenRouter-routed model")
+        # Map short DeepSeek aliases onto OpenRouter model ids.
+        aliases = {
+            "deepseek-v4-pro": "deepseek/deepseek-v4-pro",
+            "deepseek-v4-flash": "deepseek/deepseek-v4-flash",
+            "deepseek-chat": "deepseek/deepseek-v4-flash",
+            "deepseek-pro": "deepseek/deepseek-v4-pro",
+        }
+        or_model = aliases.get(raw, raw)
+        if "/" not in or_model:
+            or_model = f"deepseek/{or_model}"
+        return f"openai/{or_model}", openrouter_key, "https://openrouter.ai/api/v1"
+
+    if not deepseek_key:
+        raise RuntimeError("DEEPSEEK_API_KEY missing")
+    return f"openai/{raw}", deepseek_key, BASE
+
+
 def make_deepseek_lm(
     *,
     model: str = MODEL_PRO,
@@ -369,19 +409,17 @@ def make_deepseek_lm(
     budget: BudgetState | None = None,
     cache: bool = True,
 ) -> dspy.LM:
-    key = os.environ.get("DEEPSEEK_API_KEY")
-    if not key:
-        raise RuntimeError("DEEPSEEK_API_KEY missing")
+    dspy_model, api_key, api_base = _resolve_lm_endpoint(model)
     callbacks = [BudgetCallback(budget, model_hint=model)] if budget is not None else None
     return dspy.LM(
-        model=f"openai/{model}",
-        api_key=key,
-        api_base=BASE,
+        model=dspy_model,
+        api_key=api_key,
+        api_base=api_base,
         temperature=temperature,
         max_tokens=max_tokens,
         cache=cache,
         callbacks=callbacks,
-        extra_body=EXTRA,
+        extra_body=EXTRA if "deepseek.com" in api_base else None,
     )
 
 
