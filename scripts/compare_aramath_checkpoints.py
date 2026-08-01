@@ -146,20 +146,20 @@ def main():
     if not ckpt_dir.exists():
         ckpt_dir = Path("/workspace/outputs/qwen_4b_2x5090_v4_run")
 
-    target_ckpts = ["checkpoint-100", "checkpoint-200"]
+    target_ckpts = ["checkpoint-200"]
     for ckpt_name in target_ckpts:
         p = ckpt_dir / ckpt_name
         if p.exists() and (p / "adapter_config.json").exists():
-            print(f"\n[EVAL] Evaluating GRPO {ckpt_name} from {p}...", flush=True)
+            print(f"\n[EVAL] Evaluating GRPO {ckpt_name} (on base {args.base_model}) from {p}...", flush=True)
             res = evaluate_checkpoint(args.base_model, str(p), samples)
             results.append(res)
         else:
             print(f"\n[SKIP] {p} does not exist.")
 
     print("\n" + "=" * 65)
-    print("      [ARAMATH EVALUATION: CHECKPOINT-100 vs CHECKPOINT-200]      ")
+    print("        [ARAMATH EVALUATION: CHECKPOINT-200 ON AZIZ9788 BASE]        ")
     print("=" * 65)
-    print(f"{'Checkpoint':<45} | {'Accuracy':<10} | {'Time (s)':<8}")
+    print(f"{'Checkpoint / Base':<45} | {'Accuracy':<10} | {'Time (s)':<8}")
     print("-" * 68)
     for r in results:
         name = Path(r["model"]).name
