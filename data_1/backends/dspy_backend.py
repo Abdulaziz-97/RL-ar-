@@ -231,7 +231,7 @@ class LiveTraceTeacher:
             float(self._config.get("budget_usd") or 30.0),
         )
         self._temperature = float(self._config.get("temperature") or 0.35)
-        self._max_tokens = int(self._config.get("max_tokens") or 3200)
+        self._max_tokens = int(self._config.get("max_tokens") or os.environ.get("TEACHER_MAX_TOKENS") or 8192)
         self._cache = bool(self._config.get("cache", True))
         self._max_retries = int(self._config.get("teacher_retries") or os.environ.get("TEACHER_RETRIES", 4))
         self._gepa = Path(self._config.get("gepa_path") or PACK_ROOT / "assets" / "arabic_teacher_gepa_v2.json")

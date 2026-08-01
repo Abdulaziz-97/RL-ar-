@@ -67,6 +67,7 @@ def main() -> int:
         "cache": True,
         "teacher_workers": max(1, int(workers)),
         "teacher_retries": int(os.environ.get("TEACHER_RETRIES", "4")),
+        "max_tokens": int(os.environ.get("TEACHER_MAX_TOKENS", "8192")),
     }
     cfg.max_alternate_methods = 0
     print(
