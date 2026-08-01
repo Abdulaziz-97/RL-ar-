@@ -19,7 +19,8 @@ from rlvr_synth.quality.quotas import SFT_DOMAIN_QUOTAS, select_domain_quota
 
 def _read_jsonl(path: Path) -> list[dict]:
     rows = []
-    with open(path, encoding="utf-8") as f:
+    # utf-8-sig strips a BOM if PowerShell Set-Content -Encoding UTF8 wrote one.
+    with open(path, encoding="utf-8-sig") as f:
         for line in f:
             if line.strip():
                 rows.append(json.loads(line))
@@ -42,6 +43,8 @@ def main() -> int:
     parser.add_argument("--stats", type=Path, default=None)
     parser.add_argument("--require-decontam-clean", action="store_true", default=True)
     parser.add_argument("--allow-missing-decontam", action="store_true")
+    parser.add_argument("--allow-shortages", action="store_true",
+                        help="Do not fail when domain quotas cannot be filled")
     args = parser.parse_args()
 
     require_decontam = not args.allow_missing_decontam
@@ -99,10 +102,12 @@ def main() -> int:
     stats_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(stats, ensure_ascii=False, indent=2))
 
-    if shortages:
+    if shortages and not args.allow_shortages:
         print(f"ERROR: domain shortages {shortages}", file=sys.stderr)
         return 2
-    if len(selected) != 4000:
+    if shortages and args.allow_shortages:
+        print(f"WARNING: domain shortages {shortages} (allowed)", file=sys.stderr)
+    if len(selected) != 4000 and not args.allow_shortages:
         print(f"ERROR: expected 4000 selected, got {len(selected)}", file=sys.stderr)
         return 2
     if not stats["trivial_ok"] or not stats["hard_ok"]:
@@ -116,3 +121,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

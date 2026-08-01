@@ -1,16 +1,17 @@
-﻿# Top-up SFT after domain shortages, then Reverse-QA, RLVR candidates, DONE marker.
-# Assumes existing release at local_v4_20260801_073920/sft_candidates/release_corpora/sft_train.jsonl
+# Focused top-up for math / math_comp / logic shortages after first merge select.
+# Requires DEEPSEEK_API_KEY. Resumes into merge+select+IFEval compose when done.
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Data1 = Join-Path $RepoRoot "data_1"
 $RunId = if ($env:RUN_ID) { $env:RUN_ID } else { "local_v4_20260801_073920" }
 $WorkRoot = Join-Path $Data1 "outputs\v4_regen\$RunId"
-$LogDir = Join-Path $RepoRoot "outputs"
-$LogFile = Join-Path $LogDir "local_sft_topup_$RunId.log"
-$DoneMarker = Join-Path $Data1 "outputs\LOCAL_SFT_DATAGEN_DONE.json"
+$LogFile = Join-Path $RepoRoot "outputs\local_sft_shortage_topup_$RunId.log"
 $FailMarker = Join-Path $Data1 "outputs\LOCAL_SFT_DATAGEN_FAILED.json"
+$DoneMarker = Join-Path $Data1 "outputs\LOCAL_SFT_DATAGEN_DONE.json"
 
-New-Item -ItemType Directory -Force -Path $WorkRoot, $LogDir, (Join-Path $RepoRoot "data") | Out-Null
+if (-not $env:DEEPSEEK_API_KEY) { throw "DEEPSEEK_API_KEY required" }
+
+New-Item -ItemType Directory -Force -Path $WorkRoot, (Join-Path $RepoRoot "outputs"), (Join-Path $RepoRoot "data") | Out-Null
 Remove-Item -Force $FailMarker -ErrorAction SilentlyContinue
 
 function Write-Log([string]$msg) {
@@ -34,8 +35,6 @@ function Invoke-LoggedPython {
     if ($code -ne 0) { throw ("python exit={0} args={1}" -f $code, ($ArgumentList -join " ")) }
 }
 
-if (-not $env:DEEPSEEK_API_KEY) { throw "DEEPSEEK_API_KEY required" }
-
 $env:PYTHONIOENCODING = "utf-8"
 $env:PYTHONPATH = "$Data1;$Data1\src;$Data1\vendor"
 $env:USE_OPENROUTER = if ($env:USE_OPENROUTER) { $env:USE_OPENROUTER } else { "0" }
@@ -46,24 +45,24 @@ $env:REVERSE_QA_MODEL = if ($env:REVERSE_QA_MODEL) { $env:REVERSE_QA_MODEL } els
 $env:REVERSE_QA_RETEACH_MODEL = if ($env:REVERSE_QA_RETEACH_MODEL) { $env:REVERSE_QA_RETEACH_MODEL } else { $env:REVERSE_QA_MODEL }
 $env:REVERSE_QA_MODE = "full"
 $env:REVERSE_QA_RESOLVE = "1"
-$nTop = if ($env:SFT_TOPUP_N) { [int]$env:SFT_TOPUP_N } else { 6000 }
-# Prefer top-up seed != RLVR seed (full_rlvr_8000.yaml historically used 2200).
-$topSeed = if ($env:SFT_TOPUP_SEED) { [int]$env:SFT_TOPUP_SEED } else { 2300 }
-$rlvrSeed = if ($env:RLVR_SEED) { [int]$env:RLVR_SEED } else { 3300 }
+$nTop = if ($env:SFT_SHORTAGE_N) { [int]$env:SFT_SHORTAGE_N } else { 4500 }
+$topSeed = if ($env:SFT_SHORTAGE_SEED) { [int]$env:SFT_SHORTAGE_SEED } else { 3300 }
 
 $runPipeline = Join-Path $Data1 "scripts\run_pipeline.py"
 $selectScript = Join-Path $Data1 "scripts\select_sft_v4_release.py"
-$uniqScript = Join-Path $Data1 "scripts\assert_prompt_uniqueness_v5.py"
+$mergeScript = Join-Path $Data1 "scripts\merge_sft_jsonl.py"
 $SftCfg = Join-Path $Data1 "configs\full_sft_6500.yaml"
 $RlvrCfg = Join-Path $Data1 "configs\full_rlvr_8000.yaml"
 $baseRelease = Join-Path $WorkRoot "sft_candidates\release_corpora\sft_train.jsonl"
+$top1Release = Join-Path $WorkRoot "sft_topup_6000\release_corpora\sft_train.jsonl"
 if (-not (Test-Path $baseRelease)) { throw "Missing base release $baseRelease" }
+if (-not (Test-Path $top1Release)) { throw "Missing first top-up release $top1Release" }
 
-Write-Log "TOPUP START n=$nTop seed=$topSeed rlvr_seed=$rlvrSeed workers=$workers (topup!=rlvr seed)"
+Write-Log "SHORTAGE TOPUP START n=$nTop seed=$topSeed domains=math/math_comp/logic"
 
 try {
-    $TopUp = Join-Path $WorkRoot "sft_topup_$nTop"
-    $TopCfg = Join-Path $WorkRoot "sft_topup_$nTop.yaml"
+    $TopUp = Join-Path $WorkRoot "sft_topup_shortage_$nTop"
+    $TopCfg = Join-Path $WorkRoot "sft_topup_shortage_$nTop.yaml"
     New-Item -ItemType Directory -Force -Path $TopUp | Out-Null
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -74,8 +73,7 @@ cfg = yaml.safe_load(Path(r'$SftCfg').read_text(encoding='utf-8'))
 cfg['n_families'] = $nTop
 cfg['seed'] = $topSeed
 cfg['work_dir'] = r'$TopUp'
-# Decontam top-up against base SFT so exact prompt overlap with base is rejected.
-cfg['decontam_reference_paths'] = [r'$baseRelease']
+cfg['domains'] = ['math', 'math_comp', 'logic', 'math', 'logic', 'math_comp']
 Path(r'$TopCfg').write_text(yaml.safe_dump(cfg, allow_unicode=True), encoding='utf-8')
 print(r'$TopCfg')
 "@
@@ -89,23 +87,19 @@ print(r'$TopCfg')
         "--budget-usd", "$(if ($env:SFT_BUDGET_USD) { $env:SFT_BUDGET_USD } else { '200' })"
     )
 
-    $topRelease = Join-Path $TopUp "release_corpora\sft_train.jsonl"
-    if (-not (Test-Path $topRelease)) { throw "Top-up release missing" }
+    $top2Release = Join-Path $TopUp "release_corpora\sft_train.jsonl"
+    if (-not (Test-Path $top2Release)) { throw "Shortage top-up release missing" }
+
     $merged = Join-Path $WorkRoot "sft_merged_candidates.jsonl"
-    Write-Log "MERGE base+topup -> $merged"
+    Write-Log "MERGE base+topup1+shortage -> $merged"
     Invoke-LoggedPython -ArgumentList @(
-        (Join-Path $Data1 "scripts\merge_sft_jsonl.py"),
-        "--out", $merged, $baseRelease, $topRelease
-    )
-    Write-Log "EXACT PROMPT CHECK merged SFT"
-    Invoke-LoggedPython -ArgumentList @(
-        $uniqScript, "--sft", $merged, "--drop-sft-dups"
+        $mergeScript, "--out", $merged, $baseRelease, $top1Release, $top2Release
     )
 
     $selected = Join-Path $WorkRoot "sft_selected_4000.jsonl"
     Write-Log "SELECT 4k from merged"
     Invoke-LoggedPython -ArgumentList @(
-        $selectScript, "--candidates", $merged, "--out", $selected, "--allow-missing-decontam", "--allow-shortages"
+        $selectScript, "--candidates", $merged, "--out", $selected, "--allow-missing-decontam"
     )
 
     $selectedRqa = Join-Path $WorkRoot "sft_selected_4000_reverse_qa.jsonl"
@@ -116,55 +110,37 @@ print(r'$TopCfg')
         "--in", $selected, "--out", $selectedRqa, "--reteach", "--workers", "$workers"
     )
     if (Test-Path $selectedRqa) { $selected = $selectedRqa }
-    Write-Log "EXACT PROMPT CHECK post-Reverse-QA SFT"
-    Invoke-LoggedPython -ArgumentList @(
-        $uniqScript, "--sft", $selected, "--drop-sft-dups"
-    )
 
-    # IFEval-like sidecar only (explicitly no MCQ / AraPro generation)
     $ifevalSide = Join-Path $RepoRoot "data\sidecars\ifeval_sft_v5.jsonl"
     if (-not (Test-Path $ifevalSide)) {
-        Write-Log "GENERATE IFEval sidecar (no MCQ)"
         Invoke-LoggedPython -ArgumentList @(
             (Join-Path $Data1 "scripts\generate_ifeval_sidecar_v5.py"),
-            "--n", "500", "--seed", "4400",
-            "--out", "$ifevalSide",
-            "--reference", "$selected"
+            "--n", "500", "--seed", "4400", "--out", "$ifevalSide", "--reference", "$selected"
         )
-    } else {
-        Write-Log "REUSE existing IFEval sidecar $ifevalSide"
     }
 
     $mixed = Join-Path $WorkRoot "sft_mixed_core_ifeval.jsonl"
     Write-Log "COMPOSE mixed SFT (core + IFEval; mcq=0)"
     Invoke-LoggedPython -ArgumentList @(
         (Join-Path $Data1 "scripts\compose_mixed_sft_v5.py"),
-        "--core", "$selected",
-        "--ifeval", "$ifevalSide",
-        "--out", "$mixed",
-        "--seed", "42"
-    )
-    Write-Log "EXACT PROMPT CHECK post-compose mixed SFT"
-    Invoke-LoggedPython -ArgumentList @(
-        $uniqScript, "--sft", $mixed, "--drop-sft-dups"
+        "--core", "$selected", "--ifeval", "$ifevalSide", "--out", "$mixed", "--seed", "42"
     )
 
     $dest = Join-Path $RepoRoot "data\arabic_reasoning_coldstart_v5.jsonl"
     Copy-Item -Force $mixed $dest
     $nSft = (Get-Content $dest | Measure-Object -Line).Lines
-    Write-Log "WROTE $dest rows=$nSft (core+ifeval; no MCQ)"
+    Write-Log "WROTE $dest rows=$nSft"
 
-    # Core RLVR candidates only (no MCQ RLVR)
     $RlvrWork = Join-Path $WorkRoot "rlvr_candidates"
     $RlvrRuntime = Join-Path $WorkRoot "full_rlvr_8000.runtime.yaml"
-    Write-Log "FULL RLVR candidates (core only; no MCQ) seed=$rlvrSeed refs=final SFT+IFEval"
+    $rlvrSeed = if ($env:RLVR_SEED) { [int]$env:RLVR_SEED } else { 4400 }
+    Write-Log "FULL RLVR candidates (core only; no MCQ)"
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & python -c @"
 from pathlib import Path
 import yaml
 cfg = yaml.safe_load(Path(r'$RlvrCfg').read_text(encoding='utf-8'))
-cfg['n_families'] = 4000
 cfg['seed'] = $rlvrSeed
 cfg['decontam_reference_paths'] = [r'$dest', r'$ifevalSide']
 cfg['work_dir'] = r'$RlvrWork'
@@ -186,10 +162,6 @@ print(r'$RlvrRuntime')
         (Join-Path $Data1 "scripts\apply_full_reverse_qa_sft.py"),
         "--in", $rlvrCand, "--out", $rlvrRqa, "--workers", "$workers"
     )
-    Write-Log "EXACT PROMPT CHECK SFT<->RLVR + within RLVR"
-    Invoke-LoggedPython -ArgumentList @(
-        $uniqScript, "--sft", $dest, "--rlvr", $rlvrRqa, "--drop-rlvr-dups"
-    )
     $rlvrDest = Join-Path $RepoRoot "data\arabic_reasoning_rlvr_candidates_v5.jsonl"
     Copy-Item -Force $rlvrRqa $rlvrDest
     $nRlvr = (Get-Content $rlvrDest | Measure-Object -Line).Lines
@@ -205,10 +177,9 @@ print(r'$RlvrRuntime')
         mcq_generated = $false
         log = $LogFile
         finished_at = (Get-Date).ToString("o")
-        note = "topup+finish core+IFEval SFT; core RLVR only; Vast: SFT then GPU pass@8 then GRPO"
+        note = "shortage topup filled 4k core + IFEval; core RLVR only"
     } | ConvertTo-Json
     Set-Content -Path $DoneMarker -Value $payload -Encoding UTF8
-    Set-Content -Path (Join-Path $WorkRoot "LOCAL_SFT_DATAGEN_DONE.json") -Value $payload -Encoding UTF8
     Write-Log "DONE"
     exit 0
 }

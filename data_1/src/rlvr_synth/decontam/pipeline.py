@@ -1,4 +1,4 @@
-"""Fast decontamination: exact-hash + LSH/MinHash near-dup (linear in batch size)."""
+"""Fast decontamination: prompt exact-hash + LSH/MinHash near-dup (linear in batch size)."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, Iterable
+
 
 def normalize_text(text: str) -> str:
     text = unicodedata.normalize("NFKC", text or "")
@@ -19,13 +20,25 @@ def exact_hash(text: str) -> str:
     return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()
 
 
-def _record_text(record: dict[str, Any], *, response_chars: int = 800) -> str:
-    """Prompt + short response prefix — near-dup signal without hashing full CoT."""
-    prompt = str(record.get("prompt") or "").strip()
+def _prompt_text(record: dict[str, Any]) -> str:
+    """Identity key for exact decontam — prompt only (SFT CoT vs empty RLVR still collide)."""
+    return str(record.get("prompt") or "").strip()
+
+
+def _near_dup_text(record: dict[str, Any], *, response_chars: int = 0) -> str:
+    """Near-dup signal: prompt primary; optional short response prefix as secondary."""
+    prompt = _prompt_text(record)
+    if response_chars <= 0:
+        return prompt
     response = str(record.get("response") or "").strip()
-    if response_chars > 0 and len(response) > response_chars:
+    if response and len(response) > response_chars:
         response = response[:response_chars]
     return "\n".join(part for part in (prompt, response) if part)
+
+
+# Back-compat alias used by older callers/tests.
+def _record_text(record: dict[str, Any], *, response_chars: int = 0) -> str:
+    return _near_dup_text(record, response_chars=response_chars)
 
 
 def char_ngrams(text: str, n: int = 5) -> set[str]:
@@ -49,6 +62,7 @@ def jaccard(a: set[str], b: set[str]) -> float:
 
 @dataclass
 class MinHashSketch:
+    # Must satisfy bands * rows == num_perm for LSHIndex.
     num_perm: int = 32
     seed: int = 0
 
@@ -63,7 +77,6 @@ class MinHashSketch:
             salt = (self.seed + 0x9E3779B9 * (i + 1)) & 0xFFFFFFFF
             for g in grams:
                 val = (salt ^ (hash(g) & 0xFFFFFFFF)) & 0xFFFFFFFF
-                # mix
                 val = (val * 0x85EBCA77) & 0xFFFFFFFF
                 if val < best:
                     best = val
@@ -77,13 +90,18 @@ class MinHashSketch:
 
 
 class LSHIndex:
-    def __init__(self, bands: int = 16, rows: int = 4):
+    def __init__(self, bands: int = 8, rows: int = 4):
+        # Default 8*4=32 matches MinHashSketch.num_perm.
         self.bands = bands
         self.rows = rows
         self.buckets: dict[tuple[int, int], list[str]] = {}
         self.sketches: dict[str, list[int]] = {}
 
     def add(self, key: str, sketch: list[int]) -> None:
+        if len(sketch) < self.bands * self.rows:
+            raise ValueError(
+                f"LSH bands*rows={self.bands * self.rows} exceeds sketch len={len(sketch)}"
+            )
         self.sketches[key] = sketch
         for b in range(self.bands):
             start = b * self.rows
@@ -146,12 +164,25 @@ def decontaminate_records(
     minhash_reject: float = 0.9,
     adjudicator: Adjudicator | None = None,
     benchmark_registry: list[str] | None = None,
+    near_dup_response_chars: int = 0,
 ) -> list[dict[str, Any]]:
-    """Near-linear decontam: exact hash + LSH candidates only (no O(n^2) rescans)."""
+    """Near-linear decontam: prompt exact-hash + LSH candidates only (no O(n^2)).
+
+    Exact identity is normalized **prompt** only so SFT rows with CoT and RLVR
+    rows with empty response still collide on the same prompt.
+
+    Near-dup uses prompt (optionally + short response prefix) via MinHash/LSH.
+    """
     adjudicator = adjudicator or default_adjudicator
     mh = MinHashSketch()
-    lsh = LSHIndex()
+    lsh = LSHIndex(bands=8, rows=4)
+    if mh.num_perm != lsh.bands * lsh.rows:
+        raise ValueError(
+            f"LSH bands*rows ({lsh.bands * lsh.rows}) != num_perm ({mh.num_perm})"
+        )
+
     ref_texts = reference_texts or []
+    # References are treated as prompt strings for exact identity.
     ref_hashes = {exact_hash(t) for t in ref_texts}
     # Reference n-grams only when few; otherwise rely on MinHash/LSH.
     use_ref_jaccard = 0 < len(ref_texts) <= 2000
@@ -165,8 +196,9 @@ def decontaminate_records(
     results: list[dict[str, Any]] = []
 
     for idx, rec in enumerate(records):
-        text = _record_text(rec)
-        h = exact_hash(text)
+        prompt = _prompt_text(rec)
+        near_text = _near_dup_text(rec, response_chars=near_dup_response_chars)
+        h = exact_hash(prompt)
         reasons: list[str] = []
         status = "clean"
         max_jac = 0.0
@@ -184,7 +216,7 @@ def decontaminate_records(
             seen_hashes[h] = pid or fid or str(idx)
 
         if use_ref_jaccard:
-            grams = char_ngrams(text)
+            grams = char_ngrams(near_text)
             for rg in ref_grams:
                 max_jac = max(max_jac, jaccard(grams, rg))
             if max_jac >= jaccard_reject:
@@ -194,7 +226,7 @@ def decontaminate_records(
                 status = "review"
                 reasons.append(f"jaccard>={jaccard_review}")
 
-        sk = mh.sketch(text)
+        sk = mh.sketch(near_text)
         reference_minhash_hit = False
         cross_family_hit = False
         # LSH candidates only — never scan the full batch.
@@ -224,7 +256,16 @@ def decontaminate_records(
             status = "reject"
             reasons.append("minhash_cross_family")
 
-        bench = check_benchmark_registry(text, benchmark_registry)
+        # Benchmark scan covers prompt + full response (cheap; not used for exact hash).
+        bench_text = "\n".join(
+            part
+            for part in (
+                prompt,
+                str(rec.get("response") or "").strip(),
+            )
+            if part
+        )
+        bench = check_benchmark_registry(bench_text or near_text, benchmark_registry)
         if bench:
             status = "review" if status == "clean" else status
             reasons.append("benchmark_registry")

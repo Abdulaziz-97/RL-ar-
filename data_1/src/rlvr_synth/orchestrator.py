@@ -642,9 +642,8 @@ class SynthOrchestrator:
                 raise FileNotFoundError(f"decontam reference not found: {path}")
             if path.suffix.lower() == ".jsonl":
                 for ref in _read_jsonl(path):
-                    text = "\n".join(
-                        str(ref.get(key) or "") for key in ("prompt", "response")
-                    ).strip()
+                    # Prompt-only refs so SFT CoT vs empty RLVR still collide.
+                    text = str(ref.get("prompt") or "").strip()
                     if text:
                         reference_texts.append(text)
             else:
