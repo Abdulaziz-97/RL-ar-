@@ -129,9 +129,8 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
     }
 
 def main():
-    parser = argparse.ArgumentParser(description="Fast AraMath Evaluation for SFT, checkpoint-100, and checkpoint-200")
+    parser = argparse.ArgumentParser(description="Fast AraMath Evaluation for GRPO checkpoint-100 and checkpoint-200")
     parser.add_argument("--base-model", type=str, default="Qwen/Qwen3.5-4B")
-    parser.add_argument("--sft-model", type=str, default="aziz9788/T06__qwen35-mixed-v6-lr1e5")
     parser.add_argument("--checkpoints-dir", type=str, default="/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run")
     parser.add_argument("--limit", type=int, default=50)
     args = parser.parse_args()
@@ -142,19 +141,7 @@ def main():
 
     results = []
 
-    # 1. Evaluate Instruction Base Model
-    print(f"\n[EVAL 1] Evaluating Instruction Base Model: {args.sft_model}...", flush=True)
-    sft_res = evaluate_checkpoint(args.sft_model, None, samples)
-    results.append(sft_res)
-
-    # 2. Evaluate Stage 1 CoT SFT Model if present in /workspace/outputs/sft_coldstart_v4
-    stage1_sft = "/workspace/outputs/sft_coldstart_v4"
-    if os.path.exists(stage1_sft) and os.path.exists(os.path.join(stage1_sft, "adapter_config.json")):
-        print(f"\n[EVAL 2] Evaluating Stage 1 CoT SFT (4,000 CoT Traces) from {stage1_sft}...", flush=True)
-        stage1_res = evaluate_checkpoint(args.base_model, stage1_sft, samples)
-        results.append(stage1_res)
-
-    # 3. Evaluate GRPO checkpoint-100 and checkpoint-200
+    # Evaluate GRPO checkpoint-100 and checkpoint-200 strictly
     ckpt_dir = Path(args.checkpoints_dir)
     if not ckpt_dir.exists():
         ckpt_dir = Path("/workspace/outputs/qwen_4b_2x5090_v4_run")
@@ -170,9 +157,9 @@ def main():
             print(f"\n[SKIP] {p} does not exist.")
 
     print("\n" + "=" * 65)
-    print("  [ARAMATH HIGH-SPEED COMPARATIVE BENCHMARK (Phase 1 vs 100 vs 200)]  ")
+    print("      [ARAMATH EVALUATION: CHECKPOINT-100 vs CHECKPOINT-200]      ")
     print("=" * 65)
-    print(f"{'Model / Checkpoint':<45} | {'Accuracy':<10} | {'Time (s)':<8}")
+    print(f"{'Checkpoint':<45} | {'Accuracy':<10} | {'Time (s)':<8}")
     print("-" * 68)
     for r in results:
         name = Path(r["model"]).name
