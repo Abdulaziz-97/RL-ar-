@@ -3,7 +3,10 @@ pkill -9 -f python 2>/dev/null || true
 pkill -9 -f torchrun 2>/dev/null || true
 sleep 2
 
-rm -rf /workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run/merged_eval_checkpoint-200 2>/dev/null || true
+# Cleanup stale merge folders and temporary caches to free disk space
+rm -rf /workspace/RL-ar-/outputs/*/merged_eval_* 2>/dev/null || true
+rm -rf /root/.cache/huggingface/hub/tmp* 2>/dev/null || true
+rm -rf /tmp/* 2>/dev/null || true
 
 cd /workspace/RL-ar-
 export PYTHONPATH="/workspace/RL-ar-/src:$PYTHONPATH"

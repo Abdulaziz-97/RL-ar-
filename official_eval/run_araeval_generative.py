@@ -215,9 +215,23 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
         from peft import PeftModel
+        from safetensors.torch import save_file
+
         base = AutoModelForCausalLM.from_pretrained(args.model, torch_dtype=torch.bfloat16, device_map="cpu")
         peft = PeftModel.from_pretrained(base, args.adapter_path)
         merged = peft.merge_and_unload()
+
+        # Remap state dict keys in RAM before writing to disk once (prevents Errno 28 disk full)
+        state_dict = merged.state_dict()
+        new_state_dict = {}
+        for k, v in state_dict.items():
+            new_k = k.replace("language_model.", "").replace("model.model.", "model.")
+            new_state_dict[new_k] = v
+
+        os.makedirs(merged_dir, exist_ok=True)
+        save_file(new_state_dict, os.path.join(merged_dir, "model.safetensors"))
+        print(f"Saved cleanly remapped weights to {merged_dir}/model.safetensors", flush=True)
+
         merged.config.architectures = ["Qwen2ForCausalLM"]
         merged.config.model_type = "qwen2"
         num_layers = getattr(merged.config, "num_hidden_layers", 32)
@@ -225,7 +239,8 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
         for attr in ["rope_scaling", "rope_parameters", "mrope_section"]:
             if hasattr(merged.config, attr):
                 setattr(merged.config, attr, None)
-        merged.save_pretrained(merged_dir)
+        merged.config.save_pretrained(merged_dir)
+
         tok_source = args.adapter_path if os.path.exists(os.path.join(args.adapter_path, "tokenizer_config.json")) else args.model
         tokenizer = AutoTokenizer.from_pretrained(tok_source)
         tokenizer.save_pretrained(merged_dir)
@@ -267,44 +282,6 @@ def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
                 json.dump(gen_cfg, f, indent=2)
         except Exception:
             pass
-
-    # Remap safetensors weight keys if language_model. prefix is present
-    import glob
-    sf_files = glob.glob(os.path.join(merged_dir, "*.safetensors"))
-    if sf_files:
-        try:
-            from safetensors.torch import load_file, save_file
-            for sf_path in sf_files:
-                weights = load_file(sf_path)
-                new_weights = {}
-                changed = False
-                for k, v in weights.items():
-                    new_k = k
-                    if "language_model." in new_k:
-                        new_k = new_k.replace("language_model.", "")
-                        changed = True
-                    if new_k.startswith("model.model."):
-                        new_k = new_k[6:]  # strip duplicate model.
-                        changed = True
-                    new_weights[new_k] = v
-                if changed:
-                    print(f"Remapped safetensors weight keys in {os.path.basename(sf_path)} to standard Qwen2 format...", flush=True)
-                    save_file(new_weights, sf_path)
-
-            index_path = os.path.join(merged_dir, "model.safetensors.index.json")
-            if os.path.exists(index_path):
-                with open(index_path, "r", encoding="utf-8") as f:
-                    idx = json.load(f)
-                if "weight_map" in idx:
-                    new_wm = {}
-                    for k, v in idx["weight_map"].items():
-                        new_k = k.replace("language_model.", "").replace("model.model.", "model.")
-                        new_wm[new_k] = v
-                    idx["weight_map"] = new_wm
-                    with open(index_path, "w", encoding="utf-8") as f:
-                        json.dump(idx, f, indent=2)
-        except Exception as e:
-            print(f"Safetensors remapping warning: {e}", flush=True)
 
     args.model = merged_dir
     args.adapter_path = None
