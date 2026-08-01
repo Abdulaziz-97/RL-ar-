@@ -194,8 +194,8 @@ def load_dataset_for_task(task: str) -> list[dict[str, Any]]:
 
 
 def _auto_merge_adapter_if_needed(args: argparse.Namespace) -> None:
-    if not args.adapter_path or not os.path.exists(os.path.join(args.adapter_path, "adapter_config.json")):
-        return
+    # Use native vLLM LoRA engine to preserve Qwen 3.5 q_norm/k_norm attention weights intact
+    return
     merged_dir = os.path.join(os.path.dirname(args.adapter_path), f"merged_eval_{os.path.basename(args.adapter_path)}")
 
     # Wipe stale unpatched directory if rope_scaling or rope_parameters or mrope_section exists in config
