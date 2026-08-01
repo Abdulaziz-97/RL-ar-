@@ -1,55 +1,55 @@
-"""Quick sanity test script to verify merged model generation capabilities."""
+"""Quick sanity test script using PyTorch + Hugging Face Transformers.
+Loads base model + adapter, merges cleanly in memory with zero stripped weights, and generates 1 test output.
+"""
 import argparse
-import sys
+import torch
 from pathlib import Path
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from peft import PeftModel
 
 def main():
-    parser = argparse.ArgumentParser(description="Quick test of merged model generation")
+    parser = argparse.ArgumentParser(description="Sanity test GRPO model generation with Hugging Face")
     parser.add_argument("--base-model", type=str, default="Qwen/Qwen3.5-4B")
     parser.add_argument("--adapter-path", type=str, default="/workspace/RL-ar-/outputs/qwen_4b_2x5090_v4_run/checkpoint-200")
     parser.add_argument("--prompt", type=str, default="السؤال: كم يبلغ حاصل ضرب 12 في 15؟\nA. 150\nB. 180\nC. 200\nD. 160\nالإجابة:")
     args = parser.parse_args()
 
-    adapter_dir = Path(args.adapter_path)
-    if not adapter_dir.exists():
-        print(f"Error: Adapter directory {args.adapter_path} not found!")
-        return
+    print(f"\n[1/3] Loading base model ({args.base_model}) in bfloat16...", flush=True)
+    base = AutoModelForCausalLM.from_pretrained(
+        args.base_model,
+        torch_dtype=torch.bfloat16,
+        device_map="cuda:0",
+        trust_remote_code=True,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model, trust_remote_code=True)
 
-    print(f"\n[INFO] Loading vLLM engine with base model [{args.base_model}] and LoRA [{args.adapter_path}]...")
-    from vllm import LLM, SamplingParams
-    from vllm.lora.request import LoRARequest
-    from transformers import AutoTokenizer
+    print(f"[2/3] Loading GRPO LoRA adapter ({args.adapter_path}) and merging...", flush=True)
+    model = PeftModel.from_pretrained(base, args.adapter_path)
+    merged_model = model.merge_and_unload()
+    merged_model.eval()
 
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
     messages = [{"role": "user", "content": args.prompt}]
     formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
 
-    print("\n--- [PROMPT PASSED TO MODEL] ---")
+    print("\n--- [FORMATTED PROMPT] ---")
     print(formatted_prompt)
-    print("--------------------------------\n")
+    print("--------------------------\n")
 
-    llm = LLM(
-        model=args.base_model,
-        dtype="bfloat16",
-        trust_remote_code=True,
-        max_model_len=4096,
-        gpu_memory_utilization=0.70,
-        enable_lora=True,
-        max_lora_rank=128,
-        enforce_eager=True,
-    )
+    inputs = tokenizer(formatted_prompt, return_tensors="pt").to("cuda:0")
 
-    sampling_params = SamplingParams(
-        max_tokens=512,
-        temperature=0.0,
-        repetition_penalty=1.05,
-    )
+    print("[3/3] Generating response with greedy decoding (temperature=0.0)...", flush=True)
+    with torch.no_grad():
+        output_ids = merged_model.generate(
+            **inputs,
+            max_new_tokens=512,
+            do_sample=False,  # greedy
+            pad_token_id=tokenizer.eos_token_id,
+        )
 
-    lora_req = LoRARequest("grpo_adapter", 1, str(adapter_dir))
-
-    print("\nGenerating response from native vLLM LoRA model...", flush=True)
-    outputs = llm.generate([formatted_prompt], sampling_params, lora_request=lora_req)
-    generated_text = outputs[0].outputs[0].text
+    # Cut off the prompt tokens to get only the generated completion
+    input_len = inputs["input_ids"].shape[1]
+    generated_ids = output_ids[0][input_len:]
+    generated_text = tokenizer.decode(generated_ids, skip_special_tokens=True)
 
     print("\n==========================================")
     print("      [MODEL OUTPUT GENERATION TEST]      ")
