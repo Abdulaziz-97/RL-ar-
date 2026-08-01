@@ -176,10 +176,13 @@ class RLVRConfig:
     # Mid-train Auto-Probe launches vLLM in a subprocess; keep off during GRPO.
     enable_benchmark_probe: bool = False
     # After each save_steps checkpoint, push adapter/trainer_state to HF Hub
-    # under hub_model_id/checkpoint-{step}. Token from HF_TOKEN / HUGGING_FACE_HUB_TOKEN.
+    # under hub_model_id/{hub_checkpoint_name_prefix}-{step}. Token from
+    # HF_TOKEN / HUGGING_FACE_HUB_TOKEN.
     push_checkpoints_to_hub: bool = False
     hub_model_id: Optional[str] = None
     hub_private: bool = True
+    # Hub subfolder prefix for pushed checkpoints (default: checkpoint-evaluated).
+    hub_checkpoint_name_prefix: str = "checkpoint-evaluated"
     # After a successful push, delete older local checkpoints. Default keep 1
     # so Vast disk is freed (do NOT bind this to save_total_limit — that left
     # 8 locals on disk and defeated the hub-push disk-relief goal).

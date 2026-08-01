@@ -47,13 +47,26 @@ def main() -> int:
 
     raw: list[dict] = []
     for path in args.candidates:
+        if not path.is_file():
+            print(f"ERROR: candidate shard missing: {path}", file=sys.stderr)
+            return 2
         raw.extend(_read_jsonl(path))
+    if not raw:
+        print("ERROR: no candidate rows loaded from shards", file=sys.stderr)
+        return 2
 
     accepted = []
     rejected = []
     seen_pid: set[str] = set()
     seen_fid: set[str] = set()
     for row in raw:
+        # pass@8 historically stamped top-level difficulty_tag; schema forbids it.
+        if "difficulty_tag" in row:
+            row = dict(row)
+            tag = row.pop("difficulty_tag")
+            md = dict(row.get("metadata") or {})
+            md.setdefault("difficulty_tag", tag)
+            row["metadata"] = md
         ok, reasons = accept_rlvr_row(
             row, require_decontam_clean=not args.allow_missing_decontam
         )

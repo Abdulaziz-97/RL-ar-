@@ -14,6 +14,7 @@ REQUIRED_PACKAGES = {
     "transformers": "5.13.0",
     "trl": "1.7.1",
     "peft": "0.19.1",
+    "PyYAML": "6.0.2",
 }
 
 

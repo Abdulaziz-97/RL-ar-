@@ -216,3 +216,23 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Pipeline runtime artifacts (not needed for E2E code)
+outputs/*.log
+outputs/*.nohup
+outputs/_probe*.py
+outputs/_eta*.py
+outputs/_check*.py
+outputs/_fix*.py
+outputs/_kill*.py
+outputs/_sync*.py
+outputs/_status*.py
+outputs/_wait*.py
+outputs/_vast*.py
+outputs/loop_*.ps1
+outputs/*_STATUS.json
+outputs/*_PROMPT.json
+data/*.jsonl
+data/*_STATS.json
+data_1/outputs/
+*.pid

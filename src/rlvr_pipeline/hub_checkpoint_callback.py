@@ -1,17 +1,23 @@
 """
 Push each Trainer checkpoint to Hugging Face Hub on_save.
 
+Trainer evaluates before save when eval_steps == save_steps. This callback
+stashes on_evaluate metrics, writes them into the local checkpoint as
+eval_results.json, then uploads under hub path
+{hub_checkpoint_name_prefix}-{step} (default: checkpoint-evaluated-{step}).
+
 Enables early deletion of local checkpoints after a successful push so Vast
 disk stays under limit. Fail soft: never delete if the hub push fails.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from transformers.trainer_callback import TrainerCallback
 
@@ -54,8 +60,25 @@ def _list_local_checkpoints(output_dir: str) -> list[tuple[int, Path]]:
     return found
 
 
+def _json_safe(obj: Any) -> Any:
+    """Make Trainer metrics JSON-serializable."""
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    try:
+        # numpy / torch scalars
+        if hasattr(obj, "item"):
+            return obj.item()
+    except Exception:
+        pass
+    return str(obj)
+
+
 class HubCheckpointCallback(TrainerCallback):
-    """Upload checkpoint-{step}/ to hub path_in_repo=checkpoint-{step} after each save."""
+    """Upload evaluated checkpoint-{step}/ to hub as checkpoint-evaluated-{step}."""
 
     def __init__(
         self,
@@ -66,6 +89,7 @@ class HubCheckpointCallback(TrainerCallback):
         delete_local_after_push: bool = True,
         keep_local_last_n: Optional[int] = None,
         token: Optional[str] = None,
+        hub_checkpoint_name_prefix: str = "checkpoint-evaluated",
     ):
         self.hub_model_id = hub_model_id
         self.enabled = enabled
@@ -74,8 +98,29 @@ class HubCheckpointCallback(TrainerCallback):
         # None / <=0 → keep only the latest pushed checkpoint locally after push.
         self.keep_local_last_n = keep_local_last_n
         self._token = token
+        self.hub_checkpoint_name_prefix = (
+            hub_checkpoint_name_prefix or "checkpoint-evaluated"
+        ).rstrip("/")
         self._pushed_steps: set[int] = set()
         self._repo_ready = False
+        # Trainer runs evaluate() before save when strategies align; stash metrics.
+        self._last_eval_step: Optional[int] = None
+        self._last_eval_metrics: Optional[dict[str, Any]] = None
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if not self.enabled:
+            return
+        if getattr(args, "process_index", 0) != 0:
+            return
+        step = int(state.global_step)
+        self._last_eval_step = step
+        self._last_eval_metrics = dict(metrics or {})
+        print(
+            f"[HUB-CKPT] Step {step}: captured eval metrics "
+            f"({len(self._last_eval_metrics)} keys) for upcoming checkpoint push.",
+            flush=True,
+        )
+        return
 
     def on_save(self, args, state, control, **kwargs):
         if not self.enabled:
@@ -99,12 +144,53 @@ class HubCheckpointCallback(TrainerCallback):
             )
             return
 
+        self._write_eval_results(ckpt_dir, step)
         ok = self._push_checkpoint(ckpt_dir, step)
         if ok:
             self._pushed_steps.add(step)
             if self.delete_local_after_push:
                 self._delete_older_local_checkpoints(output_dir)
         return
+
+    def _hub_path_in_repo(self, step: int) -> str:
+        return f"{self.hub_checkpoint_name_prefix}-{step}"
+
+    def _write_eval_results(self, ckpt_dir: Path, step: int) -> None:
+        """Persist eval metrics next to adapter weights before Hub upload."""
+        payload: dict[str, Any] = {
+            "global_step": step,
+            "hub_path_in_repo": self._hub_path_in_repo(step),
+            "evaluated": False,
+            "metrics": {},
+        }
+        if self._last_eval_metrics is not None and self._last_eval_step == step:
+            payload["evaluated"] = True
+            payload["metrics"] = _json_safe(self._last_eval_metrics)
+        elif self._last_eval_metrics is not None:
+            # Save without matching eval (e.g. end-of-run save); still attach last eval.
+            payload["evaluated"] = False
+            payload["last_eval_step"] = self._last_eval_step
+            payload["metrics"] = _json_safe(self._last_eval_metrics)
+            print(
+                f"[HUB-CKPT] Step {step}: no same-step eval (last_eval_step="
+                f"{self._last_eval_step}); attaching last metrics for reference.",
+                flush=True,
+            )
+        else:
+            print(
+                f"[HUB-CKPT] Step {step}: no eval metrics yet; pushing weights only.",
+                flush=True,
+            )
+
+        out = ckpt_dir / "eval_results.json"
+        try:
+            out.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            print(f"[HUB-CKPT] Wrote {out.name} (evaluated={payload['evaluated']})", flush=True)
+        except Exception as e:
+            print(f"[HUB-CKPT] Warning: failed to write eval_results.json: {e}", flush=True)
 
     def _ensure_repo(self, api, token: str) -> None:
         if self._repo_ready:
@@ -128,7 +214,7 @@ class HubCheckpointCallback(TrainerCallback):
             )
             return False
 
-        path_in_repo = f"checkpoint-{step}"
+        path_in_repo = self._hub_path_in_repo(step)
         print(
             f"\n[HUB-CKPT] Step {step}: pushing {ckpt_dir} → "
             f"{self.hub_model_id}/{path_in_repo} (private={self.hub_private})...",
@@ -145,18 +231,21 @@ class HubCheckpointCallback(TrainerCallback):
                 repo_id=self.hub_model_id,
                 repo_type="model",
                 path_in_repo=path_in_repo,
-                commit_message=f"Upload training checkpoint-{step}",
+                commit_message=(
+                    f"Upload evaluated checkpoint {path_in_repo} "
+                    f"(step={step}, with eval_results.json)"
+                ),
                 token=token,
             )
             print(
-                f"[HUB-CKPT] Successfully pushed checkpoint-{step} → "
+                f"[HUB-CKPT] Successfully pushed {path_in_repo} → "
                 f"https://huggingface.co/{self.hub_model_id}/tree/main/{path_in_repo}",
                 flush=True,
             )
             return True
         except Exception as e:
             print(
-                f"[HUB-CKPT] ERROR: push failed for checkpoint-{step}: {e}. "
+                f"[HUB-CKPT] ERROR: push failed for {path_in_repo}: {e}. "
                 "Local checkpoint retained (no delete).",
                 flush=True,
             )
@@ -170,33 +259,6 @@ class HubCheckpointCallback(TrainerCallback):
             keep_n = 1
 
         checkpoints = _list_local_checkpoints(output_dir)
-        # #region agent log
-        try:
-            import json as _json, time as _time
-            from pathlib import Path as _Path
-            _log = _Path(r"c:\Users\Azooo\arabic-reasoning-rlvr-sota\debug-a273d4.log")
-            with open(_log, "a", encoding="utf-8") as _f:
-                _f.write(_json.dumps({
-                    "sessionId": "a273d4", "hypothesisId": "D", "runId": "sanity",
-                    "location": "hub_checkpoint_callback.py:_delete_older_local_checkpoints",
-                    "message": "delete-after-push decision",
-                    "data": {
-                        "keep_n": keep_n,
-                        "n_local": len(checkpoints),
-                        "local_steps": [s for s, _ in checkpoints],
-                        "pushed_steps": sorted(self._pushed_steps),
-                        "would_delete": [
-                            s for s, _ in checkpoints
-                            if s not in {x for x, _ in checkpoints[-keep_n:]}
-                            and s in self._pushed_steps
-                        ],
-                        "disk_relief_noop": len(checkpoints) <= keep_n,
-                    },
-                    "timestamp": int(_time.time() * 1000),
-                }, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-        # #endregion
         if len(checkpoints) <= keep_n:
             return
 

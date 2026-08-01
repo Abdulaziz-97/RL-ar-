@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import json
 import os
 import textwrap
 from pathlib import Path
@@ -126,6 +127,14 @@ def test_v4_beta_anchored_and_adaptive_features_off():
     assert cfg.hub_model_id == "aziz9788/qwen35-4b-arabic-rlvr-v5"
     assert cfg.hub_private is True
     assert cfg.delete_local_checkpoint_after_hub_push is True
+    # Quarterly eval/save (max_steps=250 → every 62 steps).
+    assert cfg.eval_strategy == "steps"
+    assert cfg.eval_steps == 62
+    assert cfg.save_steps == 62
+    assert cfg.save_total_limit == 2
+    assert cfg.hub_checkpoint_name_prefix == "checkpoint-evaluated"
+    assert cfg.max_steps == 250
+    assert cfg.eval_steps == cfg.max_steps // 4
 
 
 def test_hub_checkpoint_callback_pushes_and_deletes_older(tmp_path):
@@ -145,6 +154,7 @@ def test_hub_checkpoint_callback_pushes_and_deletes_older(tmp_path):
         delete_local_after_push=True,
         keep_local_last_n=2,
         token="hf_test_token",
+        hub_checkpoint_name_prefix="checkpoint-evaluated",
     )
 
     with patch.object(cb, "_push_checkpoint", return_value=True) as mock_push:
@@ -152,8 +162,16 @@ def test_hub_checkpoint_callback_pushes_and_deletes_older(tmp_path):
         # Simulate three successful saves; track pushed steps via real on_save path.
         for step in (50, 100, 150):
             state = MagicMock(global_step=step)
+            cb.on_evaluate(args, state, MagicMock(), metrics={"eval_loss": 0.5, "step": step})
             cb.on_save(args, state, MagicMock())
         assert mock_push.call_count == 3
+        # Hub path uses checkpoint-evaluated-{step}
+        assert cb._hub_path_in_repo(100) == "checkpoint-evaluated-100"
+        # Eval metrics written into local checkpoint before push.
+        payload = json.loads((out / "checkpoint-150" / "eval_results.json").read_text(encoding="utf-8"))
+        assert payload["evaluated"] is True
+        assert payload["hub_path_in_repo"] == "checkpoint-evaluated-150"
+        assert payload["metrics"]["eval_loss"] == 0.5
 
     # keep_local_last_n=2 → checkpoint-50 deleted; 100 and 150 remain.
     assert not (out / "checkpoint-50").exists()

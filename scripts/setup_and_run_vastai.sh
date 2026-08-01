@@ -189,6 +189,15 @@ PY
     fi
     export PYTHON_BIN
     echo "[Env] PYTHON_BIN=$PYTHON_BIN"
+    # Vast images often expose /venv/main separately from the repo .venv — install
+    # PyYAML there too so ad-hoc scripts using /venv/main/bin/python do not fail.
+    for _VENV_PY in "$REPO_ROOT/.venv/bin/python" "/venv/main/bin/python"; do
+        if [ -x "$_VENV_PY" ]; then
+            "$_VENV_PY" -m pip install -q "PyYAML==6.0.2" 2>/dev/null \
+                || uv pip install --python "$_VENV_PY" "PyYAML==6.0.2" 2>/dev/null \
+                || true
+        fi
+    done
     # Put a shim early on PATH so every `python3` / `python` call hits the venv
     # (system /usr/bin/python3 has no trl — confirmed ModuleNotFoundError on Vast).
     mkdir -p /tmp/rlvr-pybin
@@ -212,7 +221,15 @@ PY
         --config "$CONFIG_FILE" \
         --require-gpus "$NUM_GPUS" \
         --sft-output "$SFT_OUT" \
-        --grpo-output "$GRPO_OUT"
+        --grpo-output "$GRPO_OUT" || {
+        echo "ERROR: preflight failed — installing PyYAML into active python and retrying once" >&2
+        "$PYTHON_BIN" -m pip install -q "PyYAML==6.0.2" || true
+        python3 -m rlvr_pipeline.preflight \
+            --config "$CONFIG_FILE" \
+            --require-gpus "$NUM_GPUS" \
+            --sft-output "$SFT_OUT" \
+            --grpo-output "$GRPO_OUT"
+    }
 
     if [ "${REGENERATE_DATA:-0}" = "1" ]; then
         if [ "${SKIP_SFT_DATAGEN:-0}" = "1" ]; then
@@ -475,6 +492,12 @@ PY
         echo "================================================================="
         echo "[5c/N] CURATE 4000 RLVR + DUAL SHIP GATE + ATOMIC PROMOTE"
         echo "================================================================="
+        for shard_path in "${CAND_ARGS[@]}"; do
+            if [ ! -s "$shard_path" ]; then
+                echo "ERROR: pass@8 shard missing or empty: $shard_path — skip curate/promote" >&2
+                exit 2
+            fi
+        done
         python3 "$REPO_ROOT/data_1/scripts/curate_v4_rlvr.py" \
             --candidates "${CAND_ARGS[@]}" \
             --out "$DATAGEN_ROOT/rlvr_selected_4000.jsonl"

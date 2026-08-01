@@ -162,6 +162,48 @@ def _make_hf_generate_fn(
     return _gen_n, ckpt_hash, getattr(tokenizer, "name_or_path", "")
 
 
+def _pid(row: dict[str, Any], fallback: int | str = "") -> str:
+    return str(row.get("problem_id") or row.get("id") or fallback)
+
+
+def _load_resumed_stamped(path: Path) -> dict[str, dict[str, Any]]:
+    """Map problem_id → stamped candidate row already flushed to disk."""
+    if not path.is_file():
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            out[_pid(row)] = row
+    return out
+
+
+def _result_from_stamped(row: dict[str, Any]) -> PassAtNResult:
+    emp = row.get("empirical_difficulty") or {}
+    return PassAtNResult(
+        problem_id=_pid(row),
+        n=int(emp.get("n") or 0),
+        passes=int(emp.get("passes") or 0),
+        pass_fraction=float(emp.get("pass_fraction") or 0.0),
+        band=str(emp.get("band") or assign_band(float(emp.get("pass_fraction") or 0.0))),
+        seeds=list(emp.get("seeds") or []),
+        checkpoint_hash=str(emp.get("checkpoint_hash") or ""),
+        tokenizer_id=str(emp.get("tokenizer_id") or ""),
+        system_prompt_hash=str(emp.get("system_prompt_hash") or ""),
+        raw=list(emp.get("raw") or []),
+    )
+
+
+def _append_jsonl(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.flush()
+
+
 def _calibrate_hf_batched(
     shard_rows: list[dict[str, Any]],
     *,
@@ -177,41 +219,54 @@ def _calibrate_hf_batched(
     temperature: float,
     top_p: float,
     prompt_batch_size: int,
+    index_offset: int = 0,
+    total_shard: int | None = None,
+    on_batch: Callable[[list[PassAtNResult], list[dict[str, Any]]], None] | None = None,
 ) -> list[PassAtNResult]:
-    """Batched HF generate: B prompts × n return sequences per step (fills GPU)."""
+    """HF generate over shard_rows; optional incremental flush via on_batch.
+
+    ``index_offset`` / original positions: seeds use absolute shard index
+    ``index_offset + local_i`` so resume keeps the seed contract.
+    """
     import torch
 
     device = next(model.parameters()).device
     sys_hash = _hash_text(system_prompt) if system_prompt else ""
-    rendered = [
-        _apply_chat(tokenizer, system_prompt, str(prob.get("prompt", "")))
-        for prob in shard_rows
-    ]
+    # Keep (absolute_index, row) for correct seeds under resume.
+    work = list(enumerate(shard_rows))
+    rendered = {
+        abs_i: _apply_chat(tokenizer, system_prompt, str(prob.get("prompt", "")))
+        for abs_i, prob in ((index_offset + li, r) for li, r in work)
+    }
+    # Rebuild work with absolute indices
+    abs_work = [(index_offset + li, r) for li, r in work]
     results: list[PassAtNResult] = []
     t0 = time.time()
-    total = len(shard_rows)
-    done = 0
+    total = int(total_shard if total_shard is not None else len(shard_rows))
+    already = total - len(abs_work)
+    done = already
     batch = max(1, int(prompt_batch_size))
     print(
-        f"[pass8-hf] batched generate batch_prompts={batch} "
-        f"(=>{batch * n} sequences/step) device={device}",
+        f"[pass8-hf] generate batch_prompts={batch} (=>{batch * n} seqs/step) "
+        f"device={device} resume_skip={already} remaining={len(abs_work)}",
         flush=True,
     )
 
-    for start in range(0, total, batch):
-        chunk_probs = shard_rows[start : start + batch]
-        chunk_texts = rendered[start : start + batch]
+    for start in range(0, len(abs_work), batch):
+        chunk = abs_work[start : start + batch]
+        chunk_probs = [r for _, r in chunk]
+        chunk_texts = [rendered[abs_i] for abs_i, _ in chunk]
         bsz = len(chunk_texts)
+        first_abs = chunk[0][0]
         inputs = tokenizer(
             chunk_texts,
             return_tensors="pt",
             padding=True,
             truncation=False,
         ).to(device)
-        # Parent seed for microbatch = first problem's seeds[0] (same contract family).
-        torch.manual_seed(int(base_seed + start * n))
+        torch.manual_seed(int(base_seed + first_abs * n))
         if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(int(base_seed + start * n))
+            torch.cuda.manual_seed_all(int(base_seed + first_abs * n))
         with torch.inference_mode():
             out = model.generate(
                 **inputs,
@@ -224,10 +279,9 @@ def _calibrate_hf_batched(
                 use_cache=True,
             )
         prompt_len = inputs["input_ids"].shape[-1]
-        # out: (bsz * n, seq)
-        for j, prob in enumerate(chunk_probs):
-            i = start + j
-            seeds = [base_seed + i * n + k for k in range(n)]
+        batch_results: list[PassAtNResult] = []
+        for j, (abs_i, prob) in enumerate(chunk):
+            seeds = [base_seed + abs_i * n + k for k in range(n)]
             completions = [
                 tokenizer.decode(
                     out[j * n + k][prompt_len:], skip_special_tokens=True
@@ -237,9 +291,9 @@ def _calibrate_hf_batched(
             flags = [bool(verify_fn(prob, c)) for c in completions]
             passes = sum(flags)
             frac = passes / n if n else 0.0
-            results.append(
+            batch_results.append(
                 PassAtNResult(
-                    problem_id=str(prob.get("problem_id") or prob.get("id") or i),
+                    problem_id=_pid(prob, abs_i),
                     n=n,
                     passes=passes,
                     pass_fraction=frac,
@@ -251,11 +305,20 @@ def _calibrate_hf_batched(
                     raw=flags,
                 )
             )
+        results.extend(batch_results)
+        if on_batch is not None:
+            on_batch(batch_results, chunk_probs)
         done += bsz
         elapsed = max(time.time() - t0, 1e-6)
-        rate = done / elapsed
+        # Rate over newly processed only (fairer ETA after resume).
+        new_done = done - already
+        rate = new_done / elapsed if new_done else 0.0
         eta_s = (total - done) / rate if rate > 0 else float("inf")
-        mem = torch.cuda.memory_allocated(device) / (1024**3) if torch.cuda.is_available() else 0.0
+        mem = (
+            torch.cuda.memory_allocated(device) / (1024**3)
+            if torch.cuda.is_available()
+            else 0.0
+        )
         print(
             f"[pass8-hf] {done}/{total} prompts  {rate:.2f} prompts/s  "
             f"{rate * n:.1f} samples/s  ETA {eta_s / 60:.1f} min  "
@@ -505,8 +568,10 @@ def _stamp_candidates(
             "raw": cal.raw,
         }
         out["empirical_difficulty"] = emp
-        out["difficulty_tag"] = band
+        # Keep difficulty_tag inside metadata — top-level breaks accept_rlvr_row
+        # schema (additionalProperties=false).
         meta = dict(out.get("metadata") or {})
+        meta["difficulty_tag"] = band
         meta["pass_at_8"] = {
             "n": cal.n,
             "passes": cal.passes,

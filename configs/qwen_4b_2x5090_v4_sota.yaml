@@ -104,13 +104,19 @@ early_diag_steps: 30
 
 # Infrastructure & Evaluation Checkpointing Settings
 output_dir: "./outputs/qwen_4b_2x5090_v4_run"
-eval_strategy: "no"
+# Eval + save every quarter of max_steps (250 // 4 = 62 → steps 62/124/186/248).
+# Trainer evaluates before save; Hub push attaches eval_results.json and uploads
+# as hub path checkpoint-evaluated-{step}.
+eval_strategy: "steps"
+eval_steps: 62
 max_eval_samples: 32
 per_device_eval_batch_size: 8
 logging_steps: 10
 save_strategy: "steps"
-save_steps: 50
-save_total_limit: 8
+save_steps: 62
+# Keep locals tiny: Hub push deletes older after success; save_total_limit is a
+# safety net if push is slow/fails so disk does not fill with 8× adapters.
+save_total_limit: 2
 log_completions: false
 # Colocated vLLM for GRPO rollouts (same G=16 / 2048 / 250 steps — quality-neutral).
 # Historical HF-generate GRPO ~8h on 4k; vLLM targets ~3–5h. Keep util conservative
@@ -121,11 +127,12 @@ vllm_max_model_len: 4096
 # YAML key stays vllm_max_model_len; mapped to TRL's vllm_max_model_length in
 # build_grpo_config (old name was silently dropped).
 enable_benchmark_probe: false
-# Push each checkpoint-{step} folder to HF Hub after save (token: HF_TOKEN env).
-# Subfolders: aziz9788/qwen35-4b-arabic-rlvr-v5/checkpoint-50, ...
+# Push each evaluated checkpoint to HF Hub after save (token: HF_TOKEN env).
+# Subfolders: aziz9788/qwen35-4b-arabic-rlvr-v5/checkpoint-evaluated-62, ...
 push_checkpoints_to_hub: true
 hub_model_id: "aziz9788/qwen35-4b-arabic-rlvr-v5"
 hub_private: true
+hub_checkpoint_name_prefix: "checkpoint-evaluated"
 delete_local_checkpoint_after_hub_push: true
 # Keep only the latest local checkpoint after a successful HF push (disk relief).
 hub_keep_local_last_n: 1

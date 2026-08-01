@@ -301,6 +301,7 @@ def _maybe_attach_hub_checkpoint_callback(trainer, config: RLVRConfig) -> None:
     keep_n = getattr(config, "hub_keep_local_last_n", None)
     if keep_n is None:
         keep_n = 1
+    name_prefix = getattr(config, "hub_checkpoint_name_prefix", None) or "checkpoint-evaluated"
     cb = HubCheckpointCallback(
         hub_model_id=hub_id,
         enabled=True,
@@ -309,10 +310,12 @@ def _maybe_attach_hub_checkpoint_callback(trainer, config: RLVRConfig) -> None:
             getattr(config, "delete_local_checkpoint_after_hub_push", True)
         ),
         keep_local_last_n=int(keep_n),
+        hub_checkpoint_name_prefix=str(name_prefix),
     )
     trainer.add_callback(cb)
     print(
         f"Hub checkpoint push ENABLED → {hub_id or '(missing hub_model_id)'} "
+        f"as {name_prefix}-{{step}} "
         f"(private={cb.hub_private}, delete_local_after_push={cb.delete_local_after_push}, "
         f"keep_local_last_n={keep_n}).",
         flush=True,
