@@ -91,15 +91,52 @@ def gpus_free() -> bool:
     return bool(mem) and all(m < MEM_FREE_MIB for m in mem)
 
 
+def correct_bench_running() -> bool:
+    return bool(pgrep("run_araeval_generative.py").strip())
+
+
+def wrong_lineage_bench_running() -> bool:
+    """Bare run_araeval.py without T06 merge — must not count as the SFT panel."""
+    return bool(pgrep("run_araeval.py").strip()) and not correct_bench_running()
+
+
 def bench_running() -> bool:
-    return bool(
-        pgrep("run_araeval_generative.py").strip()
-        or pgrep("run_araeval.py").strip()
-    )
+    return correct_bench_running()
 
 
 def summary_ready() -> bool:
-    return (OUT / "summary.json").is_file()
+    """Accept only lineage-correct generative panel summaries (T06 + both tasks)."""
+    path = OUT / "summary.json"
+    if not path.is_file():
+        return False
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    # Reject log-likelihood / bare-adapter panels (no instruction merge).
+    lineage_key = data.get("lineage_key") or {}
+    if isinstance(lineage_key, dict) and lineage_key.get("instruction_adapter"):
+        tasks = data.get("task_results") or {}
+        return "araeval_aramath" in tasks and "araeval_ifeval" in tasks
+    if data.get("evaluation_mode") == "generative":
+        tasks = data.get("task_results") or {}
+        return "araeval_aramath" in tasks and "araeval_ifeval" in tasks
+    return False
+
+
+def invalidate_stale_summary() -> None:
+    """Move aside incomplete / wrong-lineage summaries so the correct bench can run."""
+    path = OUT / "summary.json"
+    if not path.is_file():
+        return
+    if summary_ready():
+        return
+    bak = OUT / f"summary.stale_wrong_lineage_{int(time.time())}.json"
+    path.rename(bak)
+    ckpt = OUT / "checkpoint.json"
+    if ckpt.is_file():
+        ckpt.rename(OUT / f"checkpoint.stale_{int(time.time())}.json")
+    print(f"[vast-waiter] invalidated stale summary -> {bak}", flush=True)
 
 
 def _sft_raw_from_summary(sft: dict) -> dict:
@@ -257,13 +294,19 @@ def main() -> int:
         flush=True,
     )
     started = time.time()
+    invalidate_stale_summary()
 
     if summary_ready():
         report_done()
         return 0
 
     if bench_running():
-        write_status("launched_existing", note="bench already running")
+        write_status("launched_existing", note="lineage-correct generative bench running")
+    elif wrong_lineage_bench_running():
+        write_status(
+            "waiting",
+            note="legacy/wrong-lineage run_araeval.py detected; waiting for GPUs then launching generative+T06",
+        )
     else:
         write_status("waiting", note="polling for pass8 GPU free")
 
