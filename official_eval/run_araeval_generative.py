@@ -55,6 +55,7 @@ from tasks.araeval.utils import (
     process_ifeval_results,
 )
 
+_LABELS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 DEFAULT_MODEL = "unsloth/Qwen3.5-4B"
 
 
@@ -343,6 +344,7 @@ def build_vllm_engine(args: argparse.Namespace, task: str):
         max_tokens=max_tokens,
         temperature=profile["temperature"],
         top_p=1.0,
+        repetition_penalty=1.05,
     )
 
     return llm, sampling_params, profile
@@ -350,23 +352,27 @@ def build_vllm_engine(args: argparse.Namespace, task: str):
 
 def apply_chat_template(tokenizer, prompt: str, enable_thinking: bool) -> str:
     """Apply the model's chat template to a prompt."""
-    messages = [{"role": "user", "content": prompt}]
+    if enable_thinking:
+        messages = [
+            {
+                "role": "system",
+                "content": "أنت مساعد ذكي يجيب على الأسئلة باللغة العربية. قم بالتفكير خطوة بخطوة داخل وسم <think>...</think> ثم اكتب إجابتك النهائية.",
+            },
+            {"role": "user", "content": prompt},
+        ]
+    else:
+        messages = [{"role": "user", "content": prompt}]
+
     try:
         formatted = tokenizer.apply_chat_template(
             messages,
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=enable_thinking,
         )
         return formatted
-    except TypeError:
-        # Some tokenizers don't support enable_thinking kwarg
-        formatted = tokenizer.apply_chat_template(
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
-        )
-        return formatted
+    except Exception:
+        # Fallback if tokenizer formatting fails
+        return f"User: {prompt}\nAssistant:"
 
 
 def evaluate_task(

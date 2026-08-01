@@ -206,7 +206,7 @@ def normalize_araifeval(row: dict[str, Any]) -> dict[str, Any]:
     nested = row.get("instruction_following_prompt", row)
     return {
         "prompt": str(nested["prompt"]),
-        "categories": list(nested["categories"]),
+        "categories": list(nested.get("categories", [])),
     }
 
 
