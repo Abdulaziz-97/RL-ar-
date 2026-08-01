@@ -3,8 +3,9 @@ pkill -9 -f python 2>/dev/null || true
 pkill -9 -f torchrun 2>/dev/null || true
 sleep 2
 
-# Cleanup stale merge folders and temporary caches to free disk space
+# Cleanup stale merge folders, previous eval output checkpoints, and temporary caches
 rm -rf /workspace/RL-ar-/outputs/*/merged_eval_* 2>/dev/null || true
+rm -rf /workspace/outputs/generative_eval_checkpoint_200 2>/dev/null || true
 rm -rf /root/.cache/huggingface/hub/tmp* 2>/dev/null || true
 rm -rf /tmp/* 2>/dev/null || true
 
