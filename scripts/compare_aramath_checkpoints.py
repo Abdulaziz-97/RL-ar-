@@ -73,8 +73,8 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
     prompts = [apply_chat_template(tokenizer, s["query"]) for s in samples]
     gold_indices = [s["gold"] for s in samples]
 
-    print(f"[3/3] Running high-speed PyTorch HF generation (batch_size=16) on {len(prompts)} samples...", flush=True)
-    batch_size = 16
+    print(f"[3/3] Running ultra-fast PyTorch HF generation (batch_size=32) on {len(prompts)} samples...", flush=True)
+    batch_size = 32
     all_texts = []
     start_time = time.monotonic()
 
@@ -84,7 +84,7 @@ def evaluate_checkpoint(model_name: str, adapter_path: str | None, samples: list
         with torch.inference_mode():
             outputs = merged_model.generate(
                 **inputs,
-                max_new_tokens=1280,
+                max_new_tokens=512,
                 do_sample=False,
                 use_cache=True,
                 repetition_penalty=1.05,
